@@ -24,8 +24,7 @@
 #define _FBR_FIBER_H_
 /**
  * @file evfibers/fiber.h
- * This file contains all client-visible API functions for working
- * with fibers.
+ * This file contains all client-visible API functions for working with fibers.
  */
 #include <unistd.h>
 #include <stdarg.h>
@@ -72,8 +71,8 @@ struct fbr_fiber;
 struct fbr_mutex;
 
 /**
- * Library context structure, should be initialized before any other
- * library callse will be performed.
+ * Library context structure, should be initialized before any other library
+ * callse will be performed.
  * @see fbr_init
  * @see fbr_destroy
  */
@@ -88,30 +87,28 @@ struct fbr_context
 #define FBR_P struct fbr_context *fctx
 
 /**
- * Same as FBR_P, but with comma afterwards for use in functions that
- * accept more that one parameter (which itself is the context pointer).
+ * Same as FBR_P, but with comma afterwards for use in functions that accept
+ * more that one parameter (which itself is the context pointer).
  */
 #define FBR_P_ FBR_P,
 
 /**
- * Utility macro for context parameter passing when calling fbr_*
- * functions.
+ * Utility macro for context parameter passing when calling fbr_* functions.
  */
 #define FBR_A fctx
 
 /**
- * Same as FBR_A, but with comma afterwards for invocations of
- * functions that require more that one parameter (which itself is
- * the context pointer).
+ * Same as FBR_A, but with comma afterwards for invocations of functions that
+ * require more that one parameter (which itself is the context pointer).
  */
 #define FBR_A_ FBR_A,
 
 /**
  * Fiber's ``main'' function type.
- * Fiber main function takes only one parameter --- the context. If
- * you need to pass more context information, you shall embed
- * fbr_context into any structure of your choice and calculate the
- * base pointer using container_of macro.
+ * Fiber main function takes only one parameter --- the context. If you need to
+ * pass more context information, you shall embed fbr_context into any
+ * structure of your choice and calculate the base pointer using container_of
+ * macro.
  * @see FBR_P
  * @see fbr_context
  */
@@ -121,14 +118,14 @@ struct fbr_fiber_arg;
 
 /**
  * Callback function type, used for fiber call arguments processing.
- * Whenever you call some fiber with arguments, you need to ensure
- * that those arguments will survive if caller decides to free
- * resources associated with the arguments. This is especially useful
- * when multicall is used since you don't know how many fibers will
- * be actually called.
- * Actions in this callback depend solely on semantics of arguments
- * passed, i.e. one might want to do a newly allocated copy of some
- * object for each fiber called, or increase some reference counting.
+ * Whenever you call some fiber with arguments, you need to ensure that those
+ * arguments will survive if caller decides to free resources associated with
+ * the arguments. This is especially useful when multicall is used since you
+ * don't know how many fibers will be actually called.
+ *
+ * Actions in this callback depend solely on semantics of arguments passed,
+ * i.e. one might want to do a newly allocated copy of some object for each
+ * fiber called, or increase some reference counting.
  * @see fbr_fiber_arg
  * @see fbr_call
  * @see fbr_multicall
@@ -137,10 +134,10 @@ typedef void (*fbr_arg_callback_t)(void *context, struct fbr_fiber_arg *arg);
 
 /**
  * Actual argument of a fiber call.
- * It's implemented as a union between integer (i.e. enum or some
- * other constant) and pointer which covers a lot of use cases.
- * Additionally it might be attached a callback that will be invoked
- * upon passing of this argument to a concrete fiber during the call.
+ * It's implemented as a union between integer (i.e. enum or some other
+ * constant) and pointer which covers a lot of use cases.  Additionally it
+ * might be attached a callback that will be invoked upon passing of this
+ * argument to a concrete fiber during the call.
  * @see fbr_call
  * @see fbr_multicall
  */
@@ -154,8 +151,8 @@ struct fbr_fiber_arg {
 
 /**
  * Information about a call made to a fiber.
- * Whenever some fiber calls another fiber, such a structure is
- * allocated and appended to callee call queue.
+ * Whenever some fiber calls another fiber, such a structure is allocated and
+ * appended to callee call queue.
  * @see fbr_next_call_info
  * @see fbr_call
  */
@@ -168,9 +165,9 @@ struct fbr_call_info {
 
 /**
  * Destructor function type for the memory allocated in a fiber.
- * One can attache a destructor to a piece of memory allocated in a
- * fiber. It will be called whenever memory is freed with original
- * pointer allocated along with a user context pointer passed to it.
+ * One can attache a destructor to a piece of memory allocated in a fiber. It
+ * will be called whenever memory is freed with original pointer allocated
+ * along with a user context pointer passed to it.
  * @see fbr_alloc
  * @see fbr_free
  */
@@ -181,7 +178,8 @@ typedef void (*fbr_alloc_destructor_func)(void *ptr, void *context);
  * @param fctx [in] pointer to the user allocated fbr_context.
  * @param loop [in] pointer to the user supplied libev loop.
  *
- * It's user's responsibility to allocate fbr_context structure and create and run the libev event loop.
+ * It's user's responsibility to allocate fbr_context structure and create and
+ * run the libev event loop.
  * @see fbr_context
  * @see fbr_destroy
  */
@@ -189,8 +187,8 @@ void fbr_init(FBR_P_ struct ev_loop *loop);
 
 /**
  * Destroys the library context.
- * All created fibers are reclaimed and all of the memory is freed.
- * Stopping the event loop is user's responsibility.
+ * All created fibers are reclaimed and all of the memory is freed.  Stopping
+ * the event loop is user's responsibility.
  * @see fbr_context
  * @see fbr_init
  * @see fbr_reclaim
@@ -205,19 +203,18 @@ void fbr_destroy(FBR_P);
  * @param [in] stack_size stack size (0 for default).
  * @return Pointer to the created fiber.
  * 
- * The created fiber is not running in any shape or form, it's just
- * creted and is ready to be launched.
+ * The created fiber is not running in any shape or form, it's just creted and
+ * is ready to be launched.
  *
- * The returned pointer may actually be the fiber that was recently
- * reclaimed, not the newly created one.
+ * The returned pointer may actually be the fiber that was recently reclaimed,
+ * not the newly created one.
  *
- * Stack is anonymously mmaped so it should not occupy all the
- * required space straight away. Adjust stack size only when you know
- * what you are doing!
+ * Stack is anonymously mmaped so it should not occupy all the required space
+ * straight away. Adjust stack size only when you know what you are doing!
  *
- * Allocated stacks are registered as stacks via valgrind client
- * client request mechanism, so it's generally valgrind friendly and
- * should not cause any noise.
+ * Allocated stacks are registered as stacks via valgrind client client request
+ * mechanism, so it's generally valgrind friendly and should not cause any
+ * noise.
  *
  * Fibers are organized in a tree. Child nodes are attached to a parent
  * whenever the parent is creating them. This tree is used primarily for
@@ -231,16 +228,15 @@ struct fbr_fiber * fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
  * Reclaims a fiber.
  * @param [in] fiber fiber pointer
  * 
- * Fibers are never destroyed, but reclaimed. Reclamaition frees some
- * resources like call lists and memory pools immediately while
- * keeping fiber structure itself and its stack as is. Reclaimed
- * fiber is prepended to the reclaimed fiber list and will be served
- * as a new one whenever next fbr_create is called. Fiber is
- * prepended because it is warm in terms of cpu cache and its use
- * might be faster than any other fiber in the list.
+ * Fibers are never destroyed, but reclaimed. Reclamaition frees some resources
+ * like call lists and memory pools immediately while keeping fiber structure
+ * itself and its stack as is. Reclaimed fiber is prepended to the reclaimed
+ * fiber list and will be served as a new one whenever next fbr_create is
+ * called. Fiber is prepended because it is warm in terms of cpu cache and its
+ * use might be faster than any other fiber in the list.
  *
- * When you have some reclaimed fibers in the list, reclaming and
- * creating are generally cheap operations.
+ * When you have some reclaimed fibers in the list, reclaming and creating are
+ * generally cheap operations.
  */
 void fbr_reclaim(FBR_P_ struct fbr_fiber *fiber);
 
@@ -284,9 +280,8 @@ struct fbr_fiber_arg fbr_arg_v_cb(void *v, fbr_arg_callback_t cb);
  * Subscribes to a multicall group.
  * @param [in] mid multicall group id
  *
- * Multicall group is an arbitrary number which is chosen by the
- * user. This function joins current fiber to the specified multicall
- * group.
+ * Multicall group is an arbitrary number which is chosen by the user. This
+ * function joins current fiber to the specified multicall group.
  * @see fbr_multicall
  */
 void fbr_subscribe(FBR_P_ int mid);
@@ -304,11 +299,11 @@ void fbr_unsubscribe(FBR_P_ int mid);
  * Drops membership in all multicall group.
  * @param [in] mid multicall group id
  *
- * This drops membership of current fiber in all of the multicall
- * groups it was subscribed to.
+ * This drops membership of current fiber in all of the multicall groups it was
+ * subscribed to.
  *
- * You don't need to explicitly call it before reclaiming of a fiber
- * since fbr_reclaim does that for you.
+ * You don't need to explicitly call it before reclaiming of a fiber since
+ * fbr_reclaim does that for you.
  * @see fbr_multicall
  */
 void fbr_unsubscribe_all(FBR_P);
@@ -319,8 +314,8 @@ void fbr_unsubscribe_all(FBR_P);
  * @param [in] argnum number of arguments to pass
  * @param [in] ap variadic argument list
  *
- * Behind the scenes this is a wrapper for fbr_vcall_context with
- * NULL user context passed.
+ * Behind the scenes this is a wrapper for fbr_vcall_context with NULL user
+ * context passed.
  * @see fbr_vcall_context
  */
 void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int argnum, va_list ap);
@@ -336,8 +331,8 @@ void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int argnum, va_list ap);
  * @return function returns immediately if callee is busy or
  * eventually whenever callee yields
  *
- * This function adds fbr_call_info if desired to the callee call
- * list and transfers the control to callee execution context.
+ * This function adds fbr_call_info if desired to the callee call list and
+ * transfers the control to callee execution context.
  *
  * Variadic arguments are supposed to be of type fbr_fiber_arg.
  *
@@ -355,8 +350,8 @@ void fbr_vcall_context(FBR_P_ struct fbr_fiber *callee, void *context,
  * @param [in] callee fiber pointer to call
  * @param [in] argnum number of arguments to pass
  *
- * Behind the scenes this is a wrapper for fbr_call_vcontext with
- * NULL user context passed and leave_info of 1.
+ * Behind the scenes this is a wrapper for fbr_call_vcontext with NULL user
+ * context passed and leave_info of 1.
  * @see fbr_vcall_context
  */
 void fbr_call(FBR_P_ struct fbr_fiber *fiber, int argnum, ...);
@@ -367,8 +362,8 @@ void fbr_call(FBR_P_ struct fbr_fiber *fiber, int argnum, ...);
  * @param [in] context user context pointer
  * @param [in] argnum number of arguments to pass
  *
- * Behind the scenes this is a wrapper for fbr_call_vcontext with
- * leave_info of 1 passed.
+ * Behind the scenes this is a wrapper for fbr_call_vcontext with leave_info of
+ * 1 passed.
  * @see fbr_vcall_context
  */
 void fbr_call_context(FBR_P_ struct fbr_fiber *fiber, void *context,
@@ -379,8 +374,8 @@ void fbr_call_context(FBR_P_ struct fbr_fiber *fiber, void *context,
  * @param [in] callee fiber pointer to call
  * @param [in] argnum number of arguments to pass
  *
- * Behind the scenes this is a wrapper for fbr_call_vcontext with
- * NULL user context passed and leave_info of 0.
+ * Behind the scenes this is a wrapper for fbr_call_vcontext with NULL user
+ * context passed and leave_info of 0.
  * @see fbr_vcall_context
  */
 void fbr_call_noinfo(FBR_P_ struct fbr_fiber *callee, int argnum, ...);
@@ -390,11 +385,10 @@ void fbr_call_noinfo(FBR_P_ struct fbr_fiber *callee, int argnum, ...);
  * @param [in] mid multicall group id to call
  * @param [in] argnum number of arguments to pass
  *
- * This is a loop wrapper around fbr_call_vcontext with
- * NULL user context passed and leave_info of 1.
+ * This is a loop wrapper around fbr_call_vcontext with NULL user context
+ * passed and leave_info of 1.
  *
- * It loops through all fibers subscribed to specified multicast
- * group id.
+ * It loops through all fibers subscribed to specified multicast group id.
  * @see fbr_vcall_context
  */
 void fbr_multicall(FBR_P_ int mid, int argnum, ...);
@@ -405,11 +399,9 @@ void fbr_multicall(FBR_P_ int mid, int argnum, ...);
  * @param [in] context user context pointer
  * @param [in] argnum number of arguments to pass
  *
- * This is a loop wrapper around fbr_call_vcontext with leave_info of
- * 1 passed.
+ * This is a loop wrapper around fbr_call_vcontext with leave_info of 1 passed.
  *
- * It loops through all fibers subscribed to specified multicast
- * group id.
+ * It loops through all fibers subscribed to specified multicast group id.
  * @see fbr_vcall_context
  */
 void fbr_multicall_context(FBR_P_ int mid, void *context, int leave_info,
@@ -421,13 +413,12 @@ void fbr_multicall_context(FBR_P_ int mid, void *context, int leave_info,
  * @param [in] context user context pointer
  * @param [in] argnum number of arguments to pass
  *
- * When a fiber is waiting for some incoming event --- it should
- * yield. This will pop current fiber from the fiber stack and
- * transfer the execution context to the next fiber from the stack
- * making that fiber a new current one.
+ * When a fiber is waiting for some incoming event --- it should yield. This
+ * will pop current fiber from the fiber stack and transfer the execution
+ * context to the next fiber from the stack making that fiber a new current
+ * one.
  *
- * It loops through all fibers subscribed to specified multicast
- * group id.
+ * It loops through all fibers subscribed to specified multicast group id.
  * @see fbr_call
  */
 void fbr_yield(FBR_P);
@@ -437,7 +428,8 @@ void fbr_yield(FBR_P);
  * @param [in] size size of the requested memory block
  * @return allocated memory chunk
  *
- * When a fiber is reclaimed, this memory will be freed. Prior to that a destructor will be called if any specified.
+ * When a fiber is reclaimed, this memory will be freed. Prior to that a
+ * destructor will be called if any specified.
  * @see fbr_calloc
  * @see fbr_alloc_set_destructor
  * @see fbr_alloc_destructor_func
@@ -451,12 +443,13 @@ void * fbr_alloc(FBR_P_ size_t size);
  * @param [in] func destructor function
  * @param [in] context user supplied context pointer
  *
- * Setting new destructor simply changes it without calling old one or queueing them.
+ * Setting new destructor simply changes it without calling old one or queueing
+ * them.
  *
- * You can allocate 0 sized memory chunk and never free it just for
- * the purpose of calling destructor with some context when fiber is
- * reclaimed. This way you can for example close some file descritors
- * or do some other required cleanup.
+ * You can allocate 0 sized memory chunk and never free it just for the purpose
+ * of calling destructor with some context when fiber is reclaimed. This way
+ * you can for example close some file descritors or do some other required
+ * cleanup.
  * @see fbr_alloc
  * @see fbr_free
  */
@@ -491,22 +484,19 @@ void fbr_free(FBR_P_ void *ptr);
  * @param [in,out] info_ptr pointer to info pointer
  * @return 1 if more are pending, 0 otherwise
  *
- * Should be used in a loop until returns 0. Afterwards a fiber
- * probably needs to yield and to expect more call infos available
- * after fbr_yield returns.
+ * Should be used in a loop until returns 0. Afterwards a fiber probably needs
+ * to yield and to expect more call infos available after fbr_yield returns.
  *
- * Function writes new info pointer into specified location. If that
- * location contains an address of previous info --- it will be
- * freed and that's probably the behavoir you want. Just ensure that
- * you set your pointer to NULL before passing it to this function
- * first time.
+ * Function writes new info pointer into specified location. If that location
+ * contains an address of previous info --- it will be freed and that's
+ * probably the behavoir you want. Just ensure that you set your pointer to
+ * NULL before passing it to this function first time.
  *
- * Also bear in mind that first invocation of a fiber that might be
- * considered the starting (or intializing) one is still queued into
- * a call list and you need to fetch if you want to fetch anything
- * else. If you are not interested in call info --- just pass NULL as
- * location (i.e. info_ptr). Next call info will just be freed in
- * this case.
+ * Also bear in mind that the first invocation of a fiber that might be
+ * considered the starting (or intializing) one is still queued into a call
+ * list and you need to fetch if you want to fetch anything else. If you are
+ * not interested in call info --- just pass NULL as location (i.e. info_ptr).
+ * Next call info will just be freed in this case.
  * @see fbr_call
  * @see fbr_call_info
  */
