@@ -501,22 +501,248 @@ void fbr_free(FBR_P_ void *ptr);
  * @see fbr_call_info
  */
 int fbr_next_call_info(FBR_P_ struct fbr_call_info **info_ptr);
+
+/**
+ * Fiber friendly libc read wrapper.
+ * @param [in] fd file descriptor to read from
+ * @param [in] buf pointer to some user-allocated buffer
+ * @param [in] count maximum number of bytes to read
+ * @return number of bytes read on success, -1 in case of error and errno set
+ *
+ * Attempts to read up to count bytes from file descriptor fd into the buffer
+ * starting at buf. Calling fiber will be blocked until something arrives at
+ * fd.
+ *
+ * Possible errno values are described in read man page. The only special case
+ * is EINTR which is handled internally and is returned to the caller only in
+ * case when non-root fiber called the fiber waiting in fbr_read.
+ *
+ * @see fbr_read_all
+ * @see fbr_read_line
+ */
 ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count);
+
+/**
+ * Even more fiber friendly libc read wrapper.
+ * @param [in] fd file descriptor to read from
+ * @param [in] buf pointer to some user-allocated buffer
+ * @param [in] count desired number of bytes to read
+ * @return number of bytes read on success, -1 in case of error and errno set
+ *
+ * Attempts to read exactly count bytes from file descriptor fd into the buffer
+ * starting at buf. Calling fiber will be blocked until the required amount of
+ * data or EOF arrive at fd. If latter occurs too early returned number of
+ * bytes will be less that required.
+ *
+ * Possible errno values are described in read man page. Unlike fbr_read this
+ * function will never return -1 with EINTR and will silently ignore any
+ * attemps to call this fiber from other non-root fibers (call infos are still
+ * queued if the called desired to do so).
+ *
+ * @see fbr_read
+ * @see fbr_read_line
+ */
 ssize_t fbr_read_all(FBR_P_ int fd, void *buf, size_t count);
+
+/**
+ * Utility function to read a line.
+ * @param [in] fd file descriptor to read from
+ * @param [in] buffer pointer to some user-allocated buffer
+ * @param [in] n maximum number of bytes to read
+ * @return number of bytes read on success, -1 in case of error and errno set
+ *
+ * Attempts to read at most count bytes from file descriptor fd into the buffer
+ * starting at buf, but stops if newline is encountered. Calling fiber will be
+ * blocked until the required amount of data, EOF or newline arrive at fd.
+ *
+ * Possible errno values are described in read man page. As with fbr_read_all this
+ * function will never return -1 with EINTR.
+ *
+ * @see fbr_read
+ * @see fbr_read_all
+ */
 ssize_t fbr_readline(FBR_P_ int fd, void *buffer, size_t n);
+
+/**
+ * Fiber friendly libc write wrapper.
+ * @param [in] fd file descriptor to write to
+ * @param [in] buf pointer to some user-allocated buffer
+ * @param [in] count maximum number of bytes to write
+ * @return number of bytes written on success, -1 in case of error and errno set
+ *
+ * Attempts to write up to count bytes to file descriptor fd from the buffer
+ * starting at buf. Calling fiber will be blocked until the data is written.
+ *
+ * Possible errno values are described in write man page. The only special case
+ * is EINTR which is handled internally and is returned to the caller only in
+ * case when non-root fiber called the fiber sitting in fbr_write.
+ *
+ * @see fbr_write_all
+ */
 ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count);
+
+/**
+ * Even more fiber friendly libc write wrapper.
+ * @param [in] fd file descriptor to write to
+ * @param [in] buf pointer to some user-allocated buffer
+ * @param [in] count desired number of bytes to write
+ * @return number of bytes read on success, -1 in case of error and errno set
+ *
+ * Attempts to write exactly count bytes to file descriptor fd from the buffer
+ * starting at buf. Calling fiber will be blocked until the required amount of
+ * data is written to fd.
+ *
+ * Possible errno values are described in write man page. Unlike fbr_write this
+ * function will never return -1 with EINTR and will silently ignore any
+ * attemps to call this fiber from other non-root fibers (call infos are still
+ * queued if the called desired to do so).
+ *
+ * @see fbr_write
+ */
 ssize_t fbr_write_all(FBR_P_ int fd, const void *buf, size_t count);
+
+/**
+ * Fiber friendly libc recvfrom wrapper.
+ * @param [in] sockfd file descriptor to read from
+ * @param [in] buf pointer to some user-allocated buffer
+ * @param [in] len maximum number of bytes to read
+ * @param [in] flags just flags, see man recvfrom for details
+ * @param [in] src_addr source address
+ * @param [in] addrlen size of src_addr
+ * @return number of bytes read on success, -1 in case of error and errno set
+ *
+ * This function is used to receive messages from a socket.
+ *
+ * Possible errno values are described in recvfrom man page. The only special case
+ * is EINTR which is handled internally and is returned to the caller only in
+ * case when non-root fiber called the fiber sitting in fbr_recvfrom.
+ *
+ */
 ssize_t fbr_recvfrom(FBR_P_ int sockfd, void *buf, size_t len, int flags, struct
 		sockaddr *src_addr, socklen_t *addrlen);
+
+/**
+ * Fiber friendly libc sendto wrapper.
+ * @param [in] sockfd file descriptor to write to
+ * @param [in] buf pointer to some user-allocated buffer
+ * @param [in] len maximum number of bytes to write
+ * @param [in] flags just flags, see man sendto for details
+ * @param [in] dest_addr destination address
+ * @param [in] addrlen size of dest_addr
+ * @return number of bytes written on success, -1 in case of error and errno set
+ *
+ * This function is used to send messages to a socket.
+ *
+ * Possible errno values are described in sendto man page. The only special case
+ * is EINTR which is handled internally and is returned to the caller only in
+ * case when non-root fiber called the fiber sitting in fbr_sendto.
+ *
+ */
 ssize_t fbr_sendto(FBR_P_ int sockfd, const void *buf, size_t len, int flags, const
 		struct sockaddr *dest_addr, socklen_t addrlen);
+
+/**
+ * Fiber friendly libc accept wrapper.
+ * @param [in] sockfd file descriptor to accept on
+ * @param [in] addr client address
+ * @param [in] addrlen size of addr
+ * @return client socket fd on success, -1 in case of error and errno set
+ *
+ * This function is used to accept a conection on a listening socket.
+ *
+ * Possible errno values are described in accept man page. The only special case
+ * is EINTR which is handled internally and is returned to the caller only in
+ * case when non-root fiber called the fiber sitting in fbr_accept.
+ *
+ */
 int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+
+/**
+ * Puts current fiber to sleep.
+ * @param [in] seconds maximum number of secons to sleep
+ * @return number of seconds actually being asleep
+ *
+ * This function is used to put current fiber into sleep. It will wake up after
+ * the desired time has passed or earlier if some other fiber has called it.
+ */
 ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds);
+
+/**
+ * Prints fiber call stack to stderr.
+ *
+ * useful while debugging obscure fiber call problems.
+ */
 void fbr_dump_stack(FBR_P);
+
+/**
+ * Creates a mutex.
+ * @return newly allocated mutex
+ *
+ * Mutexes are helpful when your fiber has a critical code section including
+ * several fbr_* calls. In this case execution of multiple copies of your fiber
+ * may get mixed up.
+ * 
+ * @see fbr_mutex_lock
+ * @see fbr_mutex_trylock
+ * @see fbr_mutex_unlock
+ * @see fbr_mutex_destroy
+ */
 struct fbr_mutex * fbr_mutex_create(FBR_P);
+
+/**
+ * Locks a mutex.
+ * @param [in] mutex pointer to mutex created by fbr_mutex_create
+ *
+ * Attempts to lock a mutex. If mutex is already locked then the calling fiber
+ * is suspended until the mutex is eventually freed.
+ * 
+ * @see fbr_mutex_create
+ * @see fbr_mutex_trylock
+ * @see fbr_mutex_unlock
+ * @see fbr_mutex_destroy
+ */
 void fbr_mutex_lock(FBR_P_ struct fbr_mutex * mutex);
+
+/**
+ * Tries to locks a mutex.
+ * @param [in] mutex pointer to mutex created by fbr_mutex_create
+ * @return 1 if lock was successful, 0 otherwise
+ *
+ * Attempts to lock a mutex. Returns immediately despite of locking being
+ * successful or not.
+ * 
+ * @see fbr_mutex_create
+ * @see fbr_mutex_lock
+ * @see fbr_mutex_unlock
+ * @see fbr_mutex_destroy
+ */
 int fbr_mutex_trylock(FBR_P_ struct fbr_mutex * mutex);
+
+/**
+ * Unlocks a mutex.
+ * @param [in] mutex pointer to mutex created by fbr_mutex_create
+ *
+ * Unlocks the given mutex. An other fiber that is waiting for it (if any) will
+ * be called upon next libev loop iteration.
+ * 
+ * @see fbr_mutex_create
+ * @see fbr_mutex_lock
+ * @see fbr_mutex_trylock
+ * @see fbr_mutex_destroy
+ */
 void fbr_mutex_unlock(FBR_P_ struct fbr_mutex * mutex);
+
+/**
+ * Frees a mutex.
+ * @param [in] mutex pointer to mutex created by fbr_mutex_create
+ *
+ * Frees used resources. It does not unlock the mutex.
+ * 
+ * @see fbr_mutex_create
+ * @see fbr_mutex_lock
+ * @see fbr_mutex_unlock
+ * @see fbr_mutex_trylock
+ */
 void fbr_mutex_destroy(FBR_P_ struct fbr_mutex * mutex);
 
 #endif
