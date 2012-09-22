@@ -23,6 +23,8 @@
 #ifndef _FBR_TRACE_PRIVATE_H_
 #define _FBR_TRACE_PRIVATE_H_
 
+#include <evfibers/fiber.h>
+
 #define TRACE_SIZE 16
 
 struct trace_info {
@@ -30,7 +32,7 @@ struct trace_info {
        size_t size;
 };
 
-void fill_trace_info(struct trace_info *info);
-void print_trace_info(struct trace_info *info);
+void fill_trace_info(FBR_P_ struct trace_info *info);
+void print_trace_info(FBR_P_ struct trace_info *info);
 
 #endif

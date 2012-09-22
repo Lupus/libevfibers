@@ -53,7 +53,7 @@
  * Fiber version of classic assert.
  */
 #ifdef  NDEBUG
-#define fbr_assert(expr)           ((void)(0))
+#define fbr_assert(context, expr)           ((void)(0))
 #else
 #define fbr_assert(context, expr)                                                                 \
 	do {                                                                                      \
@@ -175,8 +175,8 @@ typedef void (*fbr_alloc_destructor_func)(void *ptr, void *context);
 
 /**
  * Initializes the library context.
- * @param fctx [in] pointer to the user allocated fbr_context.
- * @param loop [in] pointer to the user supplied libev loop.
+ * @param [in] fctx pointer to the user allocated fbr_context.
+ * @param [in] loop pointer to the user supplied libev loop.
  *
  * It's user's responsibility to allocate fbr_context structure and create and
  * run the libev event loop.
@@ -194,6 +194,18 @@ void fbr_init(FBR_P_ struct ev_loop *loop);
  * @see fbr_reclaim
  */
 void fbr_destroy(FBR_P);
+
+/**
+ * Enables/Disables backtrace capturing.
+ * @param [in] enabled are backtraces enabled?
+ *
+ * The library tries to capture backtraces at certain points which may help
+ * when debugging obscure problems. For example it captures the backtrace
+ * whenever a fiber is reclaimed and when one tries to call it dumps out the
+ * backtrace showing where was it reclaimed. But these cost quite a bit of cpu
+ * and are disabled by default.
+ */
+void fbr_enable_backtraces(FBR_P, int enabled);
 
 /**
  * Creates a new fiber.

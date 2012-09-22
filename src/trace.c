@@ -24,16 +24,24 @@
 #include <stdio.h>
 #include <execinfo.h>
 #include <evfibers_private/trace.h>
+#include <evfibers_private/fiber.h>
 
-void fill_trace_info(struct trace_info *info)
+void fill_trace_info(FBR_P_ struct trace_info *info)
 {
+	if(0 == fctx->__p->backtraces_enabled)
+		return;
 	info->size = backtrace(info->array, TRACE_SIZE);
 }
 
-void print_trace_info(struct trace_info *info)
+void print_trace_info(FBR_P_ struct trace_info *info)
 {
 	size_t i;
-	char **strings = backtrace_symbols(info->array, info->size);
+	char **strings;
+	if(0 == fctx->__p->backtraces_enabled) {
+		fprintf(stderr, "(No backtrace since they are disabled)\n");
+		return;
+	}
+	strings = backtrace_symbols(info->array, info->size);
 	for (i = 0; i < info->size; i++)
 		fprintf(stderr, "%s\n", strings[i]);
 	free(strings);

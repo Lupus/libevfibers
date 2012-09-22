@@ -63,9 +63,10 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	coro_create(&fctx->__p->root.ctx, NULL, NULL, NULL, 0);
 	fctx->__p->sp = fctx->__p->stack;
 	fctx->__p->sp->fiber = &fctx->__p->root;
-	fill_trace_info(&fctx->__p->sp->tinfo);
+	fill_trace_info(FBR_A_ &fctx->__p->sp->tinfo);
 	fctx->__p->loop = loop;
 	fctx->__p->mutex_async.data = fctx;
+	fctx->__p->backtraces_enabled = 0;
 	ev_async_init(&fctx->__p->mutex_async, mutex_async_cb);
 	ev_async_start(loop, &fctx->__p->mutex_async);
 }
@@ -99,6 +100,15 @@ void fbr_destroy(FBR_P)
 	free(fctx->__p);
 }
 
+void fbr_enable_backtraces(FBR_P, int enabled)
+{
+	if(enabled)
+		fctx->__p->backtraces_enabled = 1;
+	else
+		fctx->__p->backtraces_enabled = 0;
+
+}
+
 static void ev_wakeup_io(EV_P_ ev_io *w, int event)
 {
 	struct fbr_context *fctx;
@@ -114,7 +124,7 @@ static void ev_wakeup_io(EV_P_ ev_io *w, int event)
 		fprintf(stderr, "libevfibers: last registered io request for "
 				"this fiber was:\n");
 		fprintf(stderr, "--- begin trace ---\n");
-		print_trace_info(&fiber->w_io_tinfo);
+		print_trace_info(FBR_A_ &fiber->w_io_tinfo);
 		fprintf(stderr, "--- end trace ---\n");
 		abort();
 	}
@@ -137,7 +147,7 @@ static void ev_wakeup_timer(EV_P_ ev_timer *w, int event)
 		fprintf(stderr, "libevfibers: last registered timer request for "
 				"this fiber was:\n");
 		fprintf(stderr, "--- begin trace ---\n");
-		print_trace_info(&fiber->w_timer_tinfo);
+		print_trace_info(FBR_A_ &fiber->w_timer_tinfo);
 		fprintf(stderr, "--- end trace ---\n");
 		abort();
 	}
@@ -195,7 +205,7 @@ void fbr_reclaim(FBR_P_ struct fbr_fiber *fiber)
 {
 	if(fiber->reclaimed)
 		return;
-	fill_trace_info(&fiber->reclaim_tinfo);
+	fill_trace_info(FBR_A_ &fiber->reclaim_tinfo);
 	reclaim_children(FBR_A_ fiber);
 	fiber_cleanup(FBR_A_ fiber);
 	fiber->reclaimed = 1;
@@ -325,14 +335,14 @@ void fbr_vcall_context(FBR_P_ struct fbr_fiber *callee, void *context,
 	if(1 == callee->reclaimed) {
 		fprintf(stderr, "libevfibers: fiber 0x%lu is about to be called "
 				"but it was reclaimed here:\n", (long unsigned)callee);
-		print_trace_info(&callee->reclaim_tinfo);
+		print_trace_info(FBR_A_ &callee->reclaim_tinfo);
 		abort();
 	}
 
 	fctx->__p->sp++;
 
 	fctx->__p->sp->fiber = callee;
-	fill_trace_info(&fctx->__p->sp->tinfo);
+	fill_trace_info(FBR_A_ &fctx->__p->sp->tinfo);
 
 	if(0 == leave_info) {
 		coro_transfer(&caller->ctx, &callee->ctx);
@@ -445,7 +455,7 @@ static void io_start(FBR_P_ struct fbr_fiber *fiber, int fd, int events)
 	ev_io_start(fctx->__p->loop, &fiber->w_io);
 	assert(0 == fiber->w_io_expected);
 	fiber->w_io_expected = 1;
-	fill_trace_info(&fiber->w_io_tinfo);
+	fill_trace_info(FBR_A_ &fiber->w_io_tinfo);
 }
 
 static void io_stop(FBR_P_ struct fbr_fiber *fiber)
@@ -677,7 +687,7 @@ static void timer_start(FBR_P_ struct fbr_fiber *fiber, ev_tstamp timeout,
 	ev_timer_set(&fiber->w_timer, timeout, repeat);
 	ev_timer_start(fctx->__p->loop, &fiber->w_timer);
 	fiber->w_timer_expected = 1;
-	fill_trace_info(&fiber->w_timer_tinfo);
+	fill_trace_info(FBR_A_ &fiber->w_timer_tinfo);
 }
 
 static void timer_stop(FBR_P_ struct fbr_fiber *fiber)
@@ -782,7 +792,7 @@ void fbr_dump_stack(FBR_P)
 		fprintf(stderr, "fiber_call: 0x%lx\t%s\n",
 				(long unsigned int)ptr->fiber,
 				ptr->fiber->name);
-		print_trace_info(&ptr->tinfo);
+		print_trace_info(FBR_A_ &ptr->tinfo);
 		fprintf(stderr, "%s\n", "-------------------------------");
 		ptr--;
 	}

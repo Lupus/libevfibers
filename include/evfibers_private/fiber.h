@@ -101,6 +101,7 @@ struct fbr_context_private {
 	struct fbr_multicall *multicalls;
 	struct ev_async mutex_async;
 	struct fbr_mutex *mutex_list;
+	int backtraces_enabled;
 
 	struct ev_loop *loop;
 };
