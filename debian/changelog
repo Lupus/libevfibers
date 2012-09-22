@@ -1,3 +1,9 @@
+libevfibers (0.1.1-1) unstable; urgency=low
+
+  * Backtrace capturing is now optional.
+
+ -- Konstantin Olkhovskiy <lupus@lupus-desktop>  Sat, 22 Sep 2012 18:30:40 +0400
+
 libevfibers (0.1.0-1) unstable; urgency=low
 
   * Initial Release.
