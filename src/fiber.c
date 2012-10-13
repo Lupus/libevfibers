@@ -46,8 +46,11 @@ static void mutex_async_cb(EV_P_ ev_async *w, int revents)
 		pending = mutex->pending;
 		assert(NULL != pending);
 		DL_DELETE(mutex->pending, pending);
-		if(NULL == mutex->pending)
+		if(NULL == mutex->pending) {
 			DL_DELETE(fctx->__p->mutex_list, mutex);
+			if(NULL == fctx->__p->mutex_list)
+				ev_async_stop(EV_A_ &fctx->__p->mutex_async);
+		}
 		fbr_call_noinfo(FBR_A_ pending->fiber, 0);
 	}
 }
@@ -68,7 +71,6 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	fctx->__p->mutex_async.data = fctx;
 	fctx->__p->backtraces_enabled = 0;
 	ev_async_init(&fctx->__p->mutex_async, mutex_async_cb);
-	ev_async_start(loop, &fctx->__p->mutex_async);
 }
 
 static void reclaim_children(FBR_P_ struct fbr_fiber *fiber)
@@ -811,6 +813,8 @@ struct fbr_mutex * fbr_mutex_create(FBR_P)
 	mutex = malloc(sizeof(struct fbr_mutex));
 	mutex->locked = 0;
 	mutex->pending = NULL;
+	mutex->next = NULL;
+	mutex->prev = NULL;
 	return mutex;
 }
 
@@ -844,6 +848,8 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex * mutex)
 		mutex->locked = 0;
 		return;
 	}
+	if(NULL == fctx->__p->mutex_list) //i.e. it's empty
+		ev_async_start(fctx->__p->loop, &fctx->__p->mutex_async);
 	DL_APPEND(fctx->__p->mutex_list, mutex);
 	ev_async_send(fctx->__p->loop, &fctx->__p->mutex_async);
 }
