@@ -26,15 +26,6 @@
 
 #include "mutex.h"
 
-START_TEST(test_init)
-{
-	struct fbr_context context = {NULL};
-	fbr_init(&context, EV_DEFAULT);
-	fail_if(NULL == context.__p, NULL);
-	fbr_destroy(&context);
-}
-END_TEST
-
 static void mutex_fiber1(FBR_P)
 {
 	struct fbr_mutex *mutex;
