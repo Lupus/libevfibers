@@ -28,10 +28,12 @@
 
 Suite * evfibers_suite (void)
 {
-	Suite *s = suite_create ("evfibers");
+	Suite *s;
+	TCase *tc_init, *tc_mutex;
 
-	TCase *tc_init = init_tcase();
-	TCase *tc_mutex = mutex_tcase();
+	s = suite_create ("evfibers");
+	tc_init = init_tcase();
+	tc_mutex = mutex_tcase();
 	suite_add_tcase(s, tc_init);
 	suite_add_tcase(s, tc_mutex);
 
@@ -41,8 +43,13 @@ Suite * evfibers_suite (void)
 int main(void)
 {
 	int number_failed;
-	Suite *s = evfibers_suite();
-	SRunner *sr = srunner_create(s);
+	Suite *s;
+	SRunner *sr;
+
+	srand(42);
+
+	s = evfibers_suite();
+	sr = srunner_create(s);
 	srunner_run_all(sr, CK_NORMAL);
 	number_failed = srunner_ntests_failed(sr);
 	srunner_free(sr);

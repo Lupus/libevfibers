@@ -84,12 +84,12 @@ START_TEST(test_mutex)
 	struct fbr_mutex *mutex = NULL;
 	int flag = 0;
 	int *flag_ptr = &flag;
-	
+
 	fbr_init(&context, EV_DEFAULT);
-	
+
 	mutex = fbr_mutex_create(&context);
 	fail_if(NULL == mutex, NULL);
-	
+
 	fibers[0] = fbr_create(&context, "mutex1", mutex_fiber1, 0);
 	fail_if(NULL == fibers[0], NULL);
 	fibers[1] = fbr_create(&context, "mutex2", mutex_fiber2, 0);
@@ -100,36 +100,44 @@ START_TEST(test_mutex)
 	fail_if(NULL == fibers[3], NULL);
 
 	fbr_call(&context, fibers[0], 1, fbr_arg_v(mutex));
-	fail_unless(mutex->locked, NULL);
-	
+	fail_unless(mutex->locked_by == fibers[0], NULL);
+
 	fbr_call(&context, fibers[1], 1, fbr_arg_v(mutex));
-	fail_unless(mutex->locked, NULL);
-	
+	fail_unless(mutex->locked_by == fibers[0], NULL);
+
 	fbr_call(&context, fibers[2], 2, fbr_arg_v(mutex), fbr_arg_v(flag_ptr));
-	fail_unless(mutex->locked, NULL);
+	fail_unless(mutex->locked_by == fibers[0], NULL);
 	fail_unless(mutex->pending->fiber == fibers[2], NULL);
 	fail_unless(mutex->pending->next == NULL, NULL);
 	fail_unless(mutex->next == NULL, NULL);
 	fail_unless(mutex->prev == NULL, NULL);
-	
+
 	fbr_call(&context, fibers[3], 1, fbr_arg_v(mutex));
-	fail_unless(mutex->locked, NULL);
+	fail_unless(mutex->locked_by == fibers[0], NULL);
 	fail_unless(mutex->pending->fiber == fibers[2], NULL);
 	fail_unless(mutex->pending->next->fiber == fibers[3], NULL);
 	fail_unless(mutex->pending->next->next == NULL, NULL);
 	fail_unless(mutex->next == NULL, NULL);
 	fail_unless(mutex->prev == NULL, NULL);
-	
+
 	fbr_call(&context, fibers[0], 0);
-	fail_unless(mutex->locked, NULL);
-	fail_unless(mutex->pending->fiber == fibers[2], NULL);
-	fail_unless(mutex->pending->next->fiber == fibers[3], NULL);
-	fail_unless(mutex->pending->next->next == NULL, NULL);
+	fail_unless(mutex->locked_by == fibers[2], NULL);
+	fail_unless(mutex->pending->fiber == fibers[3], NULL);
+	fail_unless(mutex->pending->next == NULL, NULL);
 	fail_unless(mutex->next == NULL, NULL);
 	fail_if(mutex->prev == NULL, NULL);
 
 	context.__p->mutex_async.cb(EV_DEFAULT, &context.__p->mutex_async, 0);
-	fail_unless(mutex->locked, NULL);
+	context.__p->mutex_async.cb(EV_DEFAULT, &context.__p->mutex_async, 0);
+	fail_unless(mutex->locked_by == fibers[2], NULL);
+	fail_unless(mutex->pending->fiber == fibers[3], NULL);
+	fail_unless(mutex->pending->next == NULL, NULL);
+	fail_unless(mutex->next == NULL, NULL);
+	fail_if(mutex->prev == NULL, NULL);
+	fail_if(0 == flag, NULL);
+
+	context.__p->mutex_async.cb(EV_DEFAULT, &context.__p->mutex_async, 0);
+	fail_unless(mutex->locked_by == fibers[2], NULL);
 	fail_unless(mutex->pending->fiber == fibers[3], NULL);
 	fail_unless(mutex->pending->next == NULL, NULL);
 	fail_unless(mutex->next == NULL, NULL);
@@ -201,10 +209,10 @@ START_TEST(test_mutex_evloop)
 	struct fbr_mutex *mutex = NULL;
 	int flag = 0;
 	int *flag_ptr = &flag;
-	
+
 	mutex = fbr_mutex_create(&context);
 	fail_if(NULL == mutex, NULL);
-	
+
 	fbr_init(&context, EV_DEFAULT);
 	for(i = 0; i < fiber_count; i++) {
 		fibers[i] = fbr_create(&context, "fiber_i", mutex_fiber5, 0);
@@ -215,7 +223,7 @@ START_TEST(test_mutex_evloop)
 	extra = fbr_create(&context, "fiber_extra", mutex_fiber6, 0);
 	fail_if(NULL == extra, NULL);
 	fbr_call(&context, extra, 2, fbr_arg_v(fibers), fbr_arg_i(fiber_count));
-	
+
 	ev_run(EV_DEFAULT, 0);
 
 	fbr_mutex_destroy(&context, mutex);

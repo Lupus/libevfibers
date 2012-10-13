@@ -37,21 +37,16 @@ static void mutex_async_cb(EV_P_ ev_async *w, int revents)
 {
 	struct fbr_context *fctx;
 	struct fbr_mutex *mutex, *tmp;
-	struct fbr_mutex_pending *pending;
 	fctx = (struct fbr_context *)w->data;
 
 	ENSURE_ROOT_FIBER;
 
 	DL_FOREACH_SAFE(fctx->__p->mutex_list, mutex, tmp) {
-		pending = mutex->pending;
-		assert(NULL != pending);
-		DL_DELETE(mutex->pending, pending);
-		if(NULL == mutex->pending) {
-			DL_DELETE(fctx->__p->mutex_list, mutex);
-			if(NULL == fctx->__p->mutex_list)
-				ev_async_stop(EV_A_ &fctx->__p->mutex_async);
-		}
-		fbr_call_noinfo(FBR_A_ pending->fiber, 0);
+		DL_DELETE(fctx->__p->mutex_list, mutex);
+		if(NULL == fctx->__p->mutex_list)
+			ev_async_stop(EV_A_ &fctx->__p->mutex_async);
+
+		fbr_call_noinfo(FBR_A_ mutex->locked_by, 0);
 	}
 }
 
@@ -811,7 +806,7 @@ struct fbr_mutex * fbr_mutex_create(FBR_P)
 {
 	struct fbr_mutex *mutex;
 	mutex = malloc(sizeof(struct fbr_mutex));
-	mutex->locked = 0;
+	mutex->locked_by = NULL;
 	mutex->pending = NULL;
 	mutex->next = NULL;
 	mutex->prev = NULL;
@@ -821,8 +816,8 @@ struct fbr_mutex * fbr_mutex_create(FBR_P)
 void fbr_mutex_lock(FBR_P_ struct fbr_mutex * mutex)
 {
 	struct fbr_mutex_pending *pending;
-	if(0 == mutex->locked) {
-		mutex->locked = 1;
+	if(NULL == mutex->locked_by) {
+		mutex->locked_by = CURRENT_FIBER;
 		return;
 	}
 	pending = fbr_alloc(FBR_A_ sizeof(struct fbr_mutex_pending));
@@ -830,13 +825,14 @@ void fbr_mutex_lock(FBR_P_ struct fbr_mutex * mutex)
 	pending->fiber = CURRENT_FIBER;
 	DL_APPEND(mutex->pending, pending);
 	fbr_yield(FBR_A);
-	while(!CALLED_BY_ROOT) fbr_yield(FBR_A);
+	while(mutex->locked_by != CURRENT_FIBER)
+		fbr_yield(FBR_A);
 }
 
 int fbr_mutex_trylock(FBR_P_ struct fbr_mutex * mutex)
 {
-	if(0 == mutex->locked) {
-		mutex->locked = 1;
+	if(NULL == mutex->locked_by) {
+		mutex->locked_by = CURRENT_FIBER;
 		return 1;
 	}
 	return 0;
@@ -844,10 +840,17 @@ int fbr_mutex_trylock(FBR_P_ struct fbr_mutex * mutex)
 
 void fbr_mutex_unlock(FBR_P_ struct fbr_mutex * mutex)
 {
-	if(NULL == mutex->pending) {
-		mutex->locked = 0;
+	struct fbr_mutex_pending *pending;
+
+	pending = mutex->pending;
+	if(NULL == pending) {
+		mutex->locked_by = NULL;
 		return;
 	}
+
+	DL_DELETE(mutex->pending, pending);
+	mutex->locked_by = pending->fiber;
+
 	if(NULL == fctx->__p->mutex_list) //i.e. it's empty
 		ev_async_start(fctx->__p->loop, &fctx->__p->mutex_async);
 	DL_APPEND(fctx->__p->mutex_list, mutex);

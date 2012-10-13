@@ -83,7 +83,7 @@ struct fbr_mutex_pending {
 };
 
 struct fbr_mutex {
-	int locked;
+	struct fbr_fiber *locked_by;
 	struct fbr_mutex_pending *pending;
 	struct fbr_mutex *next, *prev;
 };
