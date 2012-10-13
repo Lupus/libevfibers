@@ -27,6 +27,8 @@ target_link_libraries(evfibers ev)
 add_library(evfibers_static STATIC ${SOURCES})
 set_target_properties(evfibers_static  PROPERTIES OUTPUT_NAME evfibers)
 
+subdirs(test)
+
 install(TARGETS evfibers
 	RUNTIME DESTINATION bin
 	LIBRARY DESTINATION lib
