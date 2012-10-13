@@ -167,12 +167,37 @@ static void mutex_fiber5(FBR_P)
 	fbr_mutex_unlock(FBR_A_ mutex);
 }
 
+static void mutex_fiber6(FBR_P)
+{
+	struct fbr_fiber **fibers;
+	int count;
+	struct fbr_call_info *info = NULL;
+	int i;
+	const ev_tstamp sleep_interval = 0.01;
+	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
+	fail_unless(2 == info->argc, NULL);
+	fibers = info->argv[0].v;
+	count = info->argv[1].i;
+	for(;;) {
+		for(i = 0; i < count; i++) {
+			if(fbr_is_reclaimed(FBR_A_ fibers[i]))
+				goto finish;
+			else
+				fbr_call_noinfo(FBR_A_ fibers[i], 0);
+		}
+		fbr_sleep(FBR_A_ sleep_interval);
+	}
+finish:
+	return;
+}
+
 START_TEST(test_mutex_evloop)
 {
 #define fiber_count 10
 	int i;
 	struct fbr_context context;
 	struct fbr_fiber *fibers[fiber_count] = {NULL};
+	struct fbr_fiber *extra = NULL;
 	struct fbr_mutex *mutex = NULL;
 	int flag = 0;
 	int *flag_ptr = &flag;
@@ -186,6 +211,10 @@ START_TEST(test_mutex_evloop)
 		fail_if(NULL == fibers[i], NULL);
 		fbr_call(&context, fibers[i], 2, fbr_arg_v(mutex), fbr_arg_v(flag_ptr));
 	}
+
+	extra = fbr_create(&context, "fiber_extra", mutex_fiber6, 0);
+	fail_if(NULL == extra, NULL);
+	fbr_call(&context, extra, 2, fbr_arg_v(fibers), fbr_arg_i(fiber_count));
 	
 	ev_run(EV_DEFAULT, 0);
 
