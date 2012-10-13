@@ -1,3 +1,10 @@
+libevfibers (0.1.2) unstable; urgency=low
+
+  * Fixed mutexes
+  * Some unit tests
+
+ -- Konstantin Olkhovskiy <lupus@lupus-desktop>  Sat, 13 Oct 2012 23:12:01 +0400
+
 libevfibers (0.1.1-1) unstable; urgency=low
 
   * Backtrace capturing is now optional.
