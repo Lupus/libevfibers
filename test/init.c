@@ -35,9 +35,20 @@ START_TEST(test_init)
 }
 END_TEST
 
+START_TEST(test_init_evloop)
+{
+	struct fbr_context context = {NULL};
+	fbr_init(&context, EV_DEFAULT);
+	ev_run(EV_DEFAULT, 0);
+	//Should return if we do not set up any unnecessary watchers
+	fbr_destroy(&context);
+}
+END_TEST
+
 TCase * init_tcase(void)
 {
 	TCase *tc_init = tcase_create ("Init");
 	tcase_add_test(tc_init, test_init);
+	tcase_add_test(tc_init, test_init_evloop);
 	return tc_init;
 }
