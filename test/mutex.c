@@ -136,6 +136,7 @@ START_TEST(test_mutex)
 	fail_if(mutex->prev == NULL, NULL);
 	fail_if(0 == flag, NULL);
 
+	fbr_mutex_destroy(&context, mutex);
 	fbr_destroy(&context);
 }
 END_TEST
@@ -188,6 +189,7 @@ START_TEST(test_mutex_evloop)
 	
 	ev_run(EV_DEFAULT, 0);
 
+	fbr_mutex_destroy(&context, mutex);
 	fbr_destroy(&context);
 #undef fiber_count
 }
