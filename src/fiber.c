@@ -304,7 +304,7 @@ static void * allocate_in_fiber(FBR_P_ size_t size, struct fbr_fiber *in)
 	struct fbr_mem_pool *pool_entry;
 	pool_entry = malloc(size + sizeof(struct fbr_mem_pool));
 	if(NULL == pool_entry) {
-		fprintf(stderr, "libevfibers: unable to allocate %lu bytes\n",
+		fprintf(stderr, "libevfibers: unable to allocate %zu bytes\n",
 				size + sizeof(struct fbr_mem_pool));
 		abort();
 	}
@@ -358,7 +358,7 @@ void fbr_vcall_context(FBR_P_ struct fbr_fiber *callee, void *context,
 	DL_APPEND(callee->call_list, info);
 	callee->call_list_size++;
 	if(callee->call_list_size >= FBR_CALL_LIST_WARN) {
-		fprintf(stderr, "libevfibers: call list for ``%s'' contains %lu"
+		fprintf(stderr, "libevfibers: call list for ``%s'' contains %zu"
 				" elements, which looks suspicious. Is anyone"
 				" fetching the calls?\n", callee->name,
 				callee->call_list_size);
