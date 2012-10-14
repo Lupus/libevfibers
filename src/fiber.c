@@ -175,8 +175,8 @@ static void fbr_free_in_fiber(_unused_ FBR_P_ struct fbr_fiber *fiber, void *ptr
 		return;
 	pool_entry = (struct fbr_mem_pool *)ptr - 1;
 	if(pool_entry->ptr != pool_entry) {
-		fprintf(stderr, "libevfibers: address 0x%lx does not look like "
-				"fiber memory pool entry\n", (unsigned long)ptr);
+		fprintf(stderr, "libevfibers: address %p does not look like "
+				"fiber memory pool entry\n", ptr);
 		if(!RUNNING_ON_VALGRIND)
 			abort();
 	}
@@ -330,8 +330,8 @@ void fbr_vcall_context(FBR_P_ struct fbr_fiber *callee, void *context,
 	}
 
 	if(1 == callee->reclaimed) {
-		fprintf(stderr, "libevfibers: fiber 0x%lu is about to be called "
-				"but it was reclaimed here:\n", (long unsigned)callee);
+		fprintf(stderr, "libevfibers: fiber %p is about to be called "
+				"but it was reclaimed here:\n", callee);
 		print_trace_info(FBR_A_ &callee->reclaim_tinfo);
 		abort();
 	}
@@ -786,8 +786,8 @@ void fbr_dump_stack(FBR_P)
 		fprintf(stderr, "%s\n%s\n", "Fiber call stack:",
 				"-------------------------------");
 	while(ptr >= fctx->__p->stack) {
-		fprintf(stderr, "fiber_call: 0x%lx\t%s\n",
-				(long unsigned int)ptr->fiber,
+		fprintf(stderr, "fiber_call: %p\t%s\n",
+				ptr->fiber,
 				ptr->fiber->name);
 		print_trace_info(FBR_A_ &ptr->tinfo);
 		fprintf(stderr, "%s\n", "-------------------------------");
