@@ -16,7 +16,7 @@ include_directories(
 	"${CMAKE_CURRENT_SOURCE_DIR}/coro"
 	)
 
-set(CMAKE_C_FLAGS "-Wall -Werror -fno-strict-aliasing ${CMAKE_C_FLAGS}")
+set(CMAKE_C_FLAGS "-W -Wall -Werror -fno-strict-aliasing ${CMAKE_C_FLAGS}")
 set(SOURCES ${EVFIBERS_SOURCES} ${CORO_SOURCES})
 
 add_library(evfibers SHARED ${SOURCES})

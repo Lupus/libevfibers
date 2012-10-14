@@ -33,7 +33,7 @@
 #define CURRENT_FIBER fctx->__p->sp->fiber
 #define CALLED_BY_ROOT ((fctx->__p->sp - 1)->fiber == &fctx->__p->root)
 
-static void mutex_async_cb(EV_P_ ev_async *w, int revents)
+static void mutex_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 {
 	struct fbr_context *fctx;
 	struct fbr_mutex *mutex, *tmp;
@@ -106,7 +106,7 @@ void fbr_enable_backtraces(FBR_P, int enabled)
 
 }
 
-static void ev_wakeup_io(EV_P_ ev_io *w, int event)
+static void ev_wakeup_io(_unused_ EV_P_ ev_io *w, _unused_ int event)
 {
 	struct fbr_context *fctx;
 	struct fbr_fiber *fiber;
@@ -129,7 +129,7 @@ static void ev_wakeup_io(EV_P_ ev_io *w, int event)
 	fbr_call_noinfo(FBR_A_ fiber, 0);
 }
 
-static void ev_wakeup_timer(EV_P_ ev_timer *w, int event)
+static void ev_wakeup_timer(_unused_ EV_P_ ev_timer *w, _unused_ int event)
 {
 	struct fbr_context *fctx;
 	struct fbr_fiber *fiber;
@@ -168,7 +168,7 @@ static void unsubscribe_all(FBR_P_ struct fbr_fiber *fiber)
 	}
 }
 
-static void fbr_free_in_fiber(FBR_P_ struct fbr_fiber *fiber, void *ptr)
+static void fbr_free_in_fiber(_unused_ FBR_P_ struct fbr_fiber *fiber, void *ptr)
 {
 	struct fbr_mem_pool *pool_entry = NULL;
 	if(NULL == ptr)
@@ -209,7 +209,7 @@ void fbr_reclaim(FBR_P_ struct fbr_fiber *fiber)
 	LL_PREPEND(fctx->__p->reclaimed, fiber);
 }
 
-int fbr_is_reclaimed(FBR_P_ struct fbr_fiber *fiber)
+int fbr_is_reclaimed(_unused_ FBR_P_ struct fbr_fiber *fiber)
 {
 	return fiber->reclaimed;
 }
@@ -223,7 +223,7 @@ static void fiber_prepare(FBR_P_ struct fbr_fiber *fiber)
 	fiber->reclaimed = 0;
 }
 
-static void call_wrapper(FBR_P_ void (*func) (FBR_P))
+static void call_wrapper(FBR_P_ _unused_ void (*func) (FBR_P))
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	fiber_prepare(FBR_A_ fiber);
@@ -299,7 +299,7 @@ void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int argnum, va_list ap)
 	fbr_vcall_context(FBR_A_ callee, NULL, 1, argnum, ap);
 }
 
-static void * allocate_in_fiber(FBR_P_ size_t size, struct fbr_fiber *in)
+static void * allocate_in_fiber(_unused_ FBR_P_ size_t size, struct fbr_fiber *in)
 {
 	struct fbr_mem_pool *pool_entry;
 	pool_entry = malloc(size + sizeof(struct fbr_mem_pool));
@@ -487,7 +487,7 @@ ssize_t fbr_read_all(FBR_P_ int fd, void *buf, size_t count)
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	ssize_t r;
-	ssize_t done = 0;
+	size_t done = 0;
 
 	io_start(FBR_A_ fiber, fd, EV_READ);
 	while (count != done) {
@@ -514,7 +514,7 @@ next:
 		done += r;
 	}
 	io_stop(FBR_A_ fiber);
-	return done;
+	return (ssize_t)done;
 
 error:
 	io_stop(FBR_A_ fiber);
@@ -591,7 +591,7 @@ ssize_t fbr_write_all(FBR_P_ int fd, const void *buf, size_t count)
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	ssize_t r;
-	ssize_t done = 0;
+	size_t done = 0;
 
 	io_start(FBR_A_ fiber, fd, EV_WRITE);
 	while (count != done) {
@@ -616,7 +616,7 @@ next:
 		done += r;
 	}
 	io_stop(FBR_A_ fiber);
-	return done;
+	return (ssize_t)done;
 
 error:
 	io_stop(FBR_A_ fiber);
@@ -766,7 +766,7 @@ void * fbr_alloc(FBR_P_ size_t size)
 	return allocate_in_fiber(FBR_A_ size, CURRENT_FIBER);
 }
 
-void fbr_alloc_set_destructor(FBR_P_ void *ptr, fbr_alloc_destructor_func
+void fbr_alloc_set_destructor(_unused_ FBR_P_ void *ptr, fbr_alloc_destructor_func
 		func, void *context)
 {
 	struct fbr_mem_pool *pool_entry;
@@ -802,7 +802,7 @@ static void mutex_pending_destructor(void *ptr, void *context)
 	DL_DELETE(mutex->pending, pending);
 }
 
-struct fbr_mutex * fbr_mutex_create(FBR_P)
+struct fbr_mutex * fbr_mutex_create(_unused_ FBR_P)
 {
 	struct fbr_mutex *mutex;
 	mutex = malloc(sizeof(struct fbr_mutex));
@@ -857,7 +857,7 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex * mutex)
 	ev_async_send(fctx->__p->loop, &fctx->__p->mutex_async);
 }
 
-void fbr_mutex_destroy(FBR_P_ struct fbr_mutex * mutex)
+void fbr_mutex_destroy(_unused_ FBR_P_ struct fbr_mutex * mutex)
 {
 	free(mutex);
 }

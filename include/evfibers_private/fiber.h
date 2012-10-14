@@ -41,6 +41,8 @@
  const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
  (type *)( (char *)__mptr - offsetof(type,member) );})
 
+#define _unused_ __attribute__((unused))
+
 struct fbr_multicall {
 	struct fbr_fiber *fibers;
 	int mid;
