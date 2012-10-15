@@ -6,10 +6,15 @@ set(VERSION_MINOR 1)
 set(VERSION_PATCH 0)
 set(VERSION_STRING "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 
+include(CheckIncludeFiles)
+
 aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/src" EVFIBERS_SOURCES)
 aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/coro" CORO_SOURCES)
 
-add_definitions("-DHAVE_UCONTEXT_H")
+check_include_files(ucontext.h HAVE_UCONTEXT_H)
+if(HAVE_UCONTEXT_H)
+	add_definitions("-DHAVE_UCONTEXT_H")
+endif(HAVE_UCONTEXT_H)
 
 include_directories(
 	"${CMAKE_CURRENT_SOURCE_DIR}/include"
