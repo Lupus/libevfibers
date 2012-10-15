@@ -80,7 +80,7 @@ void fbr_destroy(FBR_P)
 {
 	struct fbr_fiber *fiber, *tmp;
 	struct fbr_multicall *call, *tmp2;
-	
+
 	ev_async_stop(fctx->__p->loop, &fctx->__p->mutex_async);
 
 	reclaim_children(FBR_A_ &fctx->__p->root);
@@ -229,7 +229,7 @@ static void call_wrapper(FBR_P_ _unused_ void (*func) (FBR_P))
 	fiber_prepare(FBR_A_ fiber);
 
 	fiber->func(FBR_A);
-	
+
 	fbr_reclaim(FBR_A_ fiber);
 	fbr_yield(FBR_A);
 }
@@ -321,7 +321,7 @@ void fbr_vcall_context(FBR_P_ struct fbr_fiber *callee, void *context,
 	struct fbr_fiber *caller = fctx->__p->sp->fiber;
 	int i;
 	struct fbr_call_info *info;
-	
+
 	if(argnum >= FBR_MAX_ARG_NUM) {
 		fprintf(stderr, "libevfibers: attempt to pass %d argumens while "
 				"FBR_MAX_ARG_NUM is %d, aborting\n", argnum,
@@ -523,47 +523,47 @@ error:
 
 ssize_t fbr_readline(FBR_P_ int fd, void *buffer, size_t n)
 {
-    ssize_t num_read;                    /* # of bytes fetched by last read() */
-    size_t total_read;                     /* Total bytes read so far */
-    char *buf;
-    char ch;
+	ssize_t num_read;                    /* # of bytes fetched by last read() */
+	size_t total_read;                     /* Total bytes read so far */
+	char *buf;
+	char ch;
 
-    if (n <= 0 || buffer == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
+	if (n <= 0 || buffer == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
 
-    buf = buffer;                       /* No pointer arithmetic on "void *" */
+	buf = buffer;                       /* No pointer arithmetic on "void *" */
 
-    total_read = 0;
-    for (;;) {
-        num_read = fbr_read(FBR_A_ fd, &ch, 1);
+	total_read = 0;
+	for (;;) {
+		num_read = fbr_read(FBR_A_ fd, &ch, 1);
 
-        if (num_read == -1) {
-            if (errno == EINTR)         /* Interrupted --> restart read() */
-                continue;
-            else
-                return -1;              /* Some other error */
+		if (num_read == -1) {
+			if (errno == EINTR)         /* Interrupted --> restart read() */
+				continue;
+			else
+				return -1;              /* Some other error */
 
-        } else if (num_read == 0) {      /* EOF */
-            if (total_read == 0)           /* No bytes read; return 0 */
-                return 0;
-            else                        /* Some bytes read; add '\0' */
-                break;
+		} else if (num_read == 0) {      /* EOF */
+			if (total_read == 0)           /* No bytes read; return 0 */
+				return 0;
+			else                        /* Some bytes read; add '\0' */
+				break;
 
-        } else {                        /* 'numRead' must be 1 if we get here */
-            if (total_read < n - 1) {      /* Discard > (n - 1) bytes */
-                total_read++;
-                *buf++ = ch;
-            }
+		} else {                        /* 'numRead' must be 1 if we get here */
+			if (total_read < n - 1) {      /* Discard > (n - 1) bytes */
+				total_read++;
+				*buf++ = ch;
+			}
 
-            if (ch == '\n')
-                break;
-        }
-    }
+			if (ch == '\n')
+				break;
+		}
+	}
 
-    *buf = '\0';
-    return total_read;
+	*buf = '\0';
+	return total_read;
 }
 
 ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count)
@@ -672,7 +672,7 @@ int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 	do {
 		r = accept(sockfd, addr, addrlen);
 	} while(-1 == r && EINTR == errno);
-	
+
 	io_stop(FBR_A_ fiber);
 
 	return r;
@@ -783,8 +783,8 @@ void fbr_free(FBR_P_ void *ptr)
 void fbr_dump_stack(FBR_P)
 {
 	struct fbr_stack_item *ptr = fctx->__p->sp;
-		fprintf(stderr, "%s\n%s\n", "Fiber call stack:",
-				"-------------------------------");
+	fprintf(stderr, "%s\n%s\n", "Fiber call stack:",
+			"-------------------------------");
 	while(ptr >= fctx->__p->stack) {
 		fprintf(stderr, "fiber_call: %p\t%s\n",
 				ptr->fiber,
