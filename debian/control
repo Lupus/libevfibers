@@ -1,7 +1,8 @@
 Source: libevfibers
 Priority: extra
 Maintainer: Konstantin Olkhovskiy <lupus@oxnull.net>
-Build-Depends: debhelper (>= 8.0.0), cmake, libev-dev
+Build-Depends: debhelper (>= 8.0.0), cmake, libev-dev, uthash-dev, valgrind,
+ check
 Standards-Version: 3.9.2
 Section: libs
 Homepage: http://code.google.com/p/libevfibers
