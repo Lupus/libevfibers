@@ -36,14 +36,13 @@
 static void mutex_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 {
 	struct fbr_context *fctx;
-	struct fbr_mutex *mutex, *tmp;
+	struct fbr_mutex *mutex;
 	fctx = (struct fbr_context *)w->data;
 
 	ENSURE_ROOT_FIBER;
-
-	DL_FOREACH_SAFE(fctx->__p->mutex_list, mutex, tmp) {
-		DL_DELETE(fctx->__p->mutex_list, mutex);
-		if(NULL == fctx->__p->mutex_list)
+	TAILQ_FOREACH(mutex, &fctx->__p->mutexes, entries) {
+		TAILQ_REMOVE(&fctx->__p->mutexes, mutex, entries);
+		if(TAILQ_EMPTY(&fctx->__p->mutexes))
 			ev_async_stop(EV_A_ &fctx->__p->mutex_async);
 
 		fbr_call_noinfo(FBR_A_ mutex->locked_by, 0);
@@ -53,10 +52,10 @@ static void mutex_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 void fbr_init(FBR_P_ struct ev_loop *loop)
 {
 	fctx->__p = malloc(sizeof(struct fbr_context_private));
-	fctx->__p->reclaimed = NULL;
-	fctx->__p->multicalls = NULL;
+	LIST_INIT(&fctx->__p->reclaimed);
+	LIST_INIT(&fctx->__p->root.children);
+	TAILQ_INIT(&fctx->__p->mutexes);
 	fctx->__p->root.name = "root";
-	fctx->__p->root.children = NULL;
 	fctx->__p->root.pool = NULL;
 	coro_create(&fctx->__p->root.ctx, NULL, NULL, NULL, 0);
 	fctx->__p->sp = fctx->__p->stack;
@@ -71,29 +70,27 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 static void reclaim_children(FBR_P_ struct fbr_fiber *fiber)
 {
 	struct fbr_fiber *child;
-	DL_FOREACH(fiber->children, child) {
+	LIST_FOREACH(child, &fiber->children, entries_children) {
 		fbr_reclaim(FBR_A_ child);
 	}
 }
 
 void fbr_destroy(FBR_P)
 {
-	struct fbr_fiber *fiber, *tmp;
-	struct fbr_multicall *call, *tmp2;
+	struct fbr_fiber *fiber, *tmp = NULL;
 
 	ev_async_stop(fctx->__p->loop, &fctx->__p->mutex_async);
 
 	reclaim_children(FBR_A_ &fctx->__p->root);
 
-	DL_FOREACH_SAFE(fctx->__p->reclaimed, fiber, tmp) {
+	LIST_FOREACH(fiber, &fctx->__p->reclaimed, entries_reclaimed) {
 		if(0 != munmap(fiber->stack, fiber->stack_size))
 			err(EXIT_FAILURE, "munmap");
-		free(fiber);
+		if(tmp) free(tmp);
+		tmp = fiber;
 	}
-	HASH_ITER(hh, fctx->__p->multicalls, call, tmp2) {
-		HASH_DEL(fctx->__p->multicalls, call);
-		free(call);
-	}
+	if(tmp) free(tmp);
+
 	free(fctx->__p);
 }
 
@@ -152,22 +149,6 @@ static void ev_wakeup_timer(_unused_ EV_P_ ev_timer *w, _unused_ int event)
 	fbr_call_noinfo(FBR_A_ fiber, 0);
 }
 
-static inline int ptrcmp(void *p1, void *p2)
-{
-	return !(p1 == p2);
-}
-
-static void unsubscribe_all(FBR_P_ struct fbr_fiber *fiber)
-{
-	struct fbr_multicall *call;
-	struct fbr_fiber *tmp;
-	for(call=fctx->__p->multicalls; call != NULL; call=call->hh.next) {
-		DL_SEARCH(call->fibers, tmp, fiber, ptrcmp);
-		if(tmp == fiber)
-			DL_DELETE(call->fibers, fiber);
-	}
-}
-
 static void fbr_free_in_fiber(_unused_ FBR_P_ struct fbr_fiber *fiber, void *ptr)
 {
 	struct fbr_mem_pool *pool_entry = NULL;
@@ -190,7 +171,6 @@ static void fiber_cleanup(FBR_P_ struct fbr_fiber *fiber)
 {
 	struct fbr_mem_pool *p_elt, *p_tmp;
 	//coro_destroy(&fiber->ctx);
-	unsubscribe_all(FBR_A_ fiber);
 	ev_io_stop(fctx->__p->loop, &fiber->w_io);
 	ev_timer_stop(fctx->__p->loop, &fiber->w_timer);
 	DL_FOREACH_SAFE(fiber->pool, p_elt, p_tmp) {
@@ -206,7 +186,7 @@ void fbr_reclaim(FBR_P_ struct fbr_fiber *fiber)
 	reclaim_children(FBR_A_ fiber);
 	fiber_cleanup(FBR_A_ fiber);
 	fiber->reclaimed = 1;
-	LL_PREPEND(fctx->__p->reclaimed, fiber);
+	LIST_INSERT_HEAD(&fctx->__p->reclaimed, fiber, entries_reclaimed);
 }
 
 int fbr_is_reclaimed(_unused_ FBR_P_ struct fbr_fiber *fiber)
@@ -236,67 +216,16 @@ static void call_wrapper(FBR_P_ _unused_ void (*func) (FBR_P))
 
 struct fbr_fiber_arg fbr_arg_i(int i)
 {
-	return fbr_arg_i_cb(i, NULL);
+	struct fbr_fiber_arg arg;
+	arg.i = i;
+	return arg;
 }
 
 struct fbr_fiber_arg fbr_arg_v(void *v)
 {
-	return fbr_arg_v_cb(v, NULL);
-}
-
-struct fbr_fiber_arg fbr_arg_i_cb(int i, fbr_arg_callback_t cb)
-{
-	struct fbr_fiber_arg arg;
-	arg.i = i;
-	arg.cb = cb;
-	return arg;
-}
-
-struct fbr_fiber_arg fbr_arg_v_cb(void *v, fbr_arg_callback_t cb)
-{
 	struct fbr_fiber_arg arg;
 	arg.v = v;
-	arg.cb = cb;
 	return arg;
-}
-
-static struct fbr_multicall * get_multicall(FBR_P_ int mid)
-{
-	struct fbr_multicall *call;
-	HASH_FIND_INT(fctx->__p->multicalls, &mid, call);
-	if(NULL == call) {
-		call = malloc(sizeof(struct fbr_multicall));
-		call->fibers = NULL;
-		call->mid = mid;
-		HASH_ADD_INT(fctx->__p->multicalls, mid, call);
-	}
-	return call;
-}
-
-void fbr_subscribe(FBR_P_ int mid)
-{
-	struct fbr_multicall *call = get_multicall(FBR_A_ mid);
-	DL_APPEND(call->fibers, CURRENT_FIBER);
-}
-
-void fbr_unsubscribe(FBR_P_ int mid)
-{
-	struct fbr_multicall *call = get_multicall(FBR_A_ mid);
-	struct fbr_fiber *fiber = CURRENT_FIBER;
-	struct fbr_fiber *tmp;
-	DL_SEARCH(call->fibers, tmp, fiber, ptrcmp);
-	if(tmp == fiber)
-		DL_DELETE(call->fibers, fiber);
-}
-
-void fbr_unsubscribe_all(FBR_P)
-{
-	unsubscribe_all(FBR_A_ CURRENT_FIBER);
-}
-
-void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int argnum, va_list ap)
-{
-	fbr_vcall_context(FBR_A_ callee, NULL, 1, argnum, ap);
 }
 
 static void * allocate_in_fiber(_unused_ FBR_P_ size_t size, struct fbr_fiber *in)
@@ -315,8 +244,8 @@ static void * allocate_in_fiber(_unused_ FBR_P_ size_t size, struct fbr_fiber *i
 	return pool_entry + 1;
 }
 
-void fbr_vcall_context(FBR_P_ struct fbr_fiber *callee, void *context,
-		int leave_info, int argnum, va_list ap)
+void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
+		argnum, va_list ap)
 {
 	struct fbr_fiber *caller = fctx->__p->sp->fiber;
 	int i;
@@ -351,8 +280,6 @@ void fbr_vcall_context(FBR_P_ struct fbr_fiber *callee, void *context,
 	info->argc = argnum;
 	for(i = 0; i < argnum; i++) {
 		info->argv[i] = va_arg(ap, struct fbr_fiber_arg);
-		if(NULL != info->argv[i].cb)
-			info->argv[i].cb(context, info->argv + i);
 	}
 
 	DL_APPEND(callee->call_list, info);
@@ -372,7 +299,7 @@ void fbr_call_noinfo(FBR_P_ struct fbr_fiber *callee, int argnum, ...)
 {
 	va_list ap;
 	va_start(ap, argnum);
-	fbr_vcall_context(FBR_A_ callee, NULL, 0, argnum, ap);
+	fbr_vcall(FBR_A_ callee, 0, argnum, ap);
 	va_end(ap);
 }
 
@@ -380,42 +307,8 @@ void fbr_call(FBR_P_ struct fbr_fiber *callee, int argnum, ...)
 {
 	va_list ap;
 	va_start(ap, argnum);
-	fbr_vcall(FBR_A_ callee, argnum, ap);
+	fbr_vcall(FBR_A_ callee, 1, argnum, ap);
 	va_end(ap);
-}
-
-void fbr_call_context(FBR_P_ struct fbr_fiber *callee, void *context,
-		int leave_info, int argnum, ...)
-{
-	va_list ap;
-	va_start(ap, argnum);
-	fbr_vcall_context(FBR_A_ callee, context, leave_info, argnum, ap);
-	va_end(ap);
-}
-
-void fbr_multicall(FBR_P_ int mid, int argnum, ...)
-{
-	struct fbr_multicall *call = get_multicall(FBR_A_ mid);
-	struct fbr_fiber *fiber;
-	va_list ap;
-	DL_FOREACH(call->fibers,fiber) {
-		va_start(ap, argnum);
-		fbr_vcall(FBR_A_ fiber, argnum, ap);
-		va_end(ap);
-	}
-}
-
-void fbr_multicall_context(FBR_P_ int mid, void *context, int leave_info,
-		int argnum, ...)
-{
-	struct fbr_multicall *call = get_multicall(FBR_A_ mid);
-	struct fbr_fiber *fiber;
-	va_list ap;
-	DL_FOREACH(call->fibers,fiber) {
-		va_start(ap, argnum);
-		fbr_vcall_context(FBR_A_ fiber, context, leave_info, argnum, ap);
-		va_end(ap);
-	}
 }
 
 int fbr_next_call_info(FBR_P_ struct fbr_call_info **info_ptr)
@@ -721,9 +614,9 @@ struct fbr_fiber * fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 		size_t stack_size)
 {
 	struct fbr_fiber *fiber;
-	if(fctx->__p->reclaimed) {
-		fiber = fctx->__p->reclaimed;
-		LL_DELETE(fctx->__p->reclaimed, fctx->__p->reclaimed);
+	if(!LIST_EMPTY(&fctx->__p->reclaimed)) {
+		fiber = LIST_FIRST(&fctx->__p->reclaimed);
+		LIST_REMOVE(fiber, entries_reclaimed);
 	} else {
 		fiber = malloc(sizeof(struct fbr_fiber));
 		memset(fiber, 0x00, sizeof(struct fbr_fiber));
@@ -744,11 +637,11 @@ struct fbr_fiber * fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 	fiber->reclaimed = 0;
 	fiber->call_list = NULL;
 	fiber->call_list_size = 0;
-	fiber->children = NULL;
+	LIST_INIT(&fiber->children);
 	fiber->pool = NULL;
 	fiber->name = name;
 	fiber->func = func;
-	DL_APPEND(CURRENT_FIBER->children, fiber);
+	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries_children);
 	fiber->parent = CURRENT_FIBER;
 	return fiber;
 }
@@ -795,35 +688,22 @@ void fbr_dump_stack(FBR_P)
 	}
 }
 
-static void mutex_pending_destructor(void *ptr, void *context)
-{
-	struct fbr_mutex_pending *pending = ptr;
-	struct fbr_mutex *mutex = context;
-	DL_DELETE(mutex->pending, pending);
-}
-
 struct fbr_mutex * fbr_mutex_create(_unused_ FBR_P)
 {
 	struct fbr_mutex *mutex;
 	mutex = malloc(sizeof(struct fbr_mutex));
 	mutex->locked_by = NULL;
-	mutex->pending = NULL;
-	mutex->next = NULL;
-	mutex->prev = NULL;
+	TAILQ_INIT(&mutex->pending);
 	return mutex;
 }
 
 void fbr_mutex_lock(FBR_P_ struct fbr_mutex * mutex)
 {
-	struct fbr_mutex_pending *pending;
 	if(NULL == mutex->locked_by) {
 		mutex->locked_by = CURRENT_FIBER;
 		return;
 	}
-	pending = fbr_alloc(FBR_A_ sizeof(struct fbr_mutex_pending));
-	fbr_alloc_set_destructor(FBR_A_ pending, mutex_pending_destructor, mutex);
-	pending->fiber = CURRENT_FIBER;
-	DL_APPEND(mutex->pending, pending);
+	TAILQ_INSERT_TAIL(&mutex->pending, CURRENT_FIBER, entries_mutex);
 	fbr_yield(FBR_A);
 	while(mutex->locked_by != CURRENT_FIBER)
 		fbr_yield(FBR_A);
@@ -840,20 +720,22 @@ int fbr_mutex_trylock(FBR_P_ struct fbr_mutex * mutex)
 
 void fbr_mutex_unlock(FBR_P_ struct fbr_mutex * mutex)
 {
-	struct fbr_mutex_pending *pending;
+	struct fbr_fiber *fiber;
 
-	pending = mutex->pending;
-	if(NULL == pending) {
+	if(TAILQ_EMPTY(&mutex->pending)) {
 		mutex->locked_by = NULL;
 		return;
 	}
 
-	DL_DELETE(mutex->pending, pending);
-	mutex->locked_by = pending->fiber;
+	fiber = TAILQ_FIRST(&mutex->pending);
+	mutex->locked_by = fiber;
+	TAILQ_REMOVE(&mutex->pending, fiber, entries_mutex);
 
-	if(NULL == fctx->__p->mutex_list) //i.e. it's empty
+	if(TAILQ_EMPTY(&mutex->pending))
 		ev_async_start(fctx->__p->loop, &fctx->__p->mutex_async);
-	DL_APPEND(fctx->__p->mutex_list, mutex);
+
+	TAILQ_INSERT_TAIL(&fctx->__p->mutexes, mutex, entries);
+
 	ev_async_send(fctx->__p->loop, &fctx->__p->mutex_async);
 }
 

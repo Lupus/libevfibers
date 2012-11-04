@@ -114,24 +114,6 @@ struct fbr_context
  */
 typedef void (*fbr_fiber_func_t)(FBR_P);
 
-struct fbr_fiber_arg;
-
-/**
- * Callback function type, used for fiber call arguments processing.
- * Whenever you call some fiber with arguments, you need to ensure that those
- * arguments will survive if caller decides to free resources associated with
- * the arguments. This is especially useful when multicall is used since you
- * don't know how many fibers will be actually called.
- *
- * Actions in this callback depend solely on semantics of arguments passed,
- * i.e. one might want to do a newly allocated copy of some object for each
- * fiber called, or increase some reference counting.
- * @see fbr_fiber_arg
- * @see fbr_call
- * @see fbr_multicall
- */
-typedef void (*fbr_arg_callback_t)(void *context, struct fbr_fiber_arg *arg);
-
 /**
  * Actual argument of a fiber call.
  * It's implemented as a union between integer (i.e. enum or some other
@@ -139,14 +121,12 @@ typedef void (*fbr_arg_callback_t)(void *context, struct fbr_fiber_arg *arg);
  * might be attached a callback that will be invoked upon passing of this
  * argument to a concrete fiber during the call.
  * @see fbr_call
- * @see fbr_multicall
  */
 struct fbr_fiber_arg {
 	union {
-		int i; //!< some integer value, enum for example
+		long i; //!< some integer value, enum for example
 		void *v; //!< some pointer to an object
 	};
-	fbr_arg_callback_t cb; //!< optional callback
 };
 
 /**
@@ -274,68 +254,8 @@ struct fbr_fiber_arg fbr_arg_i(int i);
 struct fbr_fiber_arg fbr_arg_v(void *v);
 
 /**
- * Utility function for creating integer fbr_fiber_arg with callback.
- * @param [in] i integer argument
- * @return integer fbr_fiber_arg struct with callback
- */
-struct fbr_fiber_arg fbr_arg_i_cb(int i, fbr_arg_callback_t cb);
-
-/**
- * Utility function for creating void pointer fbr_fiber_arg with
- * callback.
- * @param [in] v void pointer argument
- * @return void pointer fbr_fiber_arg struct with callback
- */
-struct fbr_fiber_arg fbr_arg_v_cb(void *v, fbr_arg_callback_t cb);
-
-/**
- * Subscribes to a multicall group.
- * @param [in] mid multicall group id
- *
- * Multicall group is an arbitrary number which is chosen by the user. This
- * function joins current fiber to the specified multicall group.
- * @see fbr_multicall
- */
-void fbr_subscribe(FBR_P_ int mid);
-
-/**
- * Drops membership in a multicall group.
- * @param [in] mid multicall group id
- *
- * This drops membership of current fiber in the specified multicall group.
- * @see fbr_multicall
- */
-void fbr_unsubscribe(FBR_P_ int mid);
-
-/**
- * Drops membership in all multicall group.
- * @param [in] mid multicall group id
- *
- * This drops membership of current fiber in all of the multicall groups it was
- * subscribed to.
- *
- * You don't need to explicitly call it before reclaiming of a fiber since
- * fbr_reclaim does that for you.
- * @see fbr_multicall
- */
-void fbr_unsubscribe_all(FBR_P);
-
-/**
- * Calls the specified fiber.
- * @param [in] callee fiber pointer to call
- * @param [in] argnum number of arguments to pass
- * @param [in] ap variadic argument list
- *
- * Behind the scenes this is a wrapper for fbr_vcall_context with NULL user
- * context passed.
- * @see fbr_vcall_context
- */
-void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int argnum, va_list ap);
-
-/**
  * Actually calls the specified fiber.
  * @param [in] callee fiber pointer to call
- * @param [in] context user context pointer
  * @param [in] leave_info flag, indicating that fbr_call_info should
  * be queued
  * @param [in] argnum number of arguments to pass
@@ -348,82 +268,34 @@ void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int argnum, va_list ap);
  *
  * Variadic arguments are supposed to be of type fbr_fiber_arg.
  *
- * User supplied context pointer will be passed to any non-NULL
- * fbr_arg_callback_t callback.
- *
  * If callee is reclaimed --- runtime error is generated.
  * @see fbr_yield
  */
-void fbr_vcall_context(FBR_P_ struct fbr_fiber *callee, void *context,
-		int leave_info, int argnum, va_list ap);
+void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int argnum,
+		va_list ap);
 
 /**
  * Calls the specified fiber.
  * @param [in] callee fiber pointer to call
  * @param [in] argnum number of arguments to pass
  *
- * Behind the scenes this is a wrapper for fbr_call_vcontext with NULL user
- * context passed and leave_info of 1.
- * @see fbr_vcall_context
+ * Behind the scenes this is a wrapper for fbr_vcall with leave_info of 1.
+ * @see fbr_vcall
  */
 void fbr_call(FBR_P_ struct fbr_fiber *fiber, int argnum, ...);
 
 /**
  * Calls the specified fiber.
  * @param [in] callee fiber pointer to call
- * @param [in] context user context pointer
  * @param [in] argnum number of arguments to pass
  *
- * Behind the scenes this is a wrapper for fbr_call_vcontext with leave_info of
- * 1 passed.
- * @see fbr_vcall_context
- */
-void fbr_call_context(FBR_P_ struct fbr_fiber *fiber, void *context,
-		int leave_info, int argnum, ...);
-
-/**
- * Calls the specified fiber.
- * @param [in] callee fiber pointer to call
- * @param [in] argnum number of arguments to pass
- *
- * Behind the scenes this is a wrapper for fbr_call_vcontext with NULL user
- * context passed and leave_info of 0.
- * @see fbr_vcall_context
+ * Behind the scenes this is a wrapper for fbr_vcall with leave_info of 0.
+ * @see fbr_vcall
  */
 void fbr_call_noinfo(FBR_P_ struct fbr_fiber *callee, int argnum, ...);
 
 /**
- * Calls the specified fiber group.
- * @param [in] mid multicall group id to call
- * @param [in] argnum number of arguments to pass
- *
- * This is a loop wrapper around fbr_call_vcontext with NULL user context
- * passed and leave_info of 1.
- *
- * It loops through all fibers subscribed to specified multicast group id.
- * @see fbr_vcall_context
- */
-void fbr_multicall(FBR_P_ int mid, int argnum, ...);
-
-/**
- * Calls the specified fiber group.
- * @param [in] mid multicall group id to call
- * @param [in] context user context pointer
- * @param [in] argnum number of arguments to pass
- *
- * This is a loop wrapper around fbr_call_vcontext with leave_info of 1 passed.
- *
- * It loops through all fibers subscribed to specified multicast group id.
- * @see fbr_vcall_context
- */
-void fbr_multicall_context(FBR_P_ int mid, void *context, int leave_info,
-		int argnum, ...);
-
-/**
  * Yields execution to other fiber.
- * @param [in] mid multicall group id to call
- * @param [in] context user context pointer
- * @param [in] argnum number of arguments to pass
  *
  * When a fiber is waiting for some incoming event --- it should yield. This
  * will pop current fiber from the fiber stack and transfer the execution

@@ -107,41 +107,20 @@ START_TEST(test_mutex)
 
 	fbr_call(&context, fibers[2], 2, fbr_arg_v(mutex), fbr_arg_v(flag_ptr));
 	fail_unless(mutex->locked_by == fibers[0], NULL);
-	fail_unless(mutex->pending->fiber == fibers[2], NULL);
-	fail_unless(mutex->pending->next == NULL, NULL);
-	fail_unless(mutex->next == NULL, NULL);
-	fail_unless(mutex->prev == NULL, NULL);
 
 	fbr_call(&context, fibers[3], 1, fbr_arg_v(mutex));
 	fail_unless(mutex->locked_by == fibers[0], NULL);
-	fail_unless(mutex->pending->fiber == fibers[2], NULL);
-	fail_unless(mutex->pending->next->fiber == fibers[3], NULL);
-	fail_unless(mutex->pending->next->next == NULL, NULL);
-	fail_unless(mutex->next == NULL, NULL);
-	fail_unless(mutex->prev == NULL, NULL);
 
 	fbr_call(&context, fibers[0], 0);
 	fail_unless(mutex->locked_by == fibers[2], NULL);
-	fail_unless(mutex->pending->fiber == fibers[3], NULL);
-	fail_unless(mutex->pending->next == NULL, NULL);
-	fail_unless(mutex->next == NULL, NULL);
-	fail_if(mutex->prev == NULL, NULL);
 
 	context.__p->mutex_async.cb(EV_DEFAULT, &context.__p->mutex_async, 0);
 	context.__p->mutex_async.cb(EV_DEFAULT, &context.__p->mutex_async, 0);
 	fail_unless(mutex->locked_by == fibers[2], NULL);
-	fail_unless(mutex->pending->fiber == fibers[3], NULL);
-	fail_unless(mutex->pending->next == NULL, NULL);
-	fail_unless(mutex->next == NULL, NULL);
-	fail_if(mutex->prev == NULL, NULL);
 	fail_if(0 == flag, NULL);
 
 	context.__p->mutex_async.cb(EV_DEFAULT, &context.__p->mutex_async, 0);
 	fail_unless(mutex->locked_by == fibers[2], NULL);
-	fail_unless(mutex->pending->fiber == fibers[3], NULL);
-	fail_unless(mutex->pending->next == NULL, NULL);
-	fail_unless(mutex->next == NULL, NULL);
-	fail_if(mutex->prev == NULL, NULL);
 	fail_if(0 == flag, NULL);
 
 	fbr_mutex_destroy(&context, mutex);
