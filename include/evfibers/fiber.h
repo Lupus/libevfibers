@@ -40,7 +40,7 @@
 /**
  * Default stack size for a fiber of 64 KB.
  */
-#define FBR_STACK_SIZE 64 * 1024 // 64 KB
+#define FBR_STACK_SIZE (64 * 1024) // 64 KB
 /**
  * Maximum allowed arguments that might be attached to fiber
  * invocation via fbr_call.
@@ -51,18 +51,19 @@
  * @def fbr_assert
  * Fiber version of classic assert.
  */
-#ifdef  NDEBUG
+#ifdef NDEBUG
 #define fbr_assert(context, expr)           ((void)(0))
 #else
 #define fbr_assert(context, expr)                                                                 \
 	do {                                                                                      \
 		__typeof__(expr) ex = (expr);                                                     \
-		if(ex) (void)(0);                                                                 \
+		if (ex)                                                                           \
+			(void)(0);                                                                \
 		else {                                                                            \
 			fbr_dump_stack(context);                                                  \
-			__assert_fail (__STRING(expr), __FILE__, __LINE__, __ASSERT_FUNCTION);    \
+			__assert_fail(__STRING(expr), __FILE__, __LINE__, __ASSERT_FUNCTION);     \
 		}                                                                                 \
-	} while(0);
+	} while (0)
 #endif
 
 struct fbr_context_private;
@@ -82,8 +83,7 @@ enum fbr_error_code {
  * @see fbr_destroy
  * @see fbr_strerror
  */
-struct fbr_context
-{
+struct fbr_context {
 	struct fbr_context_private *__p; //!< pointer to internal context structure
 	enum fbr_error_code f_errno; //!< context wide error code
 };
@@ -114,7 +114,7 @@ struct fbr_context
  * Analog of strerror but for the library errno.
  * @see fbr_context
  */
-const char * fbr_strerror(enum fbr_error_code code);
+const char *fbr_strerror(enum fbr_error_code code);
 
 /**
  * Fiber's ``main'' function type.
@@ -207,7 +207,7 @@ void fbr_enable_backtraces(FBR_P, int enabled);
  * @param [in] func function used as a fiber's ``main''.
  * @param [in] stack_size stack size (0 for default).
  * @return Pointer to the created fiber.
- * 
+ *
  * The created fiber is not running in any shape or form, it's just creted and
  * is ready to be launched.
  *
@@ -226,13 +226,13 @@ void fbr_enable_backtraces(FBR_P, int enabled);
  * automatic reclaim of child fibers.
  * @see fbr_reclaim
  */
-struct fbr_fiber * fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
+struct fbr_fiber *fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 		size_t stack_size);
 
 /**
  * Reclaims a fiber.
  * @param [in] fiber fiber pointer
- * 
+ *
  * Fibers are never destroyed, but reclaimed. Reclamaition frees some resources
  * like call lists and memory pools immediately while keeping fiber structure
  * itself and its stack as is. Reclaimed fiber is prepended to the reclaimed
@@ -335,7 +335,7 @@ void fbr_yield(FBR_P);
  * @see fbr_alloc_destructor_func
  * @see fbr_free
  */
-void * fbr_alloc(FBR_P_ size_t size);
+void *fbr_alloc(FBR_P_ size_t size);
 
 /**
  * Sets destructor for a memory chunk.
@@ -366,7 +366,7 @@ void fbr_alloc_set_destructor(FBR_P_ void *ptr, fbr_alloc_destructor_func func,
  * @see fbr_alloc
  * @see fbr_free
  */
-void * fbr_calloc(FBR_P_ unsigned int nmemb, size_t size);
+void *fbr_calloc(FBR_P_ unsigned int nmemb, size_t size);
 
 /**
  * Explicitly frees allocated memory chunk.
@@ -518,8 +518,8 @@ ssize_t fbr_write_all(FBR_P_ int fd, const void *buf, size_t count);
  * case when non-root fiber called the fiber sitting in fbr_recvfrom.
  *
  */
-ssize_t fbr_recvfrom(FBR_P_ int sockfd, void *buf, size_t len, int flags, struct
-		sockaddr *src_addr, socklen_t *addrlen);
+ssize_t fbr_recvfrom(FBR_P_ int sockfd, void *buf, size_t len, int flags,
+		struct sockaddr *src_addr, socklen_t *addrlen);
 
 /**
  * Fiber friendly libc sendto wrapper.
@@ -581,13 +581,13 @@ void fbr_dump_stack(FBR_P);
  * Mutexes are helpful when your fiber has a critical code section including
  * several fbr_* calls. In this case execution of multiple copies of your fiber
  * may get mixed up.
- * 
+ *
  * @see fbr_mutex_lock
  * @see fbr_mutex_trylock
  * @see fbr_mutex_unlock
  * @see fbr_mutex_destroy
  */
-struct fbr_mutex * fbr_mutex_create(FBR_P);
+struct fbr_mutex *fbr_mutex_create(FBR_P);
 
 /**
  * Locks a mutex.
@@ -595,13 +595,13 @@ struct fbr_mutex * fbr_mutex_create(FBR_P);
  *
  * Attempts to lock a mutex. If mutex is already locked then the calling fiber
  * is suspended until the mutex is eventually freed.
- * 
+ *
  * @see fbr_mutex_create
  * @see fbr_mutex_trylock
  * @see fbr_mutex_unlock
  * @see fbr_mutex_destroy
  */
-void fbr_mutex_lock(FBR_P_ struct fbr_mutex * mutex);
+void fbr_mutex_lock(FBR_P_ struct fbr_mutex *mutex);
 
 /**
  * Tries to locks a mutex.
@@ -610,13 +610,13 @@ void fbr_mutex_lock(FBR_P_ struct fbr_mutex * mutex);
  *
  * Attempts to lock a mutex. Returns immediately despite of locking being
  * successful or not.
- * 
+ *
  * @see fbr_mutex_create
  * @see fbr_mutex_lock
  * @see fbr_mutex_unlock
  * @see fbr_mutex_destroy
  */
-int fbr_mutex_trylock(FBR_P_ struct fbr_mutex * mutex);
+int fbr_mutex_trylock(FBR_P_ struct fbr_mutex *mutex);
 
 /**
  * Unlocks a mutex.
@@ -624,25 +624,25 @@ int fbr_mutex_trylock(FBR_P_ struct fbr_mutex * mutex);
  *
  * Unlocks the given mutex. An other fiber that is waiting for it (if any) will
  * be called upon next libev loop iteration.
- * 
+ *
  * @see fbr_mutex_create
  * @see fbr_mutex_lock
  * @see fbr_mutex_trylock
  * @see fbr_mutex_destroy
  */
-void fbr_mutex_unlock(FBR_P_ struct fbr_mutex * mutex);
+void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex);
 
 /**
  * Frees a mutex.
  * @param [in] mutex pointer to mutex created by fbr_mutex_create
  *
  * Frees used resources. It does not unlock the mutex.
- * 
+ *
  * @see fbr_mutex_create
  * @see fbr_mutex_lock
  * @see fbr_mutex_unlock
  * @see fbr_mutex_trylock
  */
-void fbr_mutex_destroy(FBR_P_ struct fbr_mutex * mutex);
+void fbr_mutex_destroy(FBR_P_ struct fbr_mutex *mutex);
 
 #endif

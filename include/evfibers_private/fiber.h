@@ -32,14 +32,11 @@
 #define obstack_chunk_alloc malloc
 #define obstack_chunk_free free
 
-#define FBR_CALL_STACK_SIZE 16
-#define FBR_STACK_SIZE 64 * 1024 // 64 KB
-#define FBR_MAX_ARG_NUM 10
 #define FBR_CALL_LIST_WARN 1000
 
-#define container_of(ptr, type, member) ({            \
- const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
- (type *)( (char *)__mptr - offsetof(type,member) );})
+#define container_of(ptr, type, member) ({			\
+	const typeof( ((type *)0)->member ) *__mptr = (ptr);	\
+	(type *)( (char *)__mptr - offsetof(type, member) );})
 
 #define _unused_ __attribute__((unused))
 
@@ -47,7 +44,7 @@ struct fbr_mem_pool {
 	struct fbr_mem_pool *next, *prev;
 	void *ptr;
 	fbr_alloc_destructor_func destructor;
-	void * destructor_context;
+	void *destructor_context;
 };
 
 LIST_HEAD(fiber_list, fbr_fiber);
