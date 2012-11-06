@@ -70,7 +70,8 @@ struct fbr_fiber;
 struct fbr_mutex;
 
 enum fbr_error_code {
-	FBR_SUCCSESS = 0,
+	FBR_SUCCESS = 0,
+	FBR_EINVAL,
 	FBR_ENOFIBER,
 };
 
@@ -84,10 +85,7 @@ enum fbr_error_code {
 struct fbr_context
 {
 	struct fbr_context_private *__p; //!< pointer to internal context structure
-#pragma push_macro("errno")
-#undef errno
-	enum fbr_error_code errno; //!< context wide error code
-#pragma pop_macro("errno")
+	enum fbr_error_code f_errno; //!< context wide error code
 };
 
 /**
@@ -275,8 +273,8 @@ struct fbr_fiber_arg fbr_arg_v(void *v);
  * be queued
  * @param [in] argnum number of arguments to pass
  * @param [in] ap variadic argument list
- * @return function returns immediately if callee is busy or
- * eventually whenever callee yields
+ * @return 0 on success, -1 on failure. Function returns immediately if callee
+ * is busy or eventually whenever callee yields
  *
  * This function adds fbr_call_info if desired to the callee call list and
  * transfers the control to callee execution context.
@@ -285,29 +283,32 @@ struct fbr_fiber_arg fbr_arg_v(void *v);
  *
  * If callee is reclaimed --- runtime error is generated.
  * @see fbr_yield
+ * @see fbr_strerror
  */
-void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int argnum,
+int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int argnum,
 		va_list ap);
 
 /**
  * Calls the specified fiber.
  * @param [in] callee fiber pointer to call
  * @param [in] argnum number of arguments to pass
+ * @return 0 on success, -1 on failure
  *
  * Behind the scenes this is a wrapper for fbr_vcall with leave_info of 1.
  * @see fbr_vcall
  */
-void fbr_call(FBR_P_ struct fbr_fiber *fiber, int argnum, ...);
+int fbr_call(FBR_P_ struct fbr_fiber *fiber, int argnum, ...);
 
 /**
  * Calls the specified fiber.
  * @param [in] callee fiber pointer to call
  * @param [in] argnum number of arguments to pass
+ * @return 0 on success, -1 on failure
  *
  * Behind the scenes this is a wrapper for fbr_vcall with leave_info of 0.
  * @see fbr_vcall
  */
-void fbr_call_noinfo(FBR_P_ struct fbr_fiber *callee, int argnum, ...);
+int fbr_call_noinfo(FBR_P_ struct fbr_fiber *callee, int argnum, ...);
 
 /**
  * Yields execution to other fiber.

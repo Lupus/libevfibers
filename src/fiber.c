@@ -71,8 +71,10 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 const char * fbr_strerror(enum fbr_error_code code)
 {
 	switch(code) {
-		case FBR_SUCCSESS:
+		case FBR_SUCCESS:
 			return "Success";
+		case FBR_EINVAL:
+			return "Invalid argument";
 		case FBR_ENOFIBER:
 			return "No such fiber";
 	}
@@ -256,7 +258,7 @@ static void * allocate_in_fiber(_unused_ FBR_P_ size_t size, struct fbr_fiber *i
 	return pool_entry + 1;
 }
 
-void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
+int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
 		argnum, va_list ap)
 {
 	struct fbr_fiber *caller = fctx->__p->sp->fiber;
@@ -267,14 +269,16 @@ void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
 		fprintf(stderr, "libevfibers: attempt to pass %d argumens while "
 				"FBR_MAX_ARG_NUM is %d, aborting\n", argnum,
 				FBR_MAX_ARG_NUM);
-		abort();
+		fctx->f_errno = FBR_EINVAL;
+		return -1;
 	}
 
 	if(1 == callee->reclaimed) {
 		fprintf(stderr, "libevfibers: fiber %p is about to be called "
 				"but it was reclaimed here:\n", callee);
 		print_trace_info(FBR_A_ &callee->reclaim_tinfo);
-		abort();
+		fctx->f_errno = FBR_ENOFIBER;
+		return -1;
 	}
 
 	fctx->__p->sp++;
@@ -284,7 +288,8 @@ void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
 
 	if(0 == leave_info) {
 		coro_transfer(&caller->ctx, &callee->ctx);
-		return;
+		fctx->f_errno = FBR_SUCCESS;
+		return 0;
 	}
 
 	info = fbr_alloc(FBR_A_ sizeof(struct fbr_call_info));
@@ -305,22 +310,29 @@ void fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
 	}
 
 	coro_transfer(&caller->ctx, &callee->ctx);
+
+	fctx->f_errno = FBR_SUCCESS;
+	return 0;
 }
 
-void fbr_call_noinfo(FBR_P_ struct fbr_fiber *callee, int argnum, ...)
+int fbr_call_noinfo(FBR_P_ struct fbr_fiber *callee, int argnum, ...)
 {
+	int retval;
 	va_list ap;
 	va_start(ap, argnum);
-	fbr_vcall(FBR_A_ callee, 0, argnum, ap);
+	retval = fbr_vcall(FBR_A_ callee, 0, argnum, ap);
 	va_end(ap);
+	return retval;
 }
 
-void fbr_call(FBR_P_ struct fbr_fiber *callee, int argnum, ...)
+int fbr_call(FBR_P_ struct fbr_fiber *callee, int argnum, ...)
 {
+	int retval;
 	va_list ap;
 	va_start(ap, argnum);
-	fbr_vcall(FBR_A_ callee, 1, argnum, ap);
+	retval = fbr_vcall(FBR_A_ callee, 1, argnum, ap);
 	va_end(ap);
+	return retval;
 }
 
 int fbr_next_call_info(FBR_P_ struct fbr_call_info **info_ptr)
