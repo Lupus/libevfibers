@@ -32,7 +32,6 @@
 #include <sys/socket.h>
 #include <assert.h>
 #include <ev.h>
-#include <err.h>
 
 /**
  * Maximum allowed level of fbr_call nesting within fibers.
@@ -70,15 +69,25 @@ struct fbr_context_private;
 struct fbr_fiber;
 struct fbr_mutex;
 
+enum fbr_error_code {
+	FBR_SUCCSESS = 0,
+	FBR_ENOFIBER,
+};
+
 /**
  * Library context structure, should be initialized before any other library
  * callse will be performed.
  * @see fbr_init
  * @see fbr_destroy
+ * @see fbr_strerror
  */
 struct fbr_context
 {
 	struct fbr_context_private *__p; //!< pointer to internal context structure
+#pragma push_macro("errno")
+#undef errno
+	enum fbr_error_code errno; //!< context wide error code
+#pragma pop_macro("errno")
 };
 
 /**
@@ -102,6 +111,12 @@ struct fbr_context
  * require more that one parameter (which itself is the context pointer).
  */
 #define FBR_A_ FBR_A,
+
+/**
+ * Analog of strerror but for the library errno.
+ * @see fbr_context
+ */
+const char * fbr_strerror(enum fbr_error_code code);
 
 /**
  * Fiber's ``main'' function type.

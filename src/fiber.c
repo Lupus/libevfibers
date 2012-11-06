@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <utlist.h>
 #include <stdio.h>
+#include <err.h>
 #include <valgrind/valgrind.h>
 
 #include <evfibers_private/fiber.h>
@@ -65,6 +66,17 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	fctx->__p->mutex_async.data = fctx;
 	fctx->__p->backtraces_enabled = 0;
 	ev_async_init(&fctx->__p->mutex_async, mutex_async_cb);
+}
+
+const char * fbr_strerror(enum fbr_error_code code)
+{
+	switch(code) {
+		case FBR_SUCCSESS:
+			return "Success";
+		case FBR_ENOFIBER:
+			return "No such fiber";
+	}
+	return "Unknown error";
 }
 
 static void reclaim_children(FBR_P_ struct fbr_fiber *fiber)
