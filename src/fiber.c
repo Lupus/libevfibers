@@ -53,17 +53,83 @@ static void mutex_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 	}
 }
 
+static void *allocate_in_fiber(FBR_P_ size_t size, struct fbr_fiber *in)
+{
+	struct fbr_mem_pool *pool_entry;
+	pool_entry = malloc(size + sizeof(struct fbr_mem_pool));
+	if (NULL == pool_entry) {
+		fbr_log_e(FBR_A_ "libevfibers: unable to allocate %zu bytes\n",
+				size + sizeof(struct fbr_mem_pool));
+		abort();
+	}
+	pool_entry->ptr = pool_entry;
+	pool_entry->destructor = NULL;
+	pool_entry->destructor_context = NULL;
+	DL_APPEND(in->pool, pool_entry);
+	return pool_entry + 1;
+}
+
+static void stdio_logger(struct fbr_logger *logger, enum fbr_log_level level,
+		const char *format, va_list ap)
+{
+	if (level > logger->level)
+		return;
+
+	switch (level) {
+		case FBR_LOG_ERROR:
+			fprintf(stderr, "ERROR ");
+			vfprintf(stderr, format, ap);
+			fprintf(stderr, "\n");
+			break;
+		case FBR_LOG_WARNING:
+			fprintf(stdout, "WARNING ");
+			vfprintf(stdout, format, ap);
+			fprintf(stderr, "\n");
+			break;
+		case FBR_LOG_NOTICE:
+			fprintf(stdout, "NOTICE ");
+			vfprintf(stdout, format, ap);
+			fprintf(stderr, "\n");
+			break;
+		case FBR_LOG_INFO:
+			fprintf(stdout, "INFO ");
+			vfprintf(stdout, format, ap);
+			fprintf(stderr, "\n");
+			break;
+		case FBR_LOG_DEBUG:
+			fprintf(stdout, "DEBUG ");
+			vfprintf(stdout, format, ap);
+			fprintf(stderr, "\n");
+			break;
+		default:
+			fprintf(stdout, "????? ");
+			vfprintf(stdout, format, ap);
+			fprintf(stderr, "\n");
+			break;
+	}
+}
+
 void fbr_init(FBR_P_ struct ev_loop *loop)
 {
+	struct fbr_fiber *root;
+	struct fbr_logger *logger;
+
 	fctx->__p = malloc(sizeof(struct fbr_context_private));
 	LIST_INIT(&fctx->__p->reclaimed);
 	LIST_INIT(&fctx->__p->root.children);
 	TAILQ_INIT(&fctx->__p->mutexes);
-	fctx->__p->root.name = "root";
-	fctx->__p->root.pool = NULL;
-	coro_create(&fctx->__p->root.ctx, NULL, NULL, NULL, 0);
+
+	root = &fctx->__p->root;
+	root->name = "root";
+	root->pool = NULL;
+	coro_create(&root->ctx, NULL, NULL, NULL, 0);
+
+	logger = allocate_in_fiber(FBR_A_ sizeof(struct fbr_logger), root);
+	logger->logv = stdio_logger;
+	logger->level = FBR_LOG_NOTICE;
+
 	fctx->__p->sp = fctx->__p->stack;
-	fctx->__p->sp->fiber = &fctx->__p->root;
+	fctx->__p->sp->fiber = root;
 	fill_trace_info(FBR_A_ &fctx->__p->sp->tinfo);
 	fctx->__p->loop = loop;
 	fctx->__p->mutex_async.data = fctx;
@@ -71,7 +137,7 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	ev_async_init(&fctx->__p->mutex_async, mutex_async_cb);
 }
 
-const char *fbr_strerror(enum fbr_error_code code)
+const char *fbr_strerror(_unused_ FBR_P_ enum fbr_error_code code)
 {
 	switch (code) {
 		case FBR_SUCCESS:
@@ -82,6 +148,46 @@ const char *fbr_strerror(enum fbr_error_code code)
 			return "No such fiber";
 	}
 	return "Unknown error";
+}
+
+void fbr_log_e(FBR_P_ const char *format, ...)
+{
+	va_list ap;
+	va_start(ap, format);
+	(*fctx->logger->logv)(fctx->logger, FBR_LOG_DEBUG, format, ap);
+	va_end(ap);
+}
+
+void fbr_log_w(FBR_P_ const char *format, ...)
+{
+	va_list ap;
+	va_start(ap, format);
+	(*fctx->logger->logv)(fctx->logger, FBR_LOG_DEBUG, format, ap);
+	va_end(ap);
+}
+
+void fbr_log_n(FBR_P_ const char *format, ...)
+{
+	va_list ap;
+	va_start(ap, format);
+	(*fctx->logger->logv)(fctx->logger, FBR_LOG_DEBUG, format, ap);
+	va_end(ap);
+}
+
+void fbr_log_i(FBR_P_ const char *format, ...)
+{
+	va_list ap;
+	va_start(ap, format);
+	(*fctx->logger->logv)(fctx->logger, FBR_LOG_DEBUG, format, ap);
+	va_end(ap);
+}
+
+void fbr_log_d(FBR_P_ const char *format, ...)
+{
+	va_list ap;
+	va_start(ap, format);
+	(*fctx->logger->logv)(fctx->logger, FBR_LOG_DEBUG, format, ap);
+	va_end(ap);
 }
 
 static void reclaim_children(FBR_P_ struct fbr_fiber *fiber)
@@ -113,7 +219,7 @@ void fbr_destroy(FBR_P)
 	free(fctx->__p);
 }
 
-void fbr_enable_backtraces(FBR_P, int enabled)
+void fbr_enable_backtraces(FBR_P_ int enabled)
 {
 	if (enabled)
 		fctx->__p->backtraces_enabled = 1;
@@ -131,14 +237,14 @@ static void ev_wakeup_io(_unused_ EV_P_ ev_io *w, _unused_ int event)
 
 	ENSURE_ROOT_FIBER;
 	if (1 != fiber->w_io_expected) {
-		fprintf(stderr, "libevfibers: fiber ``%s'' is about to be woken "
-				"up by an io event but it does not expect "
-				"this.\n", fiber->name);
-		fprintf(stderr, "libevfibers: last registered io request for "
-				"this fiber was:\n");
-		fprintf(stderr, "--- begin trace ---\n");
-		print_trace_info(FBR_A_ &fiber->w_io_tinfo);
-		fprintf(stderr, "--- end trace ---\n");
+		fbr_log_e(FBR_A_ "libevfibers: fiber ``%s'' is about to be"
+				" woken up by an io event but it does not"
+				" expect this.", fiber->name);
+		fbr_log_e(FBR_A_ "libevfibers: last registered io request for "
+				"this fiber was:");
+		fbr_log_e(FBR_A_ "--- begin trace ---");
+		print_trace_info(FBR_A_ &fiber->w_io_tinfo, fbr_log_e);
+		fbr_log_e(FBR_A_ "--- end trace ---");
 		abort();
 	}
 
@@ -154,14 +260,14 @@ static void ev_wakeup_timer(_unused_ EV_P_ ev_timer *w, _unused_ int event)
 
 	ENSURE_ROOT_FIBER;
 	if (1 != fiber->w_timer_expected) {
-		fprintf(stderr, "libevfibers: fiber ``%s'' is about to be woken "
-				"up by a timer event but it does not expect "
-				"this.\n", fiber->name);
-		fprintf(stderr, "libevfibers: last registered timer request for "
-				"this fiber was:\n");
-		fprintf(stderr, "--- begin trace ---\n");
-		print_trace_info(FBR_A_ &fiber->w_timer_tinfo);
-		fprintf(stderr, "--- end trace ---\n");
+		fbr_log_e(FBR_A_ "libevfibers: fiber ``%s'' is about to be"
+				" woken up by a timer event but it does not"
+				" expect this.", fiber->name);
+		fbr_log_e(FBR_A_ "libevfibers: last registered timer request"
+				" for this fiber was:");
+		fbr_log_e(FBR_A_ "--- begin trace ---");
+		print_trace_info(FBR_A_ &fiber->w_io_tinfo, fbr_log_e);
+		fbr_log_e(FBR_A_ "--- end trace ---");
 		abort();
 	}
 
@@ -175,8 +281,8 @@ static void fbr_free_in_fiber(_unused_ FBR_P_ struct fbr_fiber *fiber, void *ptr
 		return;
 	pool_entry = (struct fbr_mem_pool *)ptr - 1;
 	if (pool_entry->ptr != pool_entry) {
-		fprintf(stderr, "libevfibers: address %p does not look like "
-				"fiber memory pool entry\n", ptr);
+		fbr_log_e(FBR_A_ "libevfibers: address %p does not look like "
+				"fiber memory pool entry", ptr);
 		if (!RUNNING_ON_VALGRIND)
 			abort();
 	}
@@ -247,22 +353,6 @@ struct fbr_fiber_arg fbr_arg_v(void *v)
 	return arg;
 }
 
-static void *allocate_in_fiber(_unused_ FBR_P_ size_t size, struct fbr_fiber *in)
-{
-	struct fbr_mem_pool *pool_entry;
-	pool_entry = malloc(size + sizeof(struct fbr_mem_pool));
-	if (NULL == pool_entry) {
-		fprintf(stderr, "libevfibers: unable to allocate %zu bytes\n",
-				size + sizeof(struct fbr_mem_pool));
-		abort();
-	}
-	pool_entry->ptr = pool_entry;
-	pool_entry->destructor = NULL;
-	pool_entry->destructor_context = NULL;
-	DL_APPEND(in->pool, pool_entry);
-	return pool_entry + 1;
-}
-
 int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
 		argnum, va_list ap)
 {
@@ -271,17 +361,17 @@ int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
 	struct fbr_call_info *info;
 
 	if (argnum >= FBR_MAX_ARG_NUM) {
-		fprintf(stderr, "libevfibers: attempt to pass %d argumens while "
-				"FBR_MAX_ARG_NUM is %d, aborting\n", argnum,
+		fbr_log_n(FBR_A_ "libevfibers: attempt to pass %d argumens"
+				" while FBR_MAX_ARG_NUM is %d", argnum,
 				FBR_MAX_ARG_NUM);
 		fctx->f_errno = FBR_EINVAL;
 		return -1;
 	}
 
 	if (1 == callee->reclaimed) {
-		fprintf(stderr, "libevfibers: fiber %p is about to be called "
-				"but it was reclaimed here:\n", callee);
-		print_trace_info(FBR_A_ &callee->reclaim_tinfo);
+		fbr_log_n(FBR_A_ "libevfibers: fiber %p is about to be called "
+				"but it was reclaimed here:", callee);
+		print_trace_info(FBR_A_ &callee->reclaim_tinfo, fbr_log_n);
 		fctx->f_errno = FBR_ENOFIBER;
 		return -1;
 	}
@@ -306,11 +396,11 @@ int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
 	DL_APPEND(callee->call_list, info);
 	callee->call_list_size++;
 	if (callee->call_list_size >= FBR_CALL_LIST_WARN) {
-		fprintf(stderr, "libevfibers: call list for ``%s'' contains %zu"
-				" elements, which looks suspicious. Is anyone"
-				" fetching the calls?\n", callee->name,
+		fbr_log_n(FBR_A_ "libevfibers: call list for ``%s'' contains"
+				" %zu elements, which looks suspicious. Is"
+				" anyone fetching the calls?", callee->name,
 				callee->call_list_size);
-		fbr_dump_stack(FBR_A);
+		fbr_dump_stack(FBR_A_ fbr_log_n);
 	}
 
 	coro_transfer(&caller->ctx, &callee->ctx);
@@ -702,17 +792,17 @@ void fbr_free(FBR_P_ void *ptr)
 	fbr_free_in_fiber(FBR_A_ CURRENT_FIBER, ptr);
 }
 
-void fbr_dump_stack(FBR_P)
+void fbr_dump_stack(FBR_P_ fbr_logutil_func_t log)
 {
 	struct fbr_stack_item *ptr = fctx->__p->sp;
-	fprintf(stderr, "%s\n%s\n", "Fiber call stack:",
+	(*log)(FBR_A_ "%s\n%s", "Fiber call stack:",
 			"-------------------------------");
 	while (ptr >= fctx->__p->stack) {
-		fprintf(stderr, "fiber_call: %p\t%s\n",
+		(*log)(FBR_A_ "fiber_call: %p\t%s",
 				ptr->fiber,
 				ptr->fiber->name);
-		print_trace_info(FBR_A_ &ptr->tinfo);
-		fprintf(stderr, "%s\n", "-------------------------------");
+		print_trace_info(FBR_A_ &ptr->tinfo, log);
+		(*log)(FBR_A_ "%s", "-------------------------------");
 		ptr--;
 	}
 }

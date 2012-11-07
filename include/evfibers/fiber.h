@@ -69,6 +69,7 @@
 struct fbr_context_private;
 struct fbr_fiber;
 struct fbr_mutex;
+struct fbr_logger;
 
 enum fbr_error_code {
 	FBR_SUCCESS = 0,
@@ -86,6 +87,7 @@ enum fbr_error_code {
 struct fbr_context {
 	struct fbr_context_private *__p; //!< pointer to internal context structure
 	enum fbr_error_code f_errno; //!< context wide error code
+	struct fbr_logger *logger;
 };
 
 /**
@@ -111,12 +113,6 @@ struct fbr_context {
 #define FBR_A_ FBR_A,
 
 /**
- * Analog of strerror but for the library errno.
- * @see fbr_context
- */
-const char *fbr_strerror(enum fbr_error_code code);
-
-/**
  * Fiber's ``main'' function type.
  * Fiber main function takes only one parameter --- the context. If you need to
  * pass more context information, you shall embed fbr_context into any
@@ -130,9 +126,7 @@ typedef void (*fbr_fiber_func_t)(FBR_P);
 /**
  * Actual argument of a fiber call.
  * It's implemented as a union between integer (i.e. enum or some other
- * constant) and pointer which covers a lot of use cases.  Additionally it
- * might be attached a callback that will be invoked upon passing of this
- * argument to a concrete fiber during the call.
+ * constant) and pointer which covers a lot of use cases.
  * @see fbr_call
  */
 struct fbr_fiber_arg {
@@ -165,6 +159,26 @@ struct fbr_call_info {
  * @see fbr_free
  */
 typedef void (*fbr_alloc_destructor_func)(void *ptr, void *context);
+
+enum fbr_log_level {
+	FBR_LOG_ERROR = 0,
+	FBR_LOG_WARNING,
+	FBR_LOG_NOTICE,
+	FBR_LOG_INFO,
+	FBR_LOG_DEBUG
+};
+
+struct fbr_logger;
+
+typedef void (*fbr_log_func_t)(struct fbr_logger *logger,
+		enum fbr_log_level level, const char *format, va_list ap);
+typedef void (*fbr_logutil_func_t)(FBR_P_ const char *format, ...);
+
+struct fbr_logger {
+	fbr_log_func_t logv;
+	enum fbr_log_level level;
+	void *data;
+};
 
 /**
  * Initializes the library context.
@@ -199,6 +213,23 @@ void fbr_destroy(FBR_P);
  * and are disabled by default.
  */
 void fbr_enable_backtraces(FBR_P, int enabled);
+
+/**
+ * Analog of strerror but for the library errno.
+ * @see fbr_context
+ */
+const char *fbr_strerror(FBR_P_ enum fbr_error_code code);
+
+void fbr_log_e(FBR_P_ const char *format, ...)
+	__attribute__ ((format (printf, 2, 3)));
+void fbr_log_w(FBR_P_ const char *format, ...)
+	__attribute__ ((format (printf, 2, 3)));
+void fbr_log_n(FBR_P_ const char *format, ...)
+	__attribute__ ((format (printf, 2, 3)));
+void fbr_log_i(FBR_P_ const char *format, ...)
+	__attribute__ ((format (printf, 2, 3)));
+void fbr_log_d(FBR_P_ const char *format, ...)
+	__attribute__ ((format (printf, 2, 3)));
 
 /**
  * Creates a new fiber.
@@ -572,7 +603,7 @@ ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds);
  *
  * useful while debugging obscure fiber call problems.
  */
-void fbr_dump_stack(FBR_P);
+void fbr_dump_stack(FBR_P_ fbr_logutil_func_t log);
 
 /**
  * Creates a mutex.

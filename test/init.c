@@ -28,7 +28,8 @@
 
 START_TEST(test_init)
 {
-	struct fbr_context context = {NULL, 0};
+	struct fbr_context context;
+	context.__p = NULL;
 	fbr_init(&context, EV_DEFAULT);
 	fail_if(NULL == context.__p, NULL);
 	fbr_destroy(&context);
@@ -37,7 +38,7 @@ END_TEST
 
 START_TEST(test_init_evloop)
 {
-	struct fbr_context context = {NULL, 0};
+	struct fbr_context context;
 	fbr_init(&context, EV_DEFAULT);
 	ev_run(EV_DEFAULT, 0);
 	//Should return if we do not set up any unnecessary watchers

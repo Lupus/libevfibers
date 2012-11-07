@@ -33,6 +33,6 @@ struct trace_info {
 };
 
 void fill_trace_info(FBR_P_ struct trace_info *info);
-void print_trace_info(FBR_P_ struct trace_info *info);
+void print_trace_info(FBR_P_ struct trace_info *info, fbr_logutil_func_t log);
 
 #endif

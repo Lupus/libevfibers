@@ -33,16 +33,16 @@ void fill_trace_info(FBR_P_ struct trace_info *info)
 	info->size = backtrace(info->array, TRACE_SIZE);
 }
 
-void print_trace_info(FBR_P_ struct trace_info *info)
+void print_trace_info(FBR_P_ struct trace_info *info, fbr_logutil_func_t log)
 {
 	size_t i;
 	char **strings;
 	if (0 == fctx->__p->backtraces_enabled) {
-		fprintf(stderr, "(No backtrace since they are disabled)\n");
+		(*log)(FBR_A_ "(No backtrace since they are disabled)");
 		return;
 	}
 	strings = backtrace_symbols(info->array, info->size);
 	for (i = 0; i < info->size; i++)
-		fprintf(stderr, "%s\n", strings[i]);
+		(*log)(FBR_A_ "%s", strings[i]);
 	free(strings);
 }
