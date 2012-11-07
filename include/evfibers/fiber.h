@@ -40,7 +40,7 @@
 /**
  * Default stack size for a fiber of 64 KB.
  */
-#define FBR_STACK_SIZE (64 * 1024) // 64 KB
+#define FBR_STACK_SIZE (64 * 1024) /* 64 KB */
 /**
  * Maximum allowed arguments that might be attached to fiber
  * invocation via fbr_call.
@@ -71,6 +71,13 @@ struct fbr_fiber;
 struct fbr_mutex;
 struct fbr_logger;
 
+/**
+ * Error codes used within the library.
+ *
+ * These constants are returned via f_errno member of fbr_context struct.
+ * @see fbr_context
+ * @see fbr_strerror
+ */
 enum fbr_error_code {
 	FBR_SUCCESS = 0,
 	FBR_EINVAL,
@@ -85,9 +92,10 @@ enum fbr_error_code {
  * @see fbr_strerror
  */
 struct fbr_context {
-	struct fbr_context_private *__p; //!< pointer to internal context structure
-	enum fbr_error_code f_errno; //!< context wide error code
-	struct fbr_logger *logger;
+	struct fbr_context_private *__p; /*!< pointer to internal context
+					   structure */
+	enum fbr_error_code f_errno; /*!< context wide error code */
+	struct fbr_logger *logger; /*!< current logger */
 };
 
 /**
@@ -131,35 +139,46 @@ typedef void (*fbr_fiber_func_t)(FBR_P);
  */
 struct fbr_fiber_arg {
 	union {
-		long i; //!< some integer value, enum for example
-		void *v; //!< some pointer to an object
+		long i; /*!< some integer value, enum for example */
+		void *v; /*!< some pointer to an object */
 	};
 };
 
 /**
  * Information about a call made to a fiber.
+ *
  * Whenever some fiber calls another fiber, such a structure is allocated and
  * appended to callee call queue.
  * @see fbr_next_call_info
  * @see fbr_call
  */
 struct fbr_call_info {
-	int argc; //!< number of arguments passed
-	struct fbr_fiber_arg argv[FBR_MAX_ARG_NUM]; //!< actual array of arguments
-	struct fbr_fiber *caller; //!< which fiber was the caller
+	int argc; /*!< number of arguments passed */
+	struct fbr_fiber_arg argv[FBR_MAX_ARG_NUM]; /*!< actual array of
+						      arguments */
+	struct fbr_fiber *caller; /*!< which fiber was the caller */
 	struct fbr_call_info *next, *prev;
 };
 
 /**
  * Destructor function type for the memory allocated in a fiber.
+ * @param [in] ptr memory pointer for memory to be destroyed
+ * @param [in] context user data pointer passed via fbr_alloc_set_destructor
+ *
  * One can attache a destructor to a piece of memory allocated in a fiber. It
  * will be called whenever memory is freed with original pointer allocated
  * along with a user context pointer passed to it.
  * @see fbr_alloc
  * @see fbr_free
+ * @see fbr_alloc_set_destructor
  */
 typedef void (*fbr_alloc_destructor_func)(void *ptr, void *context);
 
+/**
+ * Logging levels.
+ * @see fbr_logger
+ * @see fbr_context
+ */
 enum fbr_log_level {
 	FBR_LOG_ERROR = 0,
 	FBR_LOG_WARNING,
@@ -170,14 +189,39 @@ enum fbr_log_level {
 
 struct fbr_logger;
 
+/**
+ * Logger function type.
+ * @param [in] logger currently configured logger
+ * @param [in] level log level of message
+ * @param [in] format printf-compatible format string
+ * @param [in] ap variadic argument list
+ * This function should log the message if log level suits the one configured
+ * in a non-blocking manner (i.e. it should not synchronously write it to
+ * disk).
+ * @see fbr_logger
+ * @see fbr_log_func_t
+ */
 typedef void (*fbr_log_func_t)(struct fbr_logger *logger,
 		enum fbr_log_level level, const char *format, va_list ap);
+/**
+ * Logger utility function type.
+ * @param [in] format printf-compatible format string
+ *
+ * This function wraps logger function invocation.
+ * @see fbr_logger
+ * @see fbr_log_func_t
+ */
 typedef void (*fbr_logutil_func_t)(FBR_P_ const char *format, ...);
 
+/**
+ * Logger structure.
+ * @see fbr_logger
+ * @see fbr_context
+ */
 struct fbr_logger {
-	fbr_log_func_t logv;
-	enum fbr_log_level level;
-	void *data;
+	fbr_log_func_t logv; /*!< Function pointer that represents the logger */
+	enum fbr_log_level level; /*!< Current log level */
+	void *data; /*!< User data pointer */
 };
 
 /**
@@ -190,7 +234,7 @@ struct fbr_logger {
  * @see fbr_context
  * @see fbr_destroy
  */
-void fbr_init(FBR_P_ struct ev_loop *loop);
+void fbr_init(struct fbr_context *fctx, struct ev_loop *loop);
 
 /**
  * Destroys the library context.
@@ -216,18 +260,79 @@ void fbr_enable_backtraces(FBR_P, int enabled);
 
 /**
  * Analog of strerror but for the library errno.
+ * @param [in] code Error code to describe
  * @see fbr_context
+ * @see fbr_error_code
  */
 const char *fbr_strerror(FBR_P_ enum fbr_error_code code);
 
+/**
+ * Utility log wrapper.
+ *
+ * Wraps logv function of type fbr_log_func_t located in fbr_logger with log
+ * level of FBR_LOG_ERROR. Follows printf semantics of format string and
+ * variadic argument list.
+ * @see fbr_context
+ * @see fbr_logger
+ * @see fbr_log_func_t
+ * @see fbr_logutil_func_t
+ */
 void fbr_log_e(FBR_P_ const char *format, ...)
 	__attribute__ ((format (printf, 2, 3)));
+
+/**
+ * Utility log wrapper.
+ *
+ * Wraps logv function of type fbr_log_func_t located in fbr_logger with log
+ * level of FBR_LOG_WARNING. Follows printf semantics of format string and
+ * variadic argument list.
+ * @see fbr_context
+ * @see fbr_logger
+ * @see fbr_log_func_t
+ * @see fbr_logutil_func_t
+ */
 void fbr_log_w(FBR_P_ const char *format, ...)
 	__attribute__ ((format (printf, 2, 3)));
+
+/**
+ * Utility log wrapper.
+ *
+ * Wraps logv function of type fbr_log_func_t located in fbr_logger with log
+ * level of FBR_LOG_NOTICE. Follows printf semantics of format string and
+ * variadic argument list.
+ * @see fbr_context
+ * @see fbr_logger
+ * @see fbr_log_func_t
+ * @see fbr_logutil_func_t
+ */
 void fbr_log_n(FBR_P_ const char *format, ...)
 	__attribute__ ((format (printf, 2, 3)));
+
+/**
+ * Utility log wrapper.
+ *
+ * Wraps logv function of type fbr_log_func_t located in fbr_logger with log
+ * level of FBR_LOG_INFO. Follows printf semantics of format string and
+ * variadic argument list.
+ * @see fbr_context
+ * @see fbr_logger
+ * @see fbr_log_func_t
+ * @see fbr_logutil_func_t
+ */
 void fbr_log_i(FBR_P_ const char *format, ...)
 	__attribute__ ((format (printf, 2, 3)));
+
+/**
+ * Utility log wrapper.
+ *
+ * Wraps logv function of type fbr_log_func_t located in fbr_logger with log
+ * level of FBR_LOG_DEBUG. Follows printf semantics of format string and
+ * variadic argument list.
+ * @see fbr_context
+ * @see fbr_logger
+ * @see fbr_log_func_t
+ * @see fbr_logutil_func_t
+ */
 void fbr_log_d(FBR_P_ const char *format, ...)
 	__attribute__ ((format (printf, 2, 3)));
 
@@ -321,7 +426,7 @@ int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int argnum,
 
 /**
  * Calls the specified fiber.
- * @param [in] callee fiber pointer to call
+ * @param [in] fiber fiber pointer to call
  * @param [in] argnum number of arguments to pass
  * @return 0 on success, -1 on failure
  *
