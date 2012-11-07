@@ -53,6 +53,28 @@ static void mutex_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 	}
 }
 
+static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
+{
+	struct fbr_context *fctx;
+	struct fbr_fiber *fiber;
+	fctx = (struct fbr_context *)w->data;
+
+	ENSURE_ROOT_FIBER;
+
+	if (TAILQ_EMPTY(&fctx->__p->pending_fibers)) {
+		ev_async_stop(EV_A_ &fctx->__p->pending_async);
+		return;
+	}
+
+	fiber = TAILQ_FIRST(&fctx->__p->pending_fibers);
+	TAILQ_REMOVE(&fctx->__p->pending_fibers, fiber, entries.call_pending);
+	fbr_call_noinfo(FBR_A_ fiber, 0);
+	if (TAILQ_EMPTY(&fctx->__p->pending_fibers))
+		ev_async_stop(EV_A_ &fctx->__p->pending_async);
+	else
+		ev_async_send(EV_A_ &fctx->__p->pending_async);
+}
+
 static void *allocate_in_fiber(FBR_P_ size_t size, struct fbr_fiber *in)
 {
 	struct fbr_mem_pool *pool_entry;
@@ -118,6 +140,7 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	LIST_INIT(&fctx->__p->reclaimed);
 	LIST_INIT(&fctx->__p->root.children);
 	TAILQ_INIT(&fctx->__p->mutexes);
+	TAILQ_INIT(&fctx->__p->pending_fibers);
 
 	root = &fctx->__p->root;
 	root->name = "root";
@@ -127,14 +150,17 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	logger = allocate_in_fiber(FBR_A_ sizeof(struct fbr_logger), root);
 	logger->logv = stdio_logger;
 	logger->level = FBR_LOG_NOTICE;
+	fctx->logger = logger;
 
 	fctx->__p->sp = fctx->__p->stack;
 	fctx->__p->sp->fiber = root;
 	fill_trace_info(FBR_A_ &fctx->__p->sp->tinfo);
 	fctx->__p->loop = loop;
 	fctx->__p->mutex_async.data = fctx;
+	fctx->__p->pending_async.data = fctx;
 	fctx->__p->backtraces_enabled = 0;
 	ev_async_init(&fctx->__p->mutex_async, mutex_async_cb);
+	ev_async_init(&fctx->__p->pending_async, pending_async_cb);
 }
 
 const char *fbr_strerror(_unused_ FBR_P_ enum fbr_error_code code)
@@ -193,7 +219,7 @@ void fbr_log_d(FBR_P_ const char *format, ...)
 static void reclaim_children(FBR_P_ struct fbr_fiber *fiber)
 {
 	struct fbr_fiber *child;
-	LIST_FOREACH(child, &fiber->children, entries_children) {
+	LIST_FOREACH(child, &fiber->children, entries.children) {
 		fbr_reclaim(FBR_A_ child);
 	}
 }
@@ -206,7 +232,7 @@ void fbr_destroy(FBR_P)
 
 	reclaim_children(FBR_A_ &fctx->__p->root);
 
-	LIST_FOREACH(fiber, &fctx->__p->reclaimed, entries_reclaimed) {
+	LIST_FOREACH(fiber, &fctx->__p->reclaimed, entries.reclaimed) {
 		if (0 != munmap(fiber->stack, fiber->stack_size))
 			err(EXIT_FAILURE, "munmap");
 		if (tmp)
@@ -311,7 +337,7 @@ void fbr_reclaim(FBR_P_ struct fbr_fiber *fiber)
 	reclaim_children(FBR_A_ fiber);
 	fiber_cleanup(FBR_A_ fiber);
 	fiber->reclaimed = 1;
-	LIST_INSERT_HEAD(&fctx->__p->reclaimed, fiber, entries_reclaimed);
+	LIST_INSERT_HEAD(&fctx->__p->reclaimed, fiber, entries.reclaimed);
 }
 
 int fbr_is_reclaimed(_unused_ FBR_P_ struct fbr_fiber *fiber)
@@ -711,9 +737,7 @@ ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds)
 	timer_start(FBR_A_ fiber, seconds, 0.);
 	fbr_yield(FBR_A);
 	timer_stop(FBR_A_ fiber);
-	if (CALLED_BY_ROOT)
-		return 0.;
-	return expected - ev_now(fctx->__p->loop);
+	return max(0., expected - ev_now(fctx->__p->loop));
 }
 
 static size_t round_up_to_page_size(size_t size)
@@ -734,7 +758,7 @@ struct fbr_fiber *fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 	struct fbr_fiber *fiber;
 	if (!LIST_EMPTY(&fctx->__p->reclaimed)) {
 		fiber = LIST_FIRST(&fctx->__p->reclaimed);
-		LIST_REMOVE(fiber, entries_reclaimed);
+		LIST_REMOVE(fiber, entries.reclaimed);
 	} else {
 		fiber = malloc(sizeof(struct fbr_fiber));
 		memset(fiber, 0x00, sizeof(struct fbr_fiber));
@@ -760,7 +784,7 @@ struct fbr_fiber *fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 	fiber->pool = NULL;
 	fiber->name = name;
 	fiber->func = func;
-	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries_children);
+	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries.children);
 	fiber->parent = CURRENT_FIBER;
 	return fiber;
 }
@@ -822,7 +846,7 @@ void fbr_mutex_lock(FBR_P_ struct fbr_mutex *mutex)
 		mutex->locked_by = CURRENT_FIBER;
 		return;
 	}
-	TAILQ_INSERT_TAIL(&mutex->pending, CURRENT_FIBER, entries_mutex);
+	TAILQ_INSERT_TAIL(&mutex->pending, CURRENT_FIBER, entries.mutex);
 	fbr_yield(FBR_A);
 	while (mutex->locked_by != CURRENT_FIBER)
 		fbr_yield(FBR_A);
@@ -848,7 +872,7 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 
 	fiber = TAILQ_FIRST(&mutex->pending);
 	mutex->locked_by = fiber;
-	TAILQ_REMOVE(&mutex->pending, fiber, entries_mutex);
+	TAILQ_REMOVE(&mutex->pending, fiber, entries.mutex);
 
 	if (TAILQ_EMPTY(&mutex->pending))
 		ev_async_start(fctx->__p->loop, &fctx->__p->mutex_async);
@@ -861,4 +885,62 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 void fbr_mutex_destroy(_unused_ FBR_P_ struct fbr_mutex *mutex)
 {
 	free(mutex);
+}
+
+struct fbr_cond_var * fbr_cond_create(_unused_ FBR_P)
+{
+	struct fbr_cond_var *cond;
+	cond = malloc(sizeof(struct fbr_cond_var));
+	cond->mutex = NULL;
+	TAILQ_INIT(&cond->waiting);
+	return cond;
+}
+
+void fbr_cond_destroy(_unused_ FBR_P_ struct fbr_cond_var *cond)
+{
+	free(cond);
+}
+
+int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
+{
+	struct fbr_fiber *fiber = CURRENT_FIBER;
+	if(NULL == mutex->locked_by) {
+		fctx->f_errno = FBR_EINVAL;
+		return -1;
+	}
+	TAILQ_INSERT_TAIL(&cond->waiting, fiber, entries.call_pending);
+	fbr_mutex_unlock(FBR_A_ mutex);
+	fbr_yield(FBR_A);
+	while (!CALLED_BY_ROOT)
+		fbr_yield(FBR_A);
+	fbr_mutex_lock(FBR_A_ mutex);
+	fctx->f_errno = FBR_SUCCESS;
+	return 0;
+}
+
+void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond)
+{
+	int was_empty;
+	if (TAILQ_EMPTY(&cond->waiting))
+		return;
+	was_empty = TAILQ_EMPTY(&fctx->__p->pending_fibers);
+	TAILQ_CONCAT(&fctx->__p->pending_fibers, &cond->waiting, entries.call_pending);
+	if (was_empty && !TAILQ_EMPTY(&fctx->__p->pending_fibers))
+		ev_async_start(fctx->__p->loop, &fctx->__p->pending_async);
+	ev_async_send(fctx->__p->loop, &fctx->__p->pending_async);
+}
+
+void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
+{
+	struct fbr_fiber *fiber;
+	int was_empty;
+	if (TAILQ_EMPTY(&cond->waiting))
+		return;
+	was_empty = TAILQ_EMPTY(&fctx->__p->pending_fibers);
+	fiber = TAILQ_FIRST(&cond->waiting);
+	TAILQ_REMOVE(&cond->waiting, fiber, entries.call_pending);
+	TAILQ_INSERT_TAIL(&fctx->__p->pending_fibers, fiber, entries.call_pending);
+	if (was_empty && !TAILQ_EMPTY(&fctx->__p->pending_fibers))
+		ev_async_start(fctx->__p->loop, &fctx->__p->pending_async);
+	ev_async_send(fctx->__p->loop, &fctx->__p->pending_async);
 }

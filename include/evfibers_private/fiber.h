@@ -38,6 +38,12 @@
 	const typeof( ((type *)0)->member ) *__mptr = (ptr);	\
 	(type *)( (char *)__mptr - offsetof(type, member) );})
 
+#define max(a,b) ({                                             \
+		const typeof(a) __tmp_a = (a);                  \
+		const typeof(b) __tmp_b = (b);                  \
+		__tmp_a > __tmp_b ? __tmp_a : __tmp_b;          \
+		})
+
 #define _unused_ __attribute__((unused))
 
 struct fbr_mem_pool {
@@ -70,9 +76,13 @@ struct fbr_fiber {
 	struct fbr_fiber *parent;
 	struct fbr_mem_pool *pool;
 
-	LIST_ENTRY(fbr_fiber) entries_children;
-	LIST_ENTRY(fbr_fiber) entries_reclaimed;
-	TAILQ_ENTRY(fbr_fiber) entries_mutex;
+	struct {
+		LIST_ENTRY(fbr_fiber) children;
+		LIST_ENTRY(fbr_fiber) reclaimed;
+		TAILQ_ENTRY(fbr_fiber) mutex;
+		TAILQ_ENTRY(fbr_fiber) cond;
+		TAILQ_ENTRY(fbr_fiber) call_pending;
+	} entries;
 };
 
 struct fbr_mutex {
@@ -82,6 +92,11 @@ struct fbr_mutex {
 };
 
 TAILQ_HEAD(mutex_tailq, fbr_mutex);
+
+struct fbr_cond_var {
+	struct fbr_mutex *mutex;
+	struct fiber_tailq waiting;
+};
 
 struct fbr_stack_item {
 	struct fbr_fiber *fiber;
@@ -94,7 +109,9 @@ struct fbr_context_private {
 	struct fbr_fiber root;
 	struct fiber_list reclaimed;
 	struct ev_async mutex_async;
+	struct ev_async pending_async;
 	struct mutex_tailq mutexes;
+	struct fiber_tailq pending_fibers;
 	int backtraces_enabled;
 
 	struct ev_loop *loop;

@@ -70,6 +70,7 @@ struct fbr_context_private;
 struct fbr_fiber;
 struct fbr_mutex;
 struct fbr_logger;
+struct fbr_cond_var;
 
 /**
  * Error codes used within the library.
@@ -780,5 +781,11 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex);
  * @see fbr_mutex_trylock
  */
 void fbr_mutex_destroy(FBR_P_ struct fbr_mutex *mutex);
+
+struct fbr_cond_var * fbr_cond_create(FBR_P);
+void fbr_cond_destroy(FBR_P_ struct fbr_cond_var *cond);
+int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex);
+void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond);
+void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond);
 
 #endif
