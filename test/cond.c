@@ -129,12 +129,38 @@ START_TEST(test_cond_signal)
 }
 END_TEST
 
+START_TEST(test_cond_bad_mutex)
+{
+	struct fbr_context context;
+	struct fbr_mutex *mutex = NULL;
+	struct fbr_cond_var *cond = NULL;
+	int retval;
+
+	fbr_init(&context, EV_DEFAULT);
+
+	mutex = fbr_mutex_create(&context);
+	fail_if(NULL == mutex, NULL);
+
+	cond = fbr_cond_create(&context);
+	fail_if(NULL == cond, NULL);
+
+	retval = fbr_cond_wait(&context, cond, mutex);
+	fail_unless(retval == -1., NULL);
+	fail_unless(context.f_errno == FBR_EINVAL);
+
+	fbr_cond_destroy(&context, cond);
+	fbr_mutex_destroy(&context, mutex);
+	fbr_destroy(&context);
+}
+END_TEST
+
 
 TCase * cond_tcase(void)
 {
 	TCase *tc_cond = tcase_create ("Cond");
 	tcase_add_test(tc_cond, test_cond_broadcast);
 	tcase_add_test(tc_cond, test_cond_signal);
+	tcase_add_test(tc_cond, test_cond_bad_mutex);
 	return tc_cond;
 }
 

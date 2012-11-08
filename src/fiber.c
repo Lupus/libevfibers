@@ -560,8 +560,8 @@ error:
 
 ssize_t fbr_readline(FBR_P_ int fd, void *buffer, size_t n)
 {
-	ssize_t num_read;                    /* # of bytes fetched by last read() */
-	size_t total_read;                     /* Total bytes read so far */
+	ssize_t num_read;
+	size_t total_read;
 	char *buf;
 	char ch;
 
@@ -570,26 +570,26 @@ ssize_t fbr_readline(FBR_P_ int fd, void *buffer, size_t n)
 		return -1;
 	}
 
-	buf = buffer;                       /* No pointer arithmetic on "void *" */
+	buf = buffer;
 
 	total_read = 0;
 	for (;;) {
 		num_read = fbr_read(FBR_A_ fd, &ch, 1);
 
 		if (num_read == -1) {
-			if (errno == EINTR)         /* Interrupted --> restart read() */
+			if (errno == EINTR)
 				continue;
 			else
-				return -1;              /* Some other error */
+				return -1;
 
-		} else if (num_read == 0) {      /* EOF */
-			if (total_read == 0)           /* No bytes read; return 0 */
+		} else if (num_read == 0) {
+			if (total_read == 0)
 				return 0;
-			else                        /* Some bytes read; add '\0' */
+			else
 				break;
 
-		} else {                        /* 'numRead' must be 1 if we get here */
-			if (total_read < n - 1) {      /* Discard > (n - 1) bytes */
+		} else {
+			if (total_read < n - 1) {
 				total_read++;
 				*buf++ = ch;
 			}
@@ -887,7 +887,7 @@ void fbr_mutex_destroy(_unused_ FBR_P_ struct fbr_mutex *mutex)
 	free(mutex);
 }
 
-struct fbr_cond_var * fbr_cond_create(_unused_ FBR_P)
+struct fbr_cond_var *fbr_cond_create(_unused_ FBR_P)
 {
 	struct fbr_cond_var *cond;
 	cond = malloc(sizeof(struct fbr_cond_var));
@@ -904,7 +904,7 @@ void fbr_cond_destroy(_unused_ FBR_P_ struct fbr_cond_var *cond)
 int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
-	if(NULL == mutex->locked_by) {
+	if (NULL == mutex->locked_by) {
 		fctx->f_errno = FBR_EINVAL;
 		return -1;
 	}

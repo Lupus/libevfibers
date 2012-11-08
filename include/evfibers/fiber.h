@@ -782,10 +782,73 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex);
  */
 void fbr_mutex_destroy(FBR_P_ struct fbr_mutex *mutex);
 
+/**
+ * Creates a conditional variable.
+ *
+ * Conditional variable is useful primitive for fiber synchronisation. A set of
+ * fibers may be waiting until certain condition is met. Another fiber can
+ * trigger this condition for one or all waiting fibers.
+ *
+ * @see fbr_cond_destroy
+ * @see fbr_cond_wait
+ * @see fbr_cond_broadcast
+ * @see fbr_cond_signal
+ */
 struct fbr_cond_var * fbr_cond_create(FBR_P);
+
+/**
+ * Destroys a conditional variable.
+ *
+ * This just frees used resources. No signals are sent to waiting fibers.
+ *
+ * @see fbr_cond_create
+ * @see fbr_cond_wait
+ * @see fbr_cond_broadcast
+ * @see fbr_cond_signal
+ */
 void fbr_cond_destroy(FBR_P_ struct fbr_cond_var *cond);
+
+/**
+ * Waits until condition is met.
+ *
+ * Current fiber is suspended until a signal is sent via fbr_cond_signal or
+ * fbr_cond_broadcast to the corresponding conditional variable.
+ *
+ * A mutex must be aquired by the calling fiber prior to waiting for a
+ * condition. Internally mutex is released and reaquired again before
+ * returning. Upon successful return calling fiber will hold the mutex.
+ *
+ * @see fbr_cond_create
+ * @see fbr_cond_destroy
+ * @see fbr_cond_broadcast
+ * @see fbr_cond_signal
+ */
 int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex);
+
+/**
+ * Broadcasts a signal to all fibers waiting for condition.
+ *
+ * All fibers waiting for a condition will be added to run queue (and will
+ * eventually be run, one per event loop iteration).
+ *
+ * @see fbr_cond_create
+ * @see fbr_cond_destroy
+ * @see fbr_cond_wait
+ * @see fbr_cond_signal
+ */
 void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond);
+
+/**
+ * Signals to first fiber waiting for condition.
+ *
+ * Exactly one fiber (first one) waiting for a condition will be added to run queue (and will
+ * eventually be run, one per event loop iteration).
+ *
+ * @see fbr_cond_create
+ * @see fbr_cond_destroy
+ * @see fbr_cond_wait
+ * @see fbr_cond_signal
+ */
 void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond);
 
 #endif
