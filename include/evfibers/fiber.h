@@ -54,23 +54,23 @@
 #ifdef NDEBUG
 #define fbr_assert(context, expr)           ((void)(0))
 #else
-#define fbr_assert(context, expr)                                                                 \
-	do {                                                                                      \
-		__typeof__(expr) ex = (expr);                                                     \
-		if (ex)                                                                           \
-			(void)(0);                                                                \
-		else {                                                                            \
-			fbr_dump_stack(context);                                                  \
-			__assert_fail(__STRING(expr), __FILE__, __LINE__, __ASSERT_FUNCTION);     \
-		}                                                                                 \
+#define fbr_assert(context, expr)                                                             \
+	do {                                                                                  \
+		__typeof__(expr) ex = (expr);                                                 \
+		if (ex)                                                                       \
+		(void)(0);                                                                    \
+		else {                                                                        \
+			fbr_dump_stack(context);                                              \
+			__assert_fail(__STRING(expr), __FILE__, __LINE__, __ASSERT_FUNCTION); \
+		}                                                                             \
 	} while (0)
 #endif
 
 struct fbr_context_private;
-struct fbr_fiber;
 struct fbr_mutex;
 struct fbr_logger;
 struct fbr_cond_var;
+typedef unsigned __int128 fbr_id_t;
 
 /**
  * Error codes used within the library.
@@ -157,7 +157,7 @@ struct fbr_call_info {
 	int argc; /*!< number of arguments passed */
 	struct fbr_fiber_arg argv[FBR_MAX_ARG_NUM]; /*!< actual array of
 						      arguments */
-	struct fbr_fiber *caller; /*!< which fiber was the caller */
+	fbr_id_t caller; /*!< which fiber was the caller */
 	struct fbr_call_info *next, *prev;
 };
 
@@ -363,12 +363,13 @@ void fbr_log_d(FBR_P_ const char *format, ...)
  * automatic reclaim of child fibers.
  * @see fbr_reclaim
  */
-struct fbr_fiber *fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
+fbr_id_t fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 		size_t stack_size);
 
 /**
  * Reclaims a fiber.
  * @param [in] fiber fiber pointer
+ * @returns -1 on error with f_errno set, 0 upon success
  *
  * Fibers are never destroyed, but reclaimed. Reclamaition frees some resources
  * like call lists and memory pools immediately while keeping fiber structure
@@ -380,14 +381,14 @@ struct fbr_fiber *fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
  * When you have some reclaimed fibers in the list, reclaming and creating are
  * generally cheap operations.
  */
-void fbr_reclaim(FBR_P_ struct fbr_fiber *fiber);
+int fbr_reclaim(FBR_P_ fbr_id_t fiber);
 
 /**
  * Tests if given fiber is reclaimed.
  * @param [in] fiber fiber pointer
  * @return 1 if fiber is reclaimed, 0 otherwise
  */
-int fbr_is_reclaimed(FBR_P_ struct fbr_fiber *fiber);
+int fbr_is_reclaimed(FBR_P_ fbr_id_t fiber);
 
 /**
  * Utility function for creating integer fbr_fiber_arg.
@@ -422,8 +423,8 @@ struct fbr_fiber_arg fbr_arg_v(void *v);
  * @see fbr_yield
  * @see fbr_strerror
  */
-int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int argnum,
-		va_list ap);
+int fbr_vcall(FBR_P_ fbr_id_t callee, int leave_info, int argnum, va_list ap)
+	__attribute__ ((warn_unused_result));
 
 /**
  * Calls the specified fiber.
@@ -434,7 +435,8 @@ int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int argnum,
  * Behind the scenes this is a wrapper for fbr_vcall with leave_info of 1.
  * @see fbr_vcall
  */
-int fbr_call(FBR_P_ struct fbr_fiber *fiber, int argnum, ...);
+int fbr_call(FBR_P_ fbr_id_t fiber, int argnum, ...)
+	__attribute__ ((warn_unused_result));
 
 /**
  * Calls the specified fiber.
@@ -445,7 +447,8 @@ int fbr_call(FBR_P_ struct fbr_fiber *fiber, int argnum, ...);
  * Behind the scenes this is a wrapper for fbr_vcall with leave_info of 0.
  * @see fbr_vcall
  */
-int fbr_call_noinfo(FBR_P_ struct fbr_fiber *callee, int argnum, ...);
+int fbr_call_noinfo(FBR_P_ fbr_id_t callee, int argnum, ...)
+	__attribute__ ((warn_unused_result));
 
 /**
  * Yields execution to other fiber.

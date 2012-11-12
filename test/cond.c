@@ -46,13 +46,14 @@ static void cond_fiber1(FBR_P)
 START_TEST(test_cond_broadcast)
 {
 	struct fbr_context context;
-	struct fbr_fiber *fiber = NULL;
+	fbr_id_t fiber = 0;
 	struct fbr_mutex *mutex = NULL;
 	struct fbr_cond_var *cond = NULL;
 	int flag = 0;
 	int *flag_ptr = &flag;
 	int i;
 	const int num_fibers = 100;
+	int retval;
 
 	fbr_init(&context, EV_DEFAULT);
 
@@ -64,11 +65,12 @@ START_TEST(test_cond_broadcast)
 
 	for(i = 0; i < num_fibers; i++) {
 		fiber = fbr_create(&context, "cond_i", cond_fiber1, 0);
-		fail_if(NULL == fiber);
-		fbr_call(&context, fiber, 3,
+		fail_if(0 == fiber);
+		retval = fbr_call(&context, fiber, 3,
 				fbr_arg_v(mutex),
 				fbr_arg_v(cond),
 				fbr_arg_v(flag_ptr));
+		fail_unless(0 == retval, NULL);
 	}
 
 	fail_unless(flag == 0, NULL);
@@ -89,13 +91,14 @@ END_TEST
 START_TEST(test_cond_signal)
 {
 	struct fbr_context context;
-	struct fbr_fiber *fiber = NULL;
+	fbr_id_t fiber = 0;
 	struct fbr_mutex *mutex = NULL;
 	struct fbr_cond_var *cond = NULL;
 	int flag = 0;
 	int *flag_ptr = &flag;
 	int i;
 	const int num_fibers = 100;
+	int retval;
 
 	fbr_init(&context, EV_DEFAULT);
 
@@ -107,11 +110,12 @@ START_TEST(test_cond_signal)
 
 	for(i = 0; i < num_fibers; i++) {
 		fiber = fbr_create(&context, "cond_i", cond_fiber1, 0);
-		fail_if(NULL == fiber);
-		fbr_call(&context, fiber, 3,
+		fail_if(0 == fiber);
+		retval = fbr_call(&context, fiber, 3,
 				fbr_arg_v(mutex),
 				fbr_arg_v(cond),
 				fbr_arg_v(flag_ptr));
+		fail_unless(0 == retval, NULL);
 	}
 
 	fail_unless(flag == 0, NULL);

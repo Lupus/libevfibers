@@ -36,12 +36,13 @@
 
 #define container_of(ptr, type, member) ({			\
 	const typeof( ((type *)0)->member ) *__mptr = (ptr);	\
-	(type *)( (char *)__mptr - offsetof(type, member) );})
+	(type *)( (char *)__mptr - offsetof(type, member) );	\
+		})
 
-#define max(a,b) ({                                             \
-		const typeof(a) __tmp_a = (a);                  \
-		const typeof(b) __tmp_b = (b);                  \
-		__tmp_a > __tmp_b ? __tmp_a : __tmp_b;          \
+#define max(a,b) ({						\
+		const typeof(a) __tmp_a = (a);			\
+		const typeof(b) __tmp_b = (b);			\
+		__tmp_a > __tmp_b ? __tmp_a : __tmp_b;		\
 		})
 
 #define _unused_ __attribute__((unused))
@@ -53,10 +54,17 @@ struct fbr_mem_pool {
 	void *destructor_context;
 };
 
+struct fiber_id_tailq_i {
+	fbr_id_t id;
+	TAILQ_ENTRY(fiber_id_tailq_i) entries;
+};
+
+TAILQ_HEAD(fiber_id_tailq, fiber_id_tailq_i);
+
 LIST_HEAD(fiber_list, fbr_fiber);
-TAILQ_HEAD(fiber_tailq, fbr_fiber);
 
 struct fbr_fiber {
+	uint64_t id;
 	const char *name;
 	fbr_fiber_func_t func;
 	coro_context ctx;
@@ -75,19 +83,15 @@ struct fbr_fiber {
 	struct fiber_list children;
 	struct fbr_fiber *parent;
 	struct fbr_mem_pool *pool;
-
 	struct {
-		LIST_ENTRY(fbr_fiber) children;
 		LIST_ENTRY(fbr_fiber) reclaimed;
-		TAILQ_ENTRY(fbr_fiber) mutex;
-		TAILQ_ENTRY(fbr_fiber) cond;
-		TAILQ_ENTRY(fbr_fiber) call_pending;
+		LIST_ENTRY(fbr_fiber) children;
 	} entries;
 };
 
 struct fbr_mutex {
-	struct fbr_fiber *locked_by;
-	struct fiber_tailq pending;
+	fbr_id_t locked_by;
+	struct fiber_id_tailq pending;
 	TAILQ_ENTRY(fbr_mutex) entries;
 };
 
@@ -95,7 +99,7 @@ TAILQ_HEAD(mutex_tailq, fbr_mutex);
 
 struct fbr_cond_var {
 	struct fbr_mutex *mutex;
-	struct fiber_tailq waiting;
+	struct fiber_id_tailq waiting;
 };
 
 struct fbr_stack_item {
@@ -111,8 +115,9 @@ struct fbr_context_private {
 	struct ev_async mutex_async;
 	struct ev_async pending_async;
 	struct mutex_tailq mutexes;
-	struct fiber_tailq pending_fibers;
+	struct fiber_id_tailq pending_fibers;
 	int backtraces_enabled;
+	uint64_t last_id;
 
 	struct ev_loop *loop;
 };

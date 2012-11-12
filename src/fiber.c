@@ -30,17 +30,59 @@
 
 #include <evfibers_private/fiber.h>
 
-#define ENSURE_ROOT_FIBER do {					\
-	assert(fctx->__p->sp->fiber == &fctx->__p->root);	\
+#ifndef LIST_FOREACH_SAFE
+#define LIST_FOREACH_SAFE(var, head, field, next_var)			\
+        for ((var) = ((head)->lh_first);				\
+                (var) && ((next_var) = ((var)->field.le_next), 1);	\
+                (var) = (next_var))
+
+#endif
+
+#define ENSURE_ROOT_FIBER do {						\
+	assert(fctx->__p->sp->fiber == &fctx->__p->root);		\
 } while (0);
 
 #define CURRENT_FIBER (fctx->__p->sp->fiber)
+#define CURRENT_FIBER_ID (fbr_id_pack(CURRENT_FIBER))
 #define CALLED_BY_ROOT ((fctx->__p->sp - 1)->fiber == &fctx->__p->root)
+
+#define unpack_transfer_errno(ptr, id)					\
+	do {								\
+		if (-1 == fbr_id_unpack(fctx, ptr, id))			\
+			return -1;					\
+	} while (0);
+
+#define return_success							\
+	do {								\
+		fctx->f_errno = FBR_SUCCESS;				\
+		return 0;						\
+	} while (0);
+
+static fbr_id_t fbr_id_pack(struct fbr_fiber *fiber)
+{
+	return ((__uint128_t)fiber->id << 64) | (uint64_t)fiber;
+}
+
+static int fbr_id_unpack(FBR_P_ struct fbr_fiber **ptr, fbr_id_t id)
+{
+	struct fbr_fiber *fiber;
+	uint64_t f_id;
+	f_id = (uint64_t)(id >> 64);
+	fiber = (struct fbr_fiber *)(uint64_t)id;
+	if (fiber->id != f_id) {
+		fctx->f_errno = FBR_ENOFIBER;
+		return -1;
+	}
+	if (ptr)
+		*ptr = fiber;
+	return 0;
+}
 
 static void mutex_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 {
 	struct fbr_context *fctx;
 	struct fbr_mutex *mutex;
+	int retval;
 	fctx = (struct fbr_context *)w->data;
 
 	ENSURE_ROOT_FIBER;
@@ -49,15 +91,21 @@ static void mutex_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 		if (TAILQ_EMPTY(&fctx->__p->mutexes))
 			ev_async_stop(EV_A_ &fctx->__p->mutex_async);
 
-		fbr_call_noinfo(FBR_A_ mutex->locked_by, 0);
+		retval = fbr_call_noinfo(FBR_A_ mutex->locked_by, 0);
+		if (-1 == retval && FBR_ENOFIBER != fctx->f_errno) {
+			fbr_log_e(FBR_A_ "libevfibers: unexpected error trying"
+					" to call a fiber by id: %s",
+					fbr_strerror(FBR_A_ fctx->f_errno));
+		}
 	}
 }
 
 static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 {
 	struct fbr_context *fctx;
-	struct fbr_fiber *fiber;
+	struct fiber_id_tailq_i *item;
 	fctx = (struct fbr_context *)w->data;
+	int retval;
 
 	ENSURE_ROOT_FIBER;
 
@@ -66,9 +114,14 @@ static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 		return;
 	}
 
-	fiber = TAILQ_FIRST(&fctx->__p->pending_fibers);
-	TAILQ_REMOVE(&fctx->__p->pending_fibers, fiber, entries.call_pending);
-	fbr_call_noinfo(FBR_A_ fiber, 0);
+	item = TAILQ_FIRST(&fctx->__p->pending_fibers);
+	TAILQ_REMOVE(&fctx->__p->pending_fibers, item, entries);
+	retval = fbr_call_noinfo(FBR_A_ item->id, 0);
+	if (-1 == retval && FBR_ENOFIBER != fctx->f_errno) {
+		fbr_log_e(FBR_A_ "libevfibers: unexpected error trying to call"
+				" a fiber by id: %s",
+				fbr_strerror(FBR_A_ fctx->f_errno));
+	}
 	if (TAILQ_EMPTY(&fctx->__p->pending_fibers))
 		ev_async_stop(EV_A_ &fctx->__p->pending_async);
 	else
@@ -145,6 +198,8 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	root = &fctx->__p->root;
 	root->name = "root";
 	root->pool = NULL;
+	fctx->__p->last_id = 0;
+	root->id = fctx->__p->last_id++;
 	coro_create(&root->ctx, NULL, NULL, NULL, 0);
 
 	logger = allocate_in_fiber(FBR_A_ sizeof(struct fbr_logger), root);
@@ -216,31 +271,36 @@ void fbr_log_d(FBR_P_ const char *format, ...)
 	va_end(ap);
 }
 
+static struct fiber_id_tailq_i *id_tailq_i_for(FBR_P_ struct fbr_fiber *fiber)
+{
+	struct fiber_id_tailq_i *item;
+	item = allocate_in_fiber(FBR_A_ sizeof(struct fiber_id_tailq_i), fiber);
+	item->id = fbr_id_pack(fiber);
+	/* FIXME: add destructor */
+	return item;
+}
+
 static void reclaim_children(FBR_P_ struct fbr_fiber *fiber)
 {
-	struct fbr_fiber *child;
-	LIST_FOREACH(child, &fiber->children, entries.children) {
-		fbr_reclaim(FBR_A_ child);
+	struct fbr_fiber *f;
+	LIST_FOREACH(f, &fiber->children, entries.children) {
+		fbr_reclaim(FBR_A_ fbr_id_pack(f));
 	}
 }
 
 void fbr_destroy(FBR_P)
 {
-	struct fbr_fiber *fiber, *tmp = NULL;
+	struct fbr_fiber *fiber, *x;
 
 	ev_async_stop(fctx->__p->loop, &fctx->__p->mutex_async);
 
 	reclaim_children(FBR_A_ &fctx->__p->root);
 
-	LIST_FOREACH(fiber, &fctx->__p->reclaimed, entries.reclaimed) {
+	LIST_FOREACH_SAFE(fiber, &fctx->__p->reclaimed, entries.reclaimed, x) {
 		if (0 != munmap(fiber->stack, fiber->stack_size))
 			err(EXIT_FAILURE, "munmap");
-		if (tmp)
-			free(tmp);
-		tmp = fiber;
+		free(fiber);
 	}
-	if (tmp)
-		free(tmp);
 
 	free(fctx->__p);
 }
@@ -260,6 +320,7 @@ static void ev_wakeup_io(_unused_ EV_P_ ev_io *w, _unused_ int event)
 	struct fbr_fiber *fiber;
 	fiber = container_of(w, struct fbr_fiber, w_io);
 	fctx = (struct fbr_context *)w->data;
+	int retval;
 
 	ENSURE_ROOT_FIBER;
 	if (1 != fiber->w_io_expected) {
@@ -274,7 +335,13 @@ static void ev_wakeup_io(_unused_ EV_P_ ev_io *w, _unused_ int event)
 		abort();
 	}
 
-	fbr_call_noinfo(FBR_A_ fiber, 0);
+	retval = fbr_call_noinfo(FBR_A_ fbr_id_pack(fiber), 0);
+	if (0 == retval)
+		return;
+
+	fbr_log_e(FBR_A_ "libevfibers: failed to call fiber ``%s'': %s",
+			fiber->name, fbr_strerror(FBR_A_ fctx->f_errno));
+	abort();
 }
 
 static void ev_wakeup_timer(_unused_ EV_P_ ev_timer *w, _unused_ int event)
@@ -283,6 +350,7 @@ static void ev_wakeup_timer(_unused_ EV_P_ ev_timer *w, _unused_ int event)
 	struct fbr_fiber *fiber;
 	fiber = container_of(w, struct fbr_fiber, w_timer);
 	fctx = (struct fbr_context *)w->data;
+	int retval;
 
 	ENSURE_ROOT_FIBER;
 	if (1 != fiber->w_timer_expected) {
@@ -297,7 +365,13 @@ static void ev_wakeup_timer(_unused_ EV_P_ ev_timer *w, _unused_ int event)
 		abort();
 	}
 
-	fbr_call_noinfo(FBR_A_ fiber, 0);
+	retval = fbr_call_noinfo(FBR_A_ fbr_id_pack(fiber), 0);
+	if (0 == retval)
+		return;
+
+	fbr_log_e(FBR_A_ "libevfibers: failed to call fiber ``%s'': %s",
+			fiber->name, fbr_strerror(FBR_A_ fctx->f_errno));
+	abort();
 }
 
 static void fbr_free_in_fiber(_unused_ FBR_P_ struct fbr_fiber *fiber, void *ptr)
@@ -324,25 +398,33 @@ static void fiber_cleanup(FBR_P_ struct fbr_fiber *fiber)
 	/* coro_destroy(&fiber->ctx); */
 	ev_io_stop(fctx->__p->loop, &fiber->w_io);
 	ev_timer_stop(fctx->__p->loop, &fiber->w_timer);
+	LIST_REMOVE(fiber, entries.children);
 	DL_FOREACH_SAFE(fiber->pool, p_elt, p_tmp) {
 		fbr_free_in_fiber(FBR_A_ fiber, p_elt + 1);
 	}
 }
 
-void fbr_reclaim(FBR_P_ struct fbr_fiber *fiber)
+int fbr_reclaim(FBR_P_ fbr_id_t id)
 {
-	if (fiber->reclaimed)
-		return;
+	struct fbr_fiber *fiber;
+
+	unpack_transfer_errno(&fiber, id);
+
 	fill_trace_info(FBR_A_ &fiber->reclaim_tinfo);
 	reclaim_children(FBR_A_ fiber);
 	fiber_cleanup(FBR_A_ fiber);
+	fiber->id = fctx->__p->last_id++;
 	fiber->reclaimed = 1;
 	LIST_INSERT_HEAD(&fctx->__p->reclaimed, fiber, entries.reclaimed);
+
+	return_success;
 }
 
-int fbr_is_reclaimed(_unused_ FBR_P_ struct fbr_fiber *fiber)
+int fbr_is_reclaimed(_unused_ FBR_P_ fbr_id_t id)
 {
-	return fiber->reclaimed;
+	if (0 == fbr_id_unpack(FBR_A_ NULL, id))
+		return 0;
+	return 1;
 }
 
 static void fiber_prepare(FBR_P_ struct fbr_fiber *fiber)
@@ -356,13 +438,16 @@ static void fiber_prepare(FBR_P_ struct fbr_fiber *fiber)
 
 static void call_wrapper(FBR_P_ _unused_ void (*func) (FBR_P))
 {
+	int retval;
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	fiber_prepare(FBR_A_ fiber);
 
 	fiber->func(FBR_A);
 
-	fbr_reclaim(FBR_A_ fiber);
+	retval = fbr_reclaim(FBR_A_ fbr_id_pack(fiber));
+	assert(0 == retval);
 	fbr_yield(FBR_A);
+	assert(NULL);
 }
 
 struct fbr_fiber_arg fbr_arg_i(int i)
@@ -379,9 +464,9 @@ struct fbr_fiber_arg fbr_arg_v(void *v)
 	return arg;
 }
 
-int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
-		argnum, va_list ap)
+int fbr_vcall(FBR_P_ fbr_id_t id, int leave_info, int argnum, va_list ap)
 {
+	struct fbr_fiber *callee;
 	struct fbr_fiber *caller = fctx->__p->sp->fiber;
 	int i;
 	struct fbr_call_info *info;
@@ -394,13 +479,7 @@ int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
 		return -1;
 	}
 
-	if (1 == callee->reclaimed) {
-		fbr_log_n(FBR_A_ "libevfibers: fiber %p is about to be called "
-				"but it was reclaimed here:", callee);
-		print_trace_info(FBR_A_ &callee->reclaim_tinfo, fbr_log_n);
-		fctx->f_errno = FBR_ENOFIBER;
-		return -1;
-	}
+	unpack_transfer_errno(&callee, id);
 
 	fctx->__p->sp++;
 
@@ -409,12 +488,11 @@ int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
 
 	if (0 == leave_info) {
 		coro_transfer(&caller->ctx, &callee->ctx);
-		fctx->f_errno = FBR_SUCCESS;
-		return 0;
+		return_success;
 	}
 
 	info = fbr_alloc(FBR_A_ sizeof(struct fbr_call_info));
-	info->caller = caller;
+	info->caller = id;
 	info->argc = argnum;
 	for (i = 0; i < argnum; i++)
 		info->argv[i] = va_arg(ap, struct fbr_fiber_arg);
@@ -431,11 +509,10 @@ int fbr_vcall(FBR_P_ struct fbr_fiber *callee, int leave_info, int
 
 	coro_transfer(&caller->ctx, &callee->ctx);
 
-	fctx->f_errno = FBR_SUCCESS;
-	return 0;
+	return_success;
 }
 
-int fbr_call_noinfo(FBR_P_ struct fbr_fiber *callee, int argnum, ...)
+int fbr_call_noinfo(FBR_P_ fbr_id_t callee, int argnum, ...)
 {
 	int retval;
 	va_list ap;
@@ -445,7 +522,7 @@ int fbr_call_noinfo(FBR_P_ struct fbr_fiber *callee, int argnum, ...)
 	return retval;
 }
 
-int fbr_call(FBR_P_ struct fbr_fiber *callee, int argnum, ...)
+int fbr_call(FBR_P_ fbr_id_t callee, int argnum, ...)
 {
 	int retval;
 	va_list ap;
@@ -752,7 +829,7 @@ static size_t round_up_to_page_size(size_t size)
 	return size + sz - remainder;
 }
 
-struct fbr_fiber *fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
+fbr_id_t fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 		size_t stack_size)
 {
 	struct fbr_fiber *fiber;
@@ -772,6 +849,7 @@ struct fbr_fiber *fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 		fiber->stack_size = stack_size;
 		(void)VALGRIND_STACK_REGISTER(fiber->stack, fiber->stack +
 				stack_size);
+		fiber->id = fctx->__p->last_id++;
 	}
 	coro_create(&fiber->ctx, (coro_func)call_wrapper, FBR_A, fiber->stack,
 			FBR_STACK_SIZE);
@@ -786,7 +864,7 @@ struct fbr_fiber *fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 	fiber->func = func;
 	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries.children);
 	fiber->parent = CURRENT_FIBER;
-	return fiber;
+	return fbr_id_pack(fiber);
 }
 
 void *fbr_calloc(FBR_P_ unsigned int nmemb, size_t size)
@@ -835,27 +913,29 @@ struct fbr_mutex *fbr_mutex_create(_unused_ FBR_P)
 {
 	struct fbr_mutex *mutex;
 	mutex = malloc(sizeof(struct fbr_mutex));
-	mutex->locked_by = NULL;
+	mutex->locked_by = 0;
 	TAILQ_INIT(&mutex->pending);
 	return mutex;
 }
 
 void fbr_mutex_lock(FBR_P_ struct fbr_mutex *mutex)
 {
-	if (NULL == mutex->locked_by) {
-		mutex->locked_by = CURRENT_FIBER;
+	struct fiber_id_tailq_i *item;
+	if (0 == mutex->locked_by) {
+		mutex->locked_by = CURRENT_FIBER_ID;
 		return;
 	}
-	TAILQ_INSERT_TAIL(&mutex->pending, CURRENT_FIBER, entries.mutex);
+	item = id_tailq_i_for(FBR_A_ CURRENT_FIBER);
+	TAILQ_INSERT_TAIL(&mutex->pending, item, entries);
 	fbr_yield(FBR_A);
-	while (mutex->locked_by != CURRENT_FIBER)
+	while (mutex->locked_by != CURRENT_FIBER_ID)
 		fbr_yield(FBR_A);
 }
 
 int fbr_mutex_trylock(FBR_P_ struct fbr_mutex *mutex)
 {
-	if (NULL == mutex->locked_by) {
-		mutex->locked_by = CURRENT_FIBER;
+	if (0 == mutex->locked_by) {
+		mutex->locked_by = CURRENT_FIBER_ID;
 		return 1;
 	}
 	return 0;
@@ -863,16 +943,24 @@ int fbr_mutex_trylock(FBR_P_ struct fbr_mutex *mutex)
 
 void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 {
-	struct fbr_fiber *fiber;
+	struct fiber_id_tailq_i *item;
 
 	if (TAILQ_EMPTY(&mutex->pending)) {
-		mutex->locked_by = NULL;
+		mutex->locked_by = 0;
 		return;
 	}
 
-	fiber = TAILQ_FIRST(&mutex->pending);
-	mutex->locked_by = fiber;
-	TAILQ_REMOVE(&mutex->pending, fiber, entries.mutex);
+	while (!TAILQ_EMPTY(&mutex->pending)) {
+		item = TAILQ_FIRST(&mutex->pending);
+		TAILQ_REMOVE(&mutex->pending, item, entries);
+		if (-1 == fbr_id_unpack(FBR_A_ NULL, item->id)) {
+			assert(FBR_ENOFIBER == fctx->f_errno);
+			fbr_free(FBR_A_ item);
+			continue;
+		}
+		mutex->locked_by = item->id;
+		break;
+	}
 
 	if (TAILQ_EMPTY(&mutex->pending))
 		ev_async_start(fctx->__p->loop, &fctx->__p->mutex_async);
@@ -903,19 +991,20 @@ void fbr_cond_destroy(_unused_ FBR_P_ struct fbr_cond_var *cond)
 
 int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
 {
+	struct fiber_id_tailq_i *item;
 	struct fbr_fiber *fiber = CURRENT_FIBER;
-	if (NULL == mutex->locked_by) {
+	if (0 == mutex->locked_by) {
 		fctx->f_errno = FBR_EINVAL;
 		return -1;
 	}
-	TAILQ_INSERT_TAIL(&cond->waiting, fiber, entries.call_pending);
+	item = id_tailq_i_for(FBR_A_ fiber);
+	TAILQ_INSERT_TAIL(&cond->waiting, item, entries);
 	fbr_mutex_unlock(FBR_A_ mutex);
 	fbr_yield(FBR_A);
 	while (!CALLED_BY_ROOT)
 		fbr_yield(FBR_A);
 	fbr_mutex_lock(FBR_A_ mutex);
-	fctx->f_errno = FBR_SUCCESS;
-	return 0;
+	return_success;
 }
 
 void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond)
@@ -924,7 +1013,7 @@ void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond)
 	if (TAILQ_EMPTY(&cond->waiting))
 		return;
 	was_empty = TAILQ_EMPTY(&fctx->__p->pending_fibers);
-	TAILQ_CONCAT(&fctx->__p->pending_fibers, &cond->waiting, entries.call_pending);
+	TAILQ_CONCAT(&fctx->__p->pending_fibers, &cond->waiting, entries);
 	if (was_empty && !TAILQ_EMPTY(&fctx->__p->pending_fibers))
 		ev_async_start(fctx->__p->loop, &fctx->__p->pending_async);
 	ev_async_send(fctx->__p->loop, &fctx->__p->pending_async);
@@ -932,14 +1021,14 @@ void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond)
 
 void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 {
-	struct fbr_fiber *fiber;
+	struct fiber_id_tailq_i *item;
 	int was_empty;
 	if (TAILQ_EMPTY(&cond->waiting))
 		return;
 	was_empty = TAILQ_EMPTY(&fctx->__p->pending_fibers);
-	fiber = TAILQ_FIRST(&cond->waiting);
-	TAILQ_REMOVE(&cond->waiting, fiber, entries.call_pending);
-	TAILQ_INSERT_TAIL(&fctx->__p->pending_fibers, fiber, entries.call_pending);
+	item = TAILQ_FIRST(&cond->waiting);
+	TAILQ_REMOVE(&cond->waiting, item, entries);
+	TAILQ_INSERT_TAIL(&fctx->__p->pending_fibers, item, entries);
 	if (was_empty && !TAILQ_EMPTY(&fctx->__p->pending_fibers))
 		ev_async_start(fctx->__p->loop, &fctx->__p->pending_async);
 	ev_async_send(fctx->__p->loop, &fctx->__p->pending_async);
