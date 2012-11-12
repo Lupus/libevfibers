@@ -70,7 +70,7 @@ struct fbr_context_private;
 struct fbr_mutex;
 struct fbr_logger;
 struct fbr_cond_var;
-typedef unsigned __int128 fbr_id_t;
+typedef __uint128_t fbr_id_t;
 
 /**
  * Error codes used within the library.
