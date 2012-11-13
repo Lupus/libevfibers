@@ -173,7 +173,7 @@ struct fbr_call_info {
  * @see fbr_free
  * @see fbr_alloc_set_destructor
  */
-typedef void (*fbr_alloc_destructor_func)(void *ptr, void *context);
+typedef void (*fbr_alloc_destructor_func_t)(void *ptr, void *context);
 
 /**
  * Logging levels.
@@ -391,6 +391,12 @@ int fbr_reclaim(FBR_P_ fbr_id_t fiber);
 int fbr_is_reclaimed(FBR_P_ fbr_id_t fiber);
 
 /**
+ * Returns id of current fiber.
+ * @return fbr_id_t of current fiber being executed.
+ */
+fbr_id_t fbr_self(FBR_P);
+
+/**
  * Utility function for creating integer fbr_fiber_arg.
  * @param [in] i integer argument
  * @return integer fbr_fiber_arg struct.
@@ -472,7 +478,7 @@ void fbr_yield(FBR_P);
  * destructor will be called if any specified.
  * @see fbr_calloc
  * @see fbr_alloc_set_destructor
- * @see fbr_alloc_destructor_func
+ * @see fbr_alloc_destructor_func_t
  * @see fbr_free
  */
 void *fbr_alloc(FBR_P_ size_t size);
@@ -493,7 +499,7 @@ void *fbr_alloc(FBR_P_ size_t size);
  * @see fbr_alloc
  * @see fbr_free
  */
-void fbr_alloc_set_destructor(FBR_P_ void *ptr, fbr_alloc_destructor_func func,
+void fbr_alloc_set_destructor(FBR_P_ void *ptr, fbr_alloc_destructor_func_t func,
 		void *context);
 
 /**
@@ -518,6 +524,17 @@ void *fbr_calloc(FBR_P_ unsigned int nmemb, size_t size);
  * @see fbr_alloc_set_destructor
  */
 void fbr_free(FBR_P_ void *ptr);
+
+/**
+ * Explicitly frees allocated memory chunk.
+ * @param [in] ptr chunk address
+ *
+ * Explicitly frees a fiber pool chunk without calling the destructor.
+ * @see fbr_alloc
+ * @see fbr_calloc
+ * @see fbr_alloc_set_destructor
+ */
+void fbr_free_nd(FBR_P_ void *ptr);
 
 /**
  * Fetches next call info.

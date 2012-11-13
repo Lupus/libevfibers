@@ -38,6 +38,15 @@
 
 #endif
 
+#ifndef TAILQ_FOREACH_SAFE
+#define TAILQ_FOREACH_SAFE(var, head, field, next_var)                  \
+        for ((var) = ((head)->tqh_first);                               \
+                (var) ? ({ (next_var) = ((var)->field.tqe_next); 1; })  \
+                      : 0;                                              \
+                (var) = (next_var))
+#endif
+
+
 #define ENSURE_ROOT_FIBER do {						\
 	assert(fctx->__p->sp->fiber == &fctx->__p->root);		\
 } while (0);
@@ -130,17 +139,17 @@ static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 
 static void *allocate_in_fiber(FBR_P_ size_t size, struct fbr_fiber *in)
 {
-	struct fbr_mem_pool *pool_entry;
-	pool_entry = malloc(size + sizeof(struct fbr_mem_pool));
+	struct mem_pool *pool_entry;
+	pool_entry = malloc(size + sizeof(struct mem_pool));
 	if (NULL == pool_entry) {
 		fbr_log_e(FBR_A_ "libevfibers: unable to allocate %zu bytes\n",
-				size + sizeof(struct fbr_mem_pool));
+				size + sizeof(struct mem_pool));
 		abort();
 	}
 	pool_entry->ptr = pool_entry;
 	pool_entry->destructor = NULL;
 	pool_entry->destructor_context = NULL;
-	DL_APPEND(in->pool, pool_entry);
+	LIST_INSERT_HEAD(&in->pool, pool_entry, entries);
 	return pool_entry + 1;
 }
 
@@ -192,12 +201,12 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	fctx->__p = malloc(sizeof(struct fbr_context_private));
 	LIST_INIT(&fctx->__p->reclaimed);
 	LIST_INIT(&fctx->__p->root.children);
+	LIST_INIT(&fctx->__p->root.pool);
 	TAILQ_INIT(&fctx->__p->mutexes);
 	TAILQ_INIT(&fctx->__p->pending_fibers);
 
 	root = &fctx->__p->root;
 	root->name = "root";
-	root->pool = NULL;
 	fctx->__p->last_id = 0;
 	root->id = fctx->__p->last_id++;
 	coro_create(&root->ctx, NULL, NULL, NULL, 0);
@@ -271,12 +280,20 @@ void fbr_log_d(FBR_P_ const char *format, ...)
 	va_end(ap);
 }
 
-static struct fiber_id_tailq_i *id_tailq_i_for(FBR_P_ struct fbr_fiber *fiber)
+static void fiber_id_tailq_i_destructor(void *ptr, void *context)
+{
+	struct fiber_id_tailq_i *item = ptr;
+	struct fiber_id_tailq *head = context;
+	TAILQ_REMOVE(head, item, entries);
+}
+
+static struct fiber_id_tailq_i *id_tailq_i_for(FBR_P_ struct fbr_fiber *fiber,
+		struct fiber_id_tailq *head)
 {
 	struct fiber_id_tailq_i *item;
 	item = allocate_in_fiber(FBR_A_ sizeof(struct fiber_id_tailq_i), fiber);
 	item->id = fbr_id_pack(fiber);
-	/* FIXME: add destructor */
+	fbr_alloc_set_destructor(FBR_A_ item, fiber_id_tailq_i_destructor, head);
 	return item;
 }
 
@@ -374,33 +391,34 @@ static void ev_wakeup_timer(_unused_ EV_P_ ev_timer *w, _unused_ int event)
 	abort();
 }
 
-static void fbr_free_in_fiber(_unused_ FBR_P_ struct fbr_fiber *fiber, void *ptr)
+static void fbr_free_in_fiber(_unused_ FBR_P_ _unused_ struct fbr_fiber *fiber,
+		void *ptr, int destructor)
 {
-	struct fbr_mem_pool *pool_entry = NULL;
+	struct mem_pool *pool_entry = NULL;
 	if (NULL == ptr)
 		return;
-	pool_entry = (struct fbr_mem_pool *)ptr - 1;
+	pool_entry = (struct mem_pool *)ptr - 1;
 	if (pool_entry->ptr != pool_entry) {
 		fbr_log_e(FBR_A_ "libevfibers: address %p does not look like "
 				"fiber memory pool entry", ptr);
 		if (!RUNNING_ON_VALGRIND)
 			abort();
 	}
-	DL_DELETE(fiber->pool, pool_entry);
-	if (pool_entry->destructor)
+	LIST_REMOVE(pool_entry, entries);
+	if (destructor && pool_entry->destructor)
 		pool_entry->destructor(ptr, pool_entry->destructor_context);
 	free(pool_entry);
 }
 
 static void fiber_cleanup(FBR_P_ struct fbr_fiber *fiber)
 {
-	struct fbr_mem_pool *p_elt, *p_tmp;
+	struct mem_pool *p, *x;
 	/* coro_destroy(&fiber->ctx); */
 	ev_io_stop(fctx->__p->loop, &fiber->w_io);
 	ev_timer_stop(fctx->__p->loop, &fiber->w_timer);
 	LIST_REMOVE(fiber, entries.children);
-	DL_FOREACH_SAFE(fiber->pool, p_elt, p_tmp) {
-		fbr_free_in_fiber(FBR_A_ fiber, p_elt + 1);
+	LIST_FOREACH_SAFE(p, &fiber->pool, entries, x) {
+		fbr_free_in_fiber(FBR_A_ fiber, p + 1, 1);
 	}
 }
 
@@ -414,7 +432,6 @@ int fbr_reclaim(FBR_P_ fbr_id_t id)
 	reclaim_children(FBR_A_ fiber);
 	fiber_cleanup(FBR_A_ fiber);
 	fiber->id = fctx->__p->last_id++;
-	fiber->reclaimed = 1;
 	LIST_INSERT_HEAD(&fctx->__p->reclaimed, fiber, entries.reclaimed);
 
 	return_success;
@@ -427,13 +444,17 @@ int fbr_is_reclaimed(_unused_ FBR_P_ fbr_id_t id)
 	return 1;
 }
 
+fbr_id_t fbr_self(FBR_P)
+{
+	return CURRENT_FIBER_ID;
+}
+
 static void fiber_prepare(FBR_P_ struct fbr_fiber *fiber)
 {
 	ev_init(&fiber->w_io, ev_wakeup_io);
 	ev_init(&fiber->w_timer, ev_wakeup_timer);
 	fiber->w_io.data = FBR_A;
 	fiber->w_timer.data = FBR_A;
-	fiber->reclaimed = 0;
 }
 
 static void call_wrapper(FBR_P_ _unused_ void (*func) (FBR_P))
@@ -855,11 +876,10 @@ fbr_id_t fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 			FBR_STACK_SIZE);
 	fiber->w_io_expected = 0;
 	fiber->w_timer_expected = 0;
-	fiber->reclaimed = 0;
 	fiber->call_list = NULL;
 	fiber->call_list_size = 0;
 	LIST_INIT(&fiber->children);
-	fiber->pool = NULL;
+	LIST_INIT(&fiber->pool);
 	fiber->name = name;
 	fiber->func = func;
 	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries.children);
@@ -880,19 +900,25 @@ void *fbr_alloc(FBR_P_ size_t size)
 	return allocate_in_fiber(FBR_A_ size, CURRENT_FIBER);
 }
 
-void fbr_alloc_set_destructor(_unused_ FBR_P_ void *ptr, fbr_alloc_destructor_func
-		func, void *context)
+void fbr_alloc_set_destructor(_unused_ FBR_P_ void *ptr,
+		fbr_alloc_destructor_func_t func, void *context)
 {
-	struct fbr_mem_pool *pool_entry;
-	pool_entry = (struct fbr_mem_pool *)ptr - 1;
+	struct mem_pool *pool_entry;
+	pool_entry = (struct mem_pool *)ptr - 1;
 	pool_entry->destructor = func;
 	pool_entry->destructor_context = context;
 }
 
 void fbr_free(FBR_P_ void *ptr)
 {
-	fbr_free_in_fiber(FBR_A_ CURRENT_FIBER, ptr);
+	fbr_free_in_fiber(FBR_A_ CURRENT_FIBER, ptr, 1);
 }
+
+void fbr_free_nd(FBR_P_ void *ptr)
+{
+	fbr_free_in_fiber(FBR_A_ CURRENT_FIBER, ptr, 0);
+}
+
 
 void fbr_dump_stack(FBR_P_ fbr_logutil_func_t log)
 {
@@ -925,7 +951,7 @@ void fbr_mutex_lock(FBR_P_ struct fbr_mutex *mutex)
 		mutex->locked_by = CURRENT_FIBER_ID;
 		return;
 	}
-	item = id_tailq_i_for(FBR_A_ CURRENT_FIBER);
+	item = id_tailq_i_for(FBR_A_ CURRENT_FIBER, &mutex->pending);
 	TAILQ_INSERT_TAIL(&mutex->pending, item, entries);
 	fbr_yield(FBR_A);
 	while (mutex->locked_by != CURRENT_FIBER_ID)
@@ -972,6 +998,10 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 
 void fbr_mutex_destroy(_unused_ FBR_P_ struct fbr_mutex *mutex)
 {
+	struct fiber_id_tailq_i *item, *x;
+	TAILQ_FOREACH_SAFE(item, &mutex->pending, entries, x) {
+		fbr_free_nd(FBR_A_ item);
+	}
 	free(mutex);
 }
 
@@ -986,6 +1016,10 @@ struct fbr_cond_var *fbr_cond_create(_unused_ FBR_P)
 
 void fbr_cond_destroy(_unused_ FBR_P_ struct fbr_cond_var *cond)
 {
+	struct fiber_id_tailq_i *item, *x;
+	TAILQ_FOREACH_SAFE(item, &cond->waiting, entries, x) {
+		fbr_free_nd(FBR_A_ item);
+	}
 	free(cond);
 }
 
@@ -997,7 +1031,7 @@ int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
 		fctx->f_errno = FBR_EINVAL;
 		return -1;
 	}
-	item = id_tailq_i_for(FBR_A_ fiber);
+	item = id_tailq_i_for(FBR_A_ fiber, &cond->waiting);
 	TAILQ_INSERT_TAIL(&cond->waiting, item, entries);
 	fbr_mutex_unlock(FBR_A_ mutex);
 	fbr_yield(FBR_A);

@@ -47,12 +47,14 @@
 
 #define _unused_ __attribute__((unused))
 
-struct fbr_mem_pool {
-	struct fbr_mem_pool *next, *prev;
+struct mem_pool {
 	void *ptr;
-	fbr_alloc_destructor_func destructor;
+	fbr_alloc_destructor_func_t destructor;
 	void *destructor_context;
+	LIST_ENTRY(mem_pool) entries;
 };
+
+LIST_HEAD(mem_pool_list, mem_pool);
 
 struct fiber_id_tailq_i {
 	fbr_id_t id;
@@ -78,11 +80,10 @@ struct fbr_fiber {
 	ev_timer w_timer;
 	struct trace_info w_timer_tinfo;
 	int w_timer_expected;
-	int reclaimed;
 	struct trace_info reclaim_tinfo;
 	struct fiber_list children;
 	struct fbr_fiber *parent;
-	struct fbr_mem_pool *pool;
+	struct mem_pool_list pool;
 	struct {
 		LIST_ENTRY(fbr_fiber) reclaimed;
 		LIST_ENTRY(fbr_fiber) children;
