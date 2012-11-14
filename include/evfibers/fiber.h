@@ -60,7 +60,7 @@
 		if (ex)                                                                       \
 		(void)(0);                                                                    \
 		else {                                                                        \
-			fbr_dump_stack(context);                                              \
+			fbr_dump_stack(context, fbr_log_e);                                   \
 			__assert_fail(__STRING(expr), __FILE__, __LINE__, __ASSERT_FUNCTION); \
 		}                                                                             \
 	} while (0)
