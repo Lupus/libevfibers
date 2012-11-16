@@ -20,44 +20,10 @@
 
  ********************************************************************/
 
-#include <stdlib.h>
-#include <check.h>
+#ifndef _RECLAIM_H_
+#define _RECLAIM_H_
 
-#include "init.h"
-#include "mutex.h"
-#include "cond.h"
-#include "reclaim.h"
+TCase * reclaim_tcase(void);
 
-Suite * evfibers_suite (void)
-{
-	Suite *s;
-	TCase *tc_init, *tc_mutex, *tc_cond, *tc_reclaim;
+#endif
 
-	s = suite_create ("evfibers");
-	tc_init = init_tcase();
-	tc_mutex = mutex_tcase();
-	tc_cond = cond_tcase();
-	tc_reclaim = reclaim_tcase();
-	suite_add_tcase(s, tc_init);
-	suite_add_tcase(s, tc_mutex);
-	suite_add_tcase(s, tc_cond);
-	suite_add_tcase(s, tc_reclaim);
-
-	return s;
-}
-
-int main(void)
-{
-	int number_failed;
-	Suite *s;
-	SRunner *sr;
-
-	srand(42);
-
-	s = evfibers_suite();
-	sr = srunner_create(s);
-	srunner_run_all(sr, CK_NORMAL);
-	number_failed = srunner_ntests_failed(sr);
-	srunner_free(sr);
-	return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
-}
