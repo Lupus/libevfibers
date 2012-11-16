@@ -1,0 +1,72 @@
+/********************************************************************
+
+  Copyright 2012 Konstantin Olkhovskiy <lupus@oxnull.net>
+
+  This file is part of libevfibers.
+
+  libevfibers is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Lesser General Public License as
+  published by the Free Software Foundation, either version 3 of the
+  License, or any later version.
+
+  libevfibers is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+
+  You should have received a copy of the GNU Lesser General
+  Public License along with libevfibers.  If not, see
+  <http://www.gnu.org/licenses/>.
+
+ ********************************************************************/
+
+#include <ev.h>
+#include <check.h>
+#include <evfibers_private/fiber.h>
+
+#include "logger.h"
+
+static void test_fiber(FBR_P)
+{
+	fctx->logger->level = FBR_LOG_DEBUG;
+
+	fbr_dump_stack(FBR_A_ fbr_log_d);
+	fbr_dump_stack(FBR_A_ fbr_log_i);
+	fbr_dump_stack(FBR_A_ fbr_log_n);
+	fbr_dump_stack(FBR_A_ fbr_log_w);
+	fbr_dump_stack(FBR_A_ fbr_log_e);
+
+	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_SUCCESS));
+	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_EINVAL));
+	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_ENOFIBER));
+	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_ESYSTEM));
+	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ -1));
+}
+
+START_TEST(test_logger)
+{
+	struct fbr_context context;
+	fbr_id_t test = 0;
+	int retval;
+
+	fbr_init(&context, EV_DEFAULT);
+
+	fbr_enable_backtraces(&context, 0);
+	fbr_enable_backtraces(&context, 1);
+
+	test = fbr_create(&context, "test", test_fiber, 0);
+	fail_if(0 == test, NULL);
+
+	retval = fbr_call_noinfo(&context, test, 0);
+	fail_unless(0 == retval, NULL);
+
+	fbr_destroy(&context);
+}
+END_TEST
+
+TCase * logger_tcase(void)
+{
+	TCase *tc_logger = tcase_create ("Logger");
+	tcase_add_test(tc_logger, test_logger);
+	return tc_logger;
+}

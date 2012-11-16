@@ -252,7 +252,7 @@ void fbr_log_e(FBR_P_ const char *format, ...)
 {
 	va_list ap;
 	va_start(ap, format);
-	(*fctx->logger->logv)(fctx->logger, FBR_LOG_DEBUG, format, ap);
+	(*fctx->logger->logv)(fctx->logger, FBR_LOG_ERROR, format, ap);
 	va_end(ap);
 }
 
@@ -260,7 +260,7 @@ void fbr_log_w(FBR_P_ const char *format, ...)
 {
 	va_list ap;
 	va_start(ap, format);
-	(*fctx->logger->logv)(fctx->logger, FBR_LOG_DEBUG, format, ap);
+	(*fctx->logger->logv)(fctx->logger, FBR_LOG_WARNING, format, ap);
 	va_end(ap);
 }
 
@@ -268,7 +268,7 @@ void fbr_log_n(FBR_P_ const char *format, ...)
 {
 	va_list ap;
 	va_start(ap, format);
-	(*fctx->logger->logv)(fctx->logger, FBR_LOG_DEBUG, format, ap);
+	(*fctx->logger->logv)(fctx->logger, FBR_LOG_NOTICE, format, ap);
 	va_end(ap);
 }
 
@@ -276,7 +276,7 @@ void fbr_log_i(FBR_P_ const char *format, ...)
 {
 	va_list ap;
 	va_start(ap, format);
-	(*fctx->logger->logv)(fctx->logger, FBR_LOG_DEBUG, format, ap);
+	(*fctx->logger->logv)(fctx->logger, FBR_LOG_INFO, format, ap);
 	va_end(ap);
 }
 

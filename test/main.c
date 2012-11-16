@@ -28,11 +28,12 @@
 #include "cond.h"
 #include "reclaim.h"
 #include "io.h"
+#include "logger.h"
 
 Suite * evfibers_suite (void)
 {
 	Suite *s;
-	TCase *tc_init, *tc_mutex, *tc_cond, *tc_reclaim, *tc_io;
+	TCase *tc_init, *tc_mutex, *tc_cond, *tc_reclaim, *tc_io, *tc_logger;
 
 	s = suite_create ("evfibers");
 	tc_init = init_tcase();
@@ -40,11 +41,13 @@ Suite * evfibers_suite (void)
 	tc_cond = cond_tcase();
 	tc_reclaim = reclaim_tcase();
 	tc_io = io_tcase();
+	tc_logger = logger_tcase();
 	suite_add_tcase(s, tc_init);
 	suite_add_tcase(s, tc_mutex);
 	suite_add_tcase(s, tc_cond);
 	suite_add_tcase(s, tc_reclaim);
 	suite_add_tcase(s, tc_io);
+	suite_add_tcase(s, tc_logger);
 
 	return s;
 }

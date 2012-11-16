@@ -37,6 +37,7 @@ static void reclaim_fiber1(_unused_ FBR_P)
 
 static void reclaim_fiber2(_unused_ FBR_P)
 {
+	fail_unless(fbr_self(FBR_A) == test_fiber);
 	fbr_disown(FBR_A_ new_parent);
 	fail_unless(new_parent == fbr_parent(FBR_A), NULL);
 	for (;;)
