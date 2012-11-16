@@ -21,6 +21,7 @@
  ********************************************************************/
 
 #include <sys/mman.h>
+#include <fcntl.h>
 #include <assert.h>
 #include <errno.h>
 #include <utlist.h>
@@ -47,25 +48,32 @@
 #endif
 
 
-#define ENSURE_ROOT_FIBER do {						\
-	assert(fctx->__p->sp->fiber == &fctx->__p->root);		\
+#define ENSURE_ROOT_FIBER do {                            \
+	assert(fctx->__p->sp->fiber == &fctx->__p->root); \
 } while (0)
 
 #define CURRENT_FIBER (fctx->__p->sp->fiber)
 #define CURRENT_FIBER_ID (fbr_id_pack(CURRENT_FIBER))
 #define CALLED_BY_ROOT ((fctx->__p->sp - 1)->fiber == &fctx->__p->root)
 
-#define unpack_transfer_errno(ptr, id)					\
-	do {								\
-		if (-1 == fbr_id_unpack(fctx, ptr, id))			\
-			return -1;					\
+#define unpack_transfer_errno(ptr, id)                  \
+	do {                                            \
+		if (-1 == fbr_id_unpack(fctx, ptr, id)) \
+			return -1;                      \
 	} while (0)
 
-#define return_success							\
-	do {								\
-		fctx->f_errno = FBR_SUCCESS;				\
-		return 0;						\
-	} while (0);
+#define return_success                       \
+	do {                                 \
+		fctx->f_errno = FBR_SUCCESS; \
+		return 0;                    \
+	} while (0)
+
+#define return_error(code)              \
+	do {                            \
+		fctx->f_errno = (code); \
+		return -1;              \
+	} while (0)
+
 
 static fbr_id_t fbr_id_pack(struct fbr_fiber *fiber)
 {
@@ -78,10 +86,8 @@ static int fbr_id_unpack(FBR_P_ struct fbr_fiber **ptr, fbr_id_t id)
 	uint64_t f_id;
 	f_id = (uint64_t)(id >> 64);
 	fiber = (struct fbr_fiber *)(uint64_t)id;
-	if (fiber->id != f_id) {
-		fctx->f_errno = FBR_ENOFIBER;
-		return -1;
-	}
+	if (fiber->id != f_id)
+		return_error(FBR_ENOFIBER);
 	if (ptr)
 		*ptr = fiber;
 	return 0;
@@ -236,6 +242,8 @@ const char *fbr_strerror(_unused_ FBR_P_ enum fbr_error_code code)
 			return "Invalid argument";
 		case FBR_ENOFIBER:
 			return "No such fiber";
+		case FBR_ESYSTEM:
+			return "System error, consult system errno";
 	}
 	return "Unknown error";
 }
@@ -496,8 +504,7 @@ int fbr_vcall(FBR_P_ fbr_id_t id, int leave_info, int argnum, va_list ap)
 		fbr_log_n(FBR_A_ "libevfibers: attempt to pass %d argumens"
 				" while FBR_MAX_ARG_NUM is %d", argnum,
 				FBR_MAX_ARG_NUM);
-		fctx->f_errno = FBR_EINVAL;
-		return -1;
+		return_error(FBR_EINVAL);
 	}
 
 	unpack_transfer_errno(&callee, id);
@@ -596,6 +603,24 @@ static void io_stop(FBR_P_ struct fbr_fiber *fiber)
 	fiber->w_io_expected = 0;
 	ev_io_stop(fctx->__p->loop, &fiber->w_io);
 }
+
+int fbr_fd_nonblock(FBR_P_ int fd)
+{
+	int flags, s;
+
+	flags = fcntl(fd, F_GETFL, 0);
+	if (flags == -1)
+		return_error(FBR_ESYSTEM);
+
+	flags |= O_NONBLOCK;
+	s = fcntl(fd, F_SETFL, flags);
+	if (s == -1)
+		return_error(FBR_ESYSTEM);
+
+	return_success;
+}
+
+
 
 ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count)
 {
@@ -1049,10 +1074,8 @@ int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
 {
 	struct fiber_id_tailq_i *item;
 	struct fbr_fiber *fiber = CURRENT_FIBER;
-	if (0 == mutex->locked_by) {
-		fctx->f_errno = FBR_EINVAL;
-		return -1;
-	}
+	if (0 == mutex->locked_by)
+		return_error(FBR_EINVAL);
 	item = id_tailq_i_for(FBR_A_ fiber, &cond->waiting);
 	TAILQ_INSERT_TAIL(&cond->waiting, item, entries);
 	fbr_mutex_unlock(FBR_A_ mutex);

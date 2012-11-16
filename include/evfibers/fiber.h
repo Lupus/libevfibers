@@ -83,6 +83,7 @@ enum fbr_error_code {
 	FBR_SUCCESS = 0,
 	FBR_EINVAL,
 	FBR_ENOFIBER,
+	FBR_ESYSTEM,
 };
 
 /**
@@ -586,6 +587,17 @@ void fbr_free_nd(FBR_P_ void *ptr);
  * @see fbr_call_info
  */
 int fbr_next_call_info(FBR_P_ struct fbr_call_info **info_ptr);
+
+/**
+ * Utility function to make file descriptor non-blocking.
+ * @param [in] fd file descriptor to make non-blocking
+ * @returns -1 on error with f_errno set, 0 upon success
+ *
+ * In case of failure FBR_ESYSTEM is set as f_errno ans user should consult
+ * system errno for details.
+ *
+ */
+int fbr_fd_nonblock(FBR_P_ int fd);
 
 /**
  * Fiber friendly libc read wrapper.
