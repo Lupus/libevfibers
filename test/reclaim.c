@@ -26,10 +26,70 @@
 
 #include "reclaim.h"
 
+static fbr_id_t new_parent;
+static fbr_id_t test_fiber;
+
 static void reclaim_fiber1(_unused_ FBR_P)
 {
+	fail_unless(0 == fbr_parent(FBR_A), NULL);
 	return;
 }
+
+static void reclaim_fiber2(_unused_ FBR_P)
+{
+	fbr_disown(FBR_A_ new_parent);
+	fail_unless(new_parent == fbr_parent(FBR_A), NULL);
+	for (;;)
+		fbr_yield(FBR_A);
+}
+
+static void reclaim_fiber3(_unused_ FBR_P)
+{
+	test_fiber = fbr_create(FBR_A_ "test_fiber", reclaim_fiber2, 0);
+	fail_if(0 == test_fiber, NULL);
+	fbr_yield(FBR_A);
+	return;
+}
+
+
+START_TEST(test_disown)
+{
+	struct fbr_context context;
+	fbr_id_t fiber = 0;
+	int retval;
+
+	fbr_init(&context, EV_DEFAULT);
+
+	fiber = fbr_create(&context, "reclaim_fiber", reclaim_fiber3, 0);
+	fail_if(0 == fiber, NULL);
+
+	new_parent = fbr_create(&context, "new_fiber", reclaim_fiber1, 0);
+	fail_if(0 == new_parent, NULL);
+
+	retval = fbr_call_noinfo(&context, fiber, 0);
+	fail_unless(0 == retval, NULL);
+
+	fail_if(0 == test_fiber, NULL);
+	fail_unless(0 == fbr_is_reclaimed(&context, test_fiber), NULL);
+
+	retval = fbr_call_noinfo(&context, test_fiber, 0);
+	fail_unless(0 == retval, NULL);
+
+	retval = fbr_reclaim(&context, fiber);
+	fail_unless(0 == retval, NULL);
+	fail_unless(fbr_is_reclaimed(&context, fiber), NULL);
+
+	retval = fbr_call_noinfo(&context, test_fiber, 0);
+	fail_unless(0 == retval, NULL);
+
+	retval = fbr_reclaim(&context, new_parent);
+	fail_unless(0 == retval, NULL);
+	fail_unless(fbr_is_reclaimed(&context, new_parent), NULL);
+	fail_unless(fbr_is_reclaimed(&context, test_fiber), NULL);
+
+	fbr_destroy(&context);
+}
+END_TEST
 
 START_TEST(test_reclaim)
 {
@@ -70,5 +130,6 @@ TCase * reclaim_tcase(void)
 {
 	TCase *tc_reclaim = tcase_create ("Reclaim");
 	tcase_add_test(tc_reclaim, test_reclaim);
+	tcase_add_test(tc_reclaim, test_disown);
 	return tc_reclaim;
 }

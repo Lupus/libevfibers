@@ -31,25 +31,25 @@
 #include <evfibers_private/fiber.h>
 
 #ifndef LIST_FOREACH_SAFE
-#define LIST_FOREACH_SAFE(var, head, field, next_var)			\
-        for ((var) = ((head)->lh_first);				\
-                (var) && ((next_var) = ((var)->field.le_next), 1);	\
-                (var) = (next_var))
+#define LIST_FOREACH_SAFE(var, head, field, next_var)              \
+	for ((var) = ((head)->lh_first);                           \
+		(var) && ((next_var) = ((var)->field.le_next), 1); \
+		(var) = (next_var))
 
 #endif
 
 #ifndef TAILQ_FOREACH_SAFE
-#define TAILQ_FOREACH_SAFE(var, head, field, next_var)                  \
-        for ((var) = ((head)->tqh_first);                               \
-                (var) ? ({ (next_var) = ((var)->field.tqe_next); 1; })  \
-                      : 0;                                              \
-                (var) = (next_var))
+#define TAILQ_FOREACH_SAFE(var, head, field, next_var)                 \
+	for ((var) = ((head)->tqh_first);                              \
+		(var) ? ({ (next_var) = ((var)->field.tqe_next); 1; }) \
+		: 0;                                                   \
+		(var) = (next_var))
 #endif
 
 
 #define ENSURE_ROOT_FIBER do {						\
 	assert(fctx->__p->sp->fiber == &fctx->__p->root);		\
-} while (0);
+} while (0)
 
 #define CURRENT_FIBER (fctx->__p->sp->fiber)
 #define CURRENT_FIBER_ID (fbr_id_pack(CURRENT_FIBER))
@@ -59,7 +59,7 @@
 	do {								\
 		if (-1 == fbr_id_unpack(fctx, ptr, id))			\
 			return -1;					\
-	} while (0);
+	} while (0)
 
 #define return_success							\
 	do {								\
@@ -885,6 +885,28 @@ fbr_id_t fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries.children);
 	fiber->parent = CURRENT_FIBER;
 	return fbr_id_pack(fiber);
+}
+
+int fbr_disown(FBR_P_ fbr_id_t parent_id)
+{
+	struct fbr_fiber *fiber, *parent;
+	if (parent_id > 0)
+		unpack_transfer_errno(&parent, parent_id);
+	else
+		parent = &fctx->__p->root;
+	fiber = CURRENT_FIBER;
+	LIST_REMOVE(fiber, entries.children);
+	LIST_INSERT_HEAD(&parent->children, fiber, entries.children);
+	fiber->parent = parent;
+	return_success;
+}
+
+fbr_id_t fbr_parent(FBR_P)
+{
+	struct fbr_fiber *fiber = CURRENT_FIBER;
+	if (fiber->parent == &fctx->__p->root)
+		return 0;
+	return fbr_id_pack(fiber->parent);
 }
 
 void *fbr_calloc(FBR_P_ unsigned int nmemb, size_t size)

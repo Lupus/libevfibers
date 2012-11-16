@@ -348,13 +348,10 @@ void fbr_log_d(FBR_P_ const char *format, ...)
  * The created fiber is not running in any shape or form, it's just creted and
  * is ready to be launched.
  *
- * The returned pointer may actually be the fiber that was recently reclaimed,
- * not the newly created one.
- *
  * Stack is anonymously mmaped so it should not occupy all the required space
  * straight away. Adjust stack size only when you know what you are doing!
  *
- * Allocated stacks are registered as stacks via valgrind client client request
+ * Allocated stacks are registered as stacks via valgrind client request
  * mechanism, so it's generally valgrind friendly and should not cause any
  * noise.
  *
@@ -362,9 +359,40 @@ void fbr_log_d(FBR_P_ const char *format, ...)
  * whenever the parent is creating them. This tree is used primarily for
  * automatic reclaim of child fibers.
  * @see fbr_reclaim
+ * @see fbr_disown
+ * @see fbr_parent
  */
 fbr_id_t fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 		size_t stack_size);
+
+/**
+ * Changes parent of current fiber.
+ * @param [in] parent new parent fiber
+ * @returns -1 on error with f_errno set, 0 upon success
+ *
+ * This function allows you to change fiber's parent. You needs to pass valid
+ * id or 0 to indicate the root fiber.
+ *
+ * This might be useful when some fiber A creates another fiber B that should
+ * survive it's parent being reclaimed, or vice versa, some fiber A needs to be
+ * reclaimed with fiber B albeit B is not A's parent.
+ *
+ * Root fiber is reclaimed only when library context is destroyed.
+ * @see fbr_create
+ * @see fbr_destroy
+ */
+int fbr_disown(FBR_P_ fbr_id_t parent);
+
+/**
+ * Find out current fiber's parent.
+ * @returns current fiber's parent
+ *
+ * This function allows you to find out what fiber is considered to be parent
+ * for the current one.
+ * @see fbr_create
+ * @see fbr_disown
+ */
+fbr_id_t fbr_parent(FBR_P);
 
 /**
  * Reclaims a fiber.
