@@ -178,7 +178,7 @@
 	do {                                                                                  \
 		__typeof__(expr) ex = (expr);                                                 \
 		if (ex)                                                                       \
-		(void)(0);                                                                    \
+			(void)(0);                                                            \
 		else {                                                                        \
 			fbr_dump_stack(context, fbr_log_e);                                   \
 			__assert_fail(__STRING(expr), __FILE__, __LINE__, __ASSERT_FUNCTION); \
@@ -974,7 +974,7 @@ void fbr_mutex_destroy(FBR_P_ struct fbr_mutex *mutex);
  * @see fbr_cond_broadcast
  * @see fbr_cond_signal
  */
-struct fbr_cond_var * fbr_cond_create(FBR_P);
+struct fbr_cond_var *fbr_cond_create(FBR_P);
 
 /**
  * Destroys a conditional variable.
