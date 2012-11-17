@@ -20,6 +20,126 @@
 
  ********************************************************************/
 
+/** \mainpage About libevfibers
+ *
+ * \section intro_sec Introduction
+ *
+ * libevfibers is a small C fiber library that uses libev based event loop and
+ * libcoro based coroutine context switching. As libcoro alone is barely enough
+ * to do something useful, this project aims at building a complete fiber API
+ * around it while leveraging libev's high performance and flexibility.
+ *
+ * You may ask why yet another fiber library, there are GNU Pth, State threads,
+ * etc. When I was looking at their API, I found it being too restrictive: you
+ * cannot use other event loop. For GNU Pth it's solely select based
+ * implementation, as for state threads --- they provide several
+ * implementations including poll, epoll, select though event loop is hidden
+ * underneath the public API and is not usable directly. I found another
+ * approach more sensible, namely: just put fiber layer on top of well-known
+ * and robust event loop implementation. Marc Lehmann already provided all the
+ * necessary to do the job: event loop library libev with coroutine library
+ * libcoro.
+ *
+ * So what's so cool about fibers? Fibers are user-space threads. User-space
+ * means that context switching from one fiber to an other fiber takes no
+ * effort from the kernel. There are different ways to achieve this, but it's
+ * not relevant here since libcoro already does all the dirty job. At top level
+ * you have a set of functions that execute on private stacks that do not
+ * intersect. Whenever such function is going to do some blocking operation,
+ * i.e. socket read, it calls fiber library wrapper, that asks event loop to
+ * transfer execution to this function whenever some data arrives, then it
+ * yields execution to other fiber. From the function's point of view it runs
+ * in exclusive mode and blocks on all operations, but really other such
+ * functions execute while this one is waiting. Typically most of them are
+ * waiting for something and event loop dispatches the events.
+ *
+ * This approach helps a lot. Imagine that you have some function that requires
+ * 3 events. In classic asynchronous model you will have to arrange your
+ * function in 3 callbacks and register them in the event loop. On the other
+ * hand having one function waiting for 3 events in ``blocking'' fashion is
+ * both more readable and maintainable.
+ *
+ * Then why use event loop when you have fancy callback-less fiber wrappers?
+ * Sometimes you just need a function that will set a flag in some object when
+ * a timer times out. Creating a fiber solely for this simple task is a bit
+ * awkward.
+ *
+ * libevfibers allows you to use fiber style wrappers for blocking operations
+ * as well as fall back to usual event loop style programming when you need it.
+ *
+ * \section install_sec Installation
+ *
+ * \subsection requirements_ssec Requirements
+ *
+ * To build this documentation properly you need to have
+ * [doxygen](http://www.stack.nl/~dimitri/doxygen) version >= 1.8 since it used
+ * markdown.
+ *
+ * To build libevfibers you need the following packages:
+ * - [cmake](http://www.cmake.org)
+ *
+ *   CMake is a build system used to assemble this project.
+ * - [libev](http://software.schmorp.de/pkg/libev.html) development files
+ *
+ *   Well-known and robust event loop.
+ * - [uthash](http://uthash.sourceforge.net) development files
+ *
+ *   Macro-based hash library that was used in earlier versions. Currently no
+ *   hashes are used, but I still have utlist used somewhere. Will get rid of
+ *   this dependency soon in favor of <sys/queue.h>.
+ *
+ * - [valgrind](http://valgrind.org) development files
+ *
+ *   libevfibers makes use of client requests in valgrind to register stacks.
+ * - [Check](http://check.sourceforge.net) unit testing framework
+ *
+ *   Strictly it's not a requirement, but you better run unit tests before
+ *   installation.
+ *
+ * You don't need libcoro installed as it's part of source tree and will build
+ * along with libevfibers.
+ *
+ * As far as runtime dependencies concerned, the following is required:
+ *  - [libev](http://software.schmorp.de/pkg/libev.html) runtime files
+ *
+ * For debian-based distributions users (i.e. Ubuntu) you can use the following
+ * command to install all the dependencies:
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.sh}
+ * sudo apt-get install cmake libev-dev uthash-dev valgrind check
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ * \subsection building_ssec Building
+ *
+ * Once you have all required packages installed you may proceed with building.
+ * Roughly it's done as follows:
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.sh}
+ * git clone https://code.google.com/p/libevfibers
+ * cd libevfibers/
+ * mkdir build
+ * cd build/
+ * cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+ * make
+ * sudo make install
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ * \subsection building_deb_ssec Building debian package
+ * If you are running debian-based distribution, it will be more useful to build a debian package and install it.
+ *
+ * The following actions will bring you there:
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.sh}
+ * git clone https://code.google.com/p/libevfibers
+ * cd libevfibers/
+ * dpkg-buildpackage
+ * sudo dpkg -i ../libevfibers?_*_*.deb ../libevfibers-dev_*_*.deb
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ * \section contributors_sec Contributors
+ * libevfibers was written and designed by Konstantin Olkhovskiy.
+ *
+ * Sergey Myasnikov contributed some patches, a lot of criticism and ideas.
+ */
+
 #ifndef _FBR_FIBER_H_
 #define _FBR_FIBER_H_
 /**
@@ -88,7 +208,7 @@ enum fbr_error_code {
 
 /**
  * Library context structure, should be initialized before any other library
- * callse will be performed.
+ * calls will be performed.
  * @see fbr_init
  * @see fbr_destroy
  * @see fbr_strerror
