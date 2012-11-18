@@ -466,7 +466,7 @@ void fbr_log_d(FBR_P_ const char *format, ...)
  * @param [in] stack_size stack size (0 for default).
  * @return Pointer to the created fiber.
  *
- * The created fiber is not running in any shape or form, it's just creted and
+ * The created fiber is not running in any shape or form, it's just created and
  * is ready to be launched.
  *
  * Stack is anonymously mmaped so it should not occupy all the required space
@@ -520,14 +520,14 @@ fbr_id_t fbr_parent(FBR_P);
  * @param [in] fiber fiber pointer
  * @returns -1 on error with f_errno set, 0 upon success
  *
- * Fibers are never destroyed, but reclaimed. Reclamaition frees some resources
+ * Fibers are never destroyed, but reclaimed. Reclamation frees some resources
  * like call lists and memory pools immediately while keeping fiber structure
  * itself and its stack as is. Reclaimed fiber is prepended to the reclaimed
  * fiber list and will be served as a new one whenever next fbr_create is
  * called. Fiber is prepended because it is warm in terms of cpu cache and its
  * use might be faster than any other fiber in the list.
  *
- * When you have some reclaimed fibers in the list, reclaming and creating are
+ * When you have some reclaimed fibers in the list, reclaiming and creating are
  * generally cheap operations.
  */
 int fbr_reclaim(FBR_P_ fbr_id_t fiber);
@@ -643,7 +643,7 @@ void *fbr_alloc(FBR_P_ size_t size);
  *
  * You can allocate 0 sized memory chunk and never free it just for the purpose
  * of calling destructor with some context when fiber is reclaimed. This way
- * you can for example close some file descritors or do some other required
+ * you can for example close some file descriptors or do some other required
  * cleanup.
  * @see fbr_alloc
  * @see fbr_free
@@ -652,7 +652,7 @@ void fbr_alloc_set_destructor(FBR_P_ void *ptr, fbr_alloc_destructor_func_t func
 		void *context);
 
 /**
- * Allocates a set of initalized objects in fiber's pool.
+ * Allocates a set of initialized objects in fiber's pool.
  * @param [in] nmemb number of members
  * @param [in] size size of a single member
  * @return zero-filled allocated memory chunk
@@ -695,11 +695,11 @@ void fbr_free_nd(FBR_P_ void *ptr);
  *
  * Function writes new info pointer into specified location. If that location
  * contains an address of previous info --- it will be freed and that's
- * probably the behavoir you want. Just ensure that you set your pointer to
+ * probably the behavior you want. Just ensure that you set your pointer to
  * NULL before passing it to this function first time.
  *
  * Also bear in mind that the first invocation of a fiber that might be
- * considered the starting (or intializing) one is still queued into a call
+ * considered the starting (or initializing) one is still queued into a call
  * list and you need to fetch if you want to fetch anything else. If you are
  * not interested in call info --- just pass NULL as location (i.e. info_ptr).
  * Next call info will just be freed in this case.
@@ -753,7 +753,7 @@ ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count);
  *
  * Possible errno values are described in read man page. Unlike fbr_read this
  * function will never return -1 with EINTR and will silently ignore any
- * attemps to call this fiber from other non-root fibers (call infos are still
+ * attempts to call this fiber from other non-root fibers (call infos are still
  * queued if the called desired to do so).
  *
  * @see fbr_read
@@ -811,7 +811,7 @@ ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count);
  *
  * Possible errno values are described in write man page. Unlike fbr_write this
  * function will never return -1 with EINTR and will silently ignore any
- * attemps to call this fiber from other non-root fibers (call infos are still
+ * attempts to call this fiber from other non-root fibers (call infos are still
  * queued if the called desired to do so).
  *
  * @see fbr_write
@@ -865,7 +865,7 @@ ssize_t fbr_sendto(FBR_P_ int sockfd, const void *buf, size_t len, int flags, co
  * @param [in] addrlen size of addr
  * @return client socket fd on success, -1 in case of error and errno set
  *
- * This function is used to accept a conection on a listening socket.
+ * This function is used to accept a connection on a listening socket.
  *
  * Possible errno values are described in accept man page. The only special case
  * is EINTR which is handled internally and is returned to the caller only in
@@ -876,7 +876,7 @@ int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 
 /**
  * Puts current fiber to sleep.
- * @param [in] seconds maximum number of secons to sleep
+ * @param [in] seconds maximum number of seconds to sleep
  * @return number of seconds actually being asleep
  *
  * This function is used to put current fiber into sleep. It will wake up after
@@ -994,8 +994,8 @@ void fbr_cond_destroy(FBR_P_ struct fbr_cond_var *cond);
  * Current fiber is suspended until a signal is sent via fbr_cond_signal or
  * fbr_cond_broadcast to the corresponding conditional variable.
  *
- * A mutex must be aquired by the calling fiber prior to waiting for a
- * condition. Internally mutex is released and reaquired again before
+ * A mutex must be acquired by the calling fiber prior to waiting for a
+ * condition. Internally mutex is released and reacquired again before
  * returning. Upon successful return calling fiber will hold the mutex.
  *
  * @see fbr_cond_create
