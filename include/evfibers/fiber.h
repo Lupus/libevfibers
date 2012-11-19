@@ -187,6 +187,11 @@
 	} while (0)
 #endif
 
+#define fbr_container_of(ptr, type, member) ({                       \
+		const typeof( ((type *)0)->member ) *__mptr = (ptr); \
+		(type *)( (char *)__mptr - offsetof(type,member) );  \
+		})
+
 struct fbr_context_private;
 struct fbr_mutex;
 struct fbr_logger;
@@ -346,6 +351,33 @@ struct fbr_logger {
 	enum fbr_log_level level; /*!< Current log level */
 	void *data; /*!< User data pointer */
 };
+
+enum fbr_ev_type {
+	FBR_EV_WATCHER = 1,
+	FBR_EV_MESSAGE,
+	FBR_EV_MUTEX,
+	FBR_EV_COND,
+};
+
+struct fbr_ev_base {
+	enum fbr_ev_type type;
+	int user_type;
+	fbr_id_t id;
+	struct fbr_context *fctx;
+};
+
+#define fbr_ev_cast(ptr, type_no_struct) \
+	fbr_container_of(ptr, struct type_no_struct, ev_base)
+
+struct fbr_ev_watcher {
+	ev_watcher *w;
+	struct fbr_ev_base ev_base;
+};
+
+void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, ev_watcher *w);
+struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[]);
+void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one);
+
 
 /**
  * Initializes the library context.

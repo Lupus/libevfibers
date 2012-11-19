@@ -80,6 +80,10 @@ struct fbr_fiber {
 	ev_timer w_timer;
 	struct trace_info w_timer_tinfo;
 	int w_timer_expected;
+	struct {
+		struct fbr_ev_base **waiting;
+		struct fbr_ev_base *arrived;
+	} ev;
 	struct trace_info reclaim_tinfo;
 	struct fiber_list children;
 	struct fbr_fiber *parent;
