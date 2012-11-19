@@ -31,7 +31,7 @@
 
 #include "io.h"
 
-static void reader_fiber(FBR_P)
+static void reader_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd;
 	const int buf_size = 10;
@@ -53,7 +53,7 @@ static void reader_fiber(FBR_P)
 	}
 }
 
-static void writer_fiber(FBR_P)
+static void writer_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd;
 	int i;
@@ -89,9 +89,9 @@ START_TEST(test_read_write)
 
 	fbr_init(&context, EV_DEFAULT);
 
-	reader = fbr_create(&context, "reader", reader_fiber, 0);
+	reader = fbr_create(&context, "reader", reader_fiber, NULL, 0);
 	fail_if(0 == reader, NULL);
-	writer = fbr_create(&context, "writer", writer_fiber, 0);
+	writer = fbr_create(&context, "writer", writer_fiber, NULL, 0);
 	fail_if(0 == reader, NULL);
 
 	retval = fbr_call(&context, reader, 1, fbr_arg_i(fds[0]));
@@ -106,7 +106,7 @@ START_TEST(test_read_write)
 END_TEST
 
 #define buf_size (1 * 1024 * 1024)
-static void all_reader_fiber(FBR_P)
+static void all_reader_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd;
 	char *buf = fbr_alloc(FBR_A_ buf_size);
@@ -119,7 +119,7 @@ static void all_reader_fiber(FBR_P)
 	fail_unless(buf_size == retval, NULL);
 }
 
-static void all_writer_fiber(FBR_P)
+static void all_writer_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd;
 	size_t retval;
@@ -151,9 +151,9 @@ START_TEST(test_read_write_all)
 
 	fbr_init(&context, EV_DEFAULT);
 
-	reader = fbr_create(&context, "reader_all", all_reader_fiber, 0);
+	reader = fbr_create(&context, "reader_all", all_reader_fiber, NULL, 0);
 	fail_if(0 == reader, NULL);
-	writer = fbr_create(&context, "writer_all", all_writer_fiber, 0);
+	writer = fbr_create(&context, "writer_all", all_writer_fiber, NULL, 0);
 	fail_if(0 == reader, NULL);
 
 	retval = fbr_call(&context, reader, 1, fbr_arg_i(fds[0]));
@@ -167,7 +167,7 @@ START_TEST(test_read_write_all)
 }
 END_TEST
 
-static void line_reader_fiber(FBR_P)
+static void line_reader_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd;
 	const int buf_size = 34;
@@ -216,7 +216,7 @@ static void line_reader_fiber(FBR_P)
 	fail_unless(0 == strcmp(expected, buf), "``%s'' != ``%s''", expected, buf);
 }
 
-static void line_writer_fiber(FBR_P)
+static void line_writer_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd;
 	size_t retval;
@@ -252,9 +252,9 @@ START_TEST(test_read_line)
 
 	fbr_init(&context, EV_DEFAULT);
 
-	reader = fbr_create(&context, "reader_line", line_reader_fiber, 0);
+	reader = fbr_create(&context, "reader_line", line_reader_fiber, NULL, 0);
 	fail_if(0 == reader, NULL);
-	writer = fbr_create(&context, "writer_line", line_writer_fiber, 0);
+	writer = fbr_create(&context, "writer_line", line_writer_fiber, NULL, 0);
 	fail_if(0 == reader, NULL);
 
 	retval = fbr_call(&context, reader, 1, fbr_arg_i(fds[0]));
@@ -272,7 +272,7 @@ END_TEST
 #define ADDRESS "127.0.0.1"
 #define PORT 12345
 #define count 10
-static void udp_reader_fiber(FBR_P)
+static void udp_reader_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd;
 	int i;
@@ -305,7 +305,7 @@ static void udp_reader_fiber(FBR_P)
 	}
 }
 
-static void udp_writer_fiber(FBR_P)
+static void udp_writer_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd;
 	int i;
@@ -345,9 +345,9 @@ START_TEST(test_udp)
 
 	fbr_init(&context, EV_DEFAULT);
 
-	reader = fbr_create(&context, "reader_udp", udp_reader_fiber, 0);
+	reader = fbr_create(&context, "reader_udp", udp_reader_fiber, NULL, 0);
 	fail_if(0 == reader, NULL);
-	writer = fbr_create(&context, "writer_udp", udp_writer_fiber, 0);
+	writer = fbr_create(&context, "writer_udp", udp_writer_fiber, NULL, 0);
 	fail_if(0 == reader, NULL);
 
 	retval = fbr_transfer(&context, reader);

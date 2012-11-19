@@ -420,12 +420,12 @@ fbr_id_t fbr_self(FBR_P)
 	return CURRENT_FIBER_ID;
 }
 
-static void call_wrapper(FBR_P_ _unused_ void (*func) (FBR_P))
+static void call_wrapper(FBR_P)
 {
 	int retval;
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 
-	fiber->func(FBR_A);
+	fiber->func(FBR_A_ fiber->func_arg);
 
 	retval = fbr_reclaim(FBR_A_ fbr_id_pack(fiber));
 	assert(0 == retval);
@@ -870,7 +870,7 @@ static size_t round_up_to_page_size(size_t size)
 	return size + sz - remainder;
 }
 
-fbr_id_t fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
+fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		size_t stack_size)
 {
 	struct fbr_fiber *fiber;
@@ -900,6 +900,7 @@ fbr_id_t fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 	LIST_INIT(&fiber->pool);
 	fiber->name = name;
 	fiber->func = func;
+	fiber->func_arg = arg;
 	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries.children);
 	fiber->parent = CURRENT_FIBER;
 	return fbr_id_pack(fiber);

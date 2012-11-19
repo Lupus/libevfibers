@@ -26,7 +26,7 @@
 
 #include "mutex.h"
 
-static void mutex_fiber1(FBR_P)
+static void mutex_fiber1(FBR_P_ _unused_ void *_arg)
 {
 	struct fbr_mutex *mutex;
 	struct fbr_call_info *info = NULL;
@@ -41,7 +41,7 @@ static void mutex_fiber1(FBR_P)
 	fbr_yield(FBR_A);
 }
 
-static void mutex_fiber2(FBR_P)
+static void mutex_fiber2(FBR_P_ _unused_ void *_arg)
 {
 	struct fbr_mutex *mutex;
 	struct fbr_call_info *info = NULL;
@@ -52,7 +52,7 @@ static void mutex_fiber2(FBR_P)
 	fbr_yield(FBR_A);
 }
 
-static void mutex_fiber3(FBR_P)
+static void mutex_fiber3(FBR_P_ _unused_ void *_arg)
 {
 	struct fbr_mutex *mutex;
 	struct fbr_call_info *info = NULL;
@@ -66,7 +66,7 @@ static void mutex_fiber3(FBR_P)
 	fbr_yield(FBR_A);
 }
 
-static void mutex_fiber4(FBR_P)
+static void mutex_fiber4(FBR_P_ _unused_ void *_arg)
 {
 	struct fbr_mutex *mutex;
 	struct fbr_call_info *info = NULL;
@@ -91,13 +91,13 @@ START_TEST(test_mutex)
 	mutex = fbr_mutex_create(&context);
 	fail_if(NULL == mutex, NULL);
 
-	fibers[0] = fbr_create(&context, "mutex1", mutex_fiber1, 0);
+	fibers[0] = fbr_create(&context, "mutex1", mutex_fiber1, NULL, 0);
 	fail_if(0 == fibers[0], NULL);
-	fibers[1] = fbr_create(&context, "mutex2", mutex_fiber2, 0);
+	fibers[1] = fbr_create(&context, "mutex2", mutex_fiber2, NULL, 0);
 	fail_if(0 == fibers[1], NULL);
-	fibers[2] = fbr_create(&context, "mutex3", mutex_fiber3, 0);
+	fibers[2] = fbr_create(&context, "mutex3", mutex_fiber3, NULL, 0);
 	fail_if(0 == fibers[2], NULL);
-	fibers[3] = fbr_create(&context, "mutex4", mutex_fiber4, 0);
+	fibers[3] = fbr_create(&context, "mutex4", mutex_fiber4, NULL, 0);
 	fail_if(0 == fibers[3], NULL);
 
 	/* ``mutex1'' fiber will aquire the mutex and yield */
@@ -149,7 +149,7 @@ START_TEST(test_mutex)
 }
 END_TEST
 
-static void mutex_fiber5(FBR_P)
+static void mutex_fiber5(FBR_P_ _unused_ void *_arg)
 {
 	struct fbr_mutex *mutex;
 	struct fbr_call_info *info = NULL;
@@ -175,7 +175,7 @@ static void mutex_fiber5(FBR_P)
 	fbr_mutex_unlock(FBR_A_ mutex);
 }
 
-static void mutex_fiber6(FBR_P)
+static void mutex_fiber6(FBR_P_ _unused_ void *_arg)
 {
 	fbr_id_t *fibers;
 	int count;
@@ -219,14 +219,14 @@ START_TEST(test_mutex_evloop)
 
 	fbr_init(&context, EV_DEFAULT);
 	for(i = 0; i < fiber_count; i++) {
-		fibers[i] = fbr_create(&context, "fiber_i", mutex_fiber5, 0);
+		fibers[i] = fbr_create(&context, "fiber_i", mutex_fiber5, NULL, 0);
 		fail_if(0 == fibers[i], NULL);
 		retval = fbr_call(&context, fibers[i], 2, fbr_arg_v(mutex),
 				fbr_arg_v(flag_ptr));
 		fail_unless(0 == retval, NULL);
 	}
 
-	extra = fbr_create(&context, "fiber_extra", mutex_fiber6, 0);
+	extra = fbr_create(&context, "fiber_extra", mutex_fiber6, NULL, 0);
 	fail_if(0 == extra, NULL);
 	retval = fbr_call(&context, extra, 2, fbr_arg_v(fibers),
 			fbr_arg_i(fiber_count));

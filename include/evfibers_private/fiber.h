@@ -23,6 +23,7 @@
 #ifndef _FBR_FIBER_PRIVATE_H_
 #define _FBR_FIBER_PRIVATE_H_
 
+#include <stdarg.h>
 #include <sys/queue.h>
 #include <evfibers/fiber.h>
 #include <evfibers_private/trace.h>
@@ -69,6 +70,7 @@ struct fbr_fiber {
 	uint64_t id;
 	const char *name;
 	fbr_fiber_func_t func;
+	void *func_arg;
 	coro_context ctx;
 	char *stack;
 	size_t stack_size;

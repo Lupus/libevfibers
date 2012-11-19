@@ -26,7 +26,7 @@
 
 #include "cond.h"
 
-static void cond_fiber1(FBR_P)
+static void cond_fiber1(FBR_P_ _unused_ void *_arg)
 {
 	struct fbr_mutex *mutex;
 	struct fbr_cond_var *cond;
@@ -64,7 +64,7 @@ START_TEST(test_cond_broadcast)
 	fail_if(NULL == cond, NULL);
 
 	for(i = 0; i < num_fibers; i++) {
-		fiber = fbr_create(&context, "cond_i", cond_fiber1, 0);
+		fiber = fbr_create(&context, "cond_i", cond_fiber1, NULL, 0);
 		fail_if(0 == fiber);
 		retval = fbr_call(&context, fiber, 3,
 				fbr_arg_v(mutex),
@@ -109,7 +109,7 @@ START_TEST(test_cond_signal)
 	fail_if(NULL == cond, NULL);
 
 	for(i = 0; i < num_fibers; i++) {
-		fiber = fbr_create(&context, "cond_i", cond_fiber1, 0);
+		fiber = fbr_create(&context, "cond_i", cond_fiber1, NULL, 0);
 		fail_if(0 == fiber);
 		retval = fbr_call(&context, fiber, 3,
 				fbr_arg_v(mutex),
