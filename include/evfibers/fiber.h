@@ -257,7 +257,7 @@ struct fbr_context {
  * @see FBR_P
  * @see fbr_context
  */
-typedef void (*fbr_fiber_func_t)(FBR_P);
+typedef void (*fbr_fiber_func_t)(FBR_P_ void *_arg);
 
 /**
  * Actual argument of a fiber call.
@@ -367,7 +367,7 @@ struct fbr_ev_base {
 };
 
 #define fbr_ev_cast(ptr, type_no_struct) \
-	fbr_container_of(ptr, struct type_no_struct, ev_base)
+       fbr_container_of(ptr, struct type_no_struct, ev_base)
 
 struct fbr_ev_watcher {
 	ev_watcher *w;
@@ -378,6 +378,7 @@ void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, ev_watcher *w);
 struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[]);
 void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one);
 int fbr_transfer(FBR_P_ fbr_id_t to);
+
 
 /**
  * Initializes the library context.
@@ -516,8 +517,9 @@ void fbr_log_d(FBR_P_ const char *format, ...)
  * @see fbr_disown
  * @see fbr_parent
  */
-fbr_id_t fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
+fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		size_t stack_size);
+
 
 /**
  * Changes parent of current fiber.
