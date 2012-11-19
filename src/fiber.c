@@ -399,6 +399,30 @@ static void ev_wakeup_timer(_unused_ EV_P_ ev_timer *w, _unused_ int event)
 	abort();
 }
 
+static void ev_watcher_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
+{
+	struct fbr_fiber *fiber;
+	struct fbr_ev_watcher *ev = w->data;
+	struct fbr_context *fctx = ev->ev_base.fctx;
+	int retval;
+
+	ENSURE_ROOT_FIBER;
+
+	retval = fbr_id_unpack(FBR_A_ &fiber, ev->ev_base.id);
+	if (-1 == retval) {
+		fbr_log_e(FBR_A_ "libevfibers: fiber is about to be called by"
+			" the watcher callback, but it's id is not valid: %s",
+			fbr_strerror(FBR_A_ fctx->f_errno));
+		abort();
+	}
+
+	fiber->ev.arrived = &ev->ev_base;
+
+	retval = fbr_call_noinfo(FBR_A_ fbr_id_pack(fiber), 0);
+	assert(0 == retval);
+}
+
+
 static void fbr_free_in_fiber(_unused_ FBR_P_ _unused_ struct fbr_fiber *fiber,
 		void *ptr, int destructor)
 {
@@ -491,6 +515,53 @@ struct fbr_fiber_arg fbr_arg_v(void *v)
 	struct fbr_fiber_arg arg;
 	arg.v = v;
 	return arg;
+}
+
+static void prepare_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
+{
+	struct fbr_ev_watcher *watcher;
+	switch (ev->type) {
+		case FBR_EV_WATCHER:
+			watcher = fbr_ev_cast(ev, fbr_ev_watcher);
+			watcher->w->data = watcher;
+			ev_set_cb(watcher->w, ev_watcher_cb);
+			break;
+		case FBR_EV_MESSAGE:
+		case FBR_EV_MUTEX:
+		case FBR_EV_COND:
+			/* NOP for now */
+			break;
+	}
+}
+
+struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
+{
+	struct fbr_fiber *fiber = CURRENT_FIBER;
+	struct fbr_ev_base **ev_pptr;
+	struct fbr_ev_base *ev_ptr;
+
+	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++)
+		prepare_ev(FBR_A_ *ev_pptr);
+
+	fiber->ev.arrived = NULL;
+	fiber->ev.waiting = events;
+
+	while (NULL == fiber->ev.arrived)
+		fbr_yield(FBR_A);
+
+	ev_ptr = fiber->ev.arrived;
+	fiber->ev.arrived = NULL;
+	fiber->ev.waiting = NULL;
+
+	return ev_ptr;
+}
+
+void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one)
+{
+	struct fbr_ev_base *ev_ptr;
+	ev_ptr = fbr_ev_wait(FBR_A_ (struct fbr_ev_base *[]){one, NULL});
+	assert(ev_ptr == one);
+	return;
 }
 
 int fbr_vcall(FBR_P_ fbr_id_t id, int leave_info, int argnum, va_list ap)
@@ -588,22 +659,6 @@ void fbr_yield(FBR_P)
 	coro_transfer(&callee->ctx, &caller->ctx);
 }
 
-static void io_start(FBR_P_ struct fbr_fiber *fiber, int fd, int events)
-{
-	ev_io_set(&fiber->w_io, fd, events);
-	ev_io_start(fctx->__p->loop, &fiber->w_io);
-	assert(0 == fiber->w_io_expected);
-	fiber->w_io_expected = 1;
-	fill_trace_info(FBR_A_ &fiber->w_io_tinfo);
-}
-
-static void io_stop(FBR_P_ struct fbr_fiber *fiber)
-{
-	assert(1 == fiber->w_io_expected);
-	fiber->w_io_expected = 0;
-	ev_io_stop(fctx->__p->loop, &fiber->w_io);
-}
-
 int fbr_fd_nonblock(FBR_P_ int fd)
 {
 	int flags, s;
@@ -620,41 +675,50 @@ int fbr_fd_nonblock(FBR_P_ int fd)
 	return_success;
 }
 
-
+void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, ev_watcher *w)
+{
+	ev->ev_base.type = FBR_EV_WATCHER;
+	ev->ev_base.id = CURRENT_FIBER_ID;
+	ev->ev_base.fctx = fctx;
+	ev->w = w;
+}
 
 ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count)
 {
-	struct fbr_fiber *fiber = CURRENT_FIBER;
 	ssize_t r;
+	ev_io io;
+	struct fbr_ev_watcher watcher;
 
-	io_start(FBR_A_ fiber, fd, EV_READ);
-	fbr_yield(FBR_A);
-	if (!CALLED_BY_ROOT) {
-		errno = EINTR;
-		r = -1;
-		goto finish;
-	}
+	ev_io_set(&io, fd, EV_READ);
+	ev_io_start(fctx->__p->loop, &io);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
+	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
+
 	do {
 		r = read(fd, buf, count);
 	} while (-1 == r && EINTR == errno);
 
-finish:
-	io_stop(FBR_A_ fiber);
+	ev_io_stop(fctx->__p->loop, &io);
+
 	return r;
 }
 
 ssize_t fbr_read_all(FBR_P_ int fd, void *buf, size_t count)
 {
-	struct fbr_fiber *fiber = CURRENT_FIBER;
 	ssize_t r;
 	size_t done = 0;
+	ev_io io;
+	struct fbr_ev_watcher watcher;
 
-	io_start(FBR_A_ fiber, fd, EV_READ);
+	ev_io_set(&io, fd, EV_READ);
+	ev_io_start(fctx->__p->loop, &io);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
+
 	while (count != done) {
 next:
-		fbr_yield(FBR_A);
-		if (!CALLED_BY_ROOT)
-			continue;
+		fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
 		for (;;) {
 			r = read(fd, buf + done, count - done);
 			if (-1 == r) {
@@ -673,11 +737,11 @@ next:
 			break;
 		done += r;
 	}
-	io_stop(FBR_A_ fiber);
+	ev_io_stop(fctx->__p->loop, &io);
 	return (ssize_t)done;
 
 error:
-	io_stop(FBR_A_ fiber);
+	ev_io_stop(fctx->__p->loop, &io);
 	return -1;
 }
 
@@ -728,37 +792,39 @@ ssize_t fbr_readline(FBR_P_ int fd, void *buffer, size_t n)
 
 ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count)
 {
-	struct fbr_fiber *fiber = CURRENT_FIBER;
 	ssize_t r;
+	ev_io io;
+	struct fbr_ev_watcher watcher;
 
-	io_start(FBR_A_ fiber, fd, EV_WRITE);
-	fbr_yield(FBR_A);
-	if (!CALLED_BY_ROOT) {
-		errno = EINTR;
-		r = -1;
-		goto finish;
-	}
+	ev_io_set(&io, fd, EV_WRITE);
+	ev_io_start(fctx->__p->loop, &io);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
+	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
+
 	do {
 		r = write(fd, buf, count);
 	} while (-1 == r && EINTR == errno);
 
-finish:
-	io_stop(FBR_A_ fiber);
+	ev_io_stop(fctx->__p->loop, &io);
 	return r;
 }
 
 ssize_t fbr_write_all(FBR_P_ int fd, const void *buf, size_t count)
 {
-	struct fbr_fiber *fiber = CURRENT_FIBER;
 	ssize_t r;
 	size_t done = 0;
+	ev_io io;
+	struct fbr_ev_watcher watcher;
 
-	io_start(FBR_A_ fiber, fd, EV_WRITE);
+	ev_io_set(&io, fd, EV_WRITE);
+	ev_io_start(fctx->__p->loop, &io);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
+
 	while (count != done) {
 next:
-		fbr_yield(FBR_A);
-		if (!CALLED_BY_ROOT)
-			continue;
+		fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
 		for (;;) {
 			r = write(fd, buf + done, count - done);
 			if (-1 == r) {
@@ -775,65 +841,65 @@ next:
 		}
 		done += r;
 	}
-	io_stop(FBR_A_ fiber);
+	ev_io_stop(fctx->__p->loop, &io);
 	return (ssize_t)done;
 
 error:
-	io_stop(FBR_A_ fiber);
+	ev_io_stop(fctx->__p->loop, &io);
 	return -1;
 }
 
 ssize_t fbr_recvfrom(FBR_P_ int sockfd, void *buf, size_t len, int flags,
 		struct sockaddr *src_addr, socklen_t *addrlen)
 {
-	struct fbr_fiber *fiber = CURRENT_FIBER;
-	int nbytes;
+	ev_io io;
+	struct fbr_ev_watcher watcher;
 
-	io_start(FBR_A_ fiber, sockfd, EV_READ);
-	fbr_yield(FBR_A);
-	io_stop(FBR_A_ fiber);
-	if (CALLED_BY_ROOT) {
-		nbytes = recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
-		return nbytes;
-	}
-	errno = EINTR;
-	return -1;
+	ev_io_set(&io, sockfd, EV_READ);
+	ev_io_start(fctx->__p->loop, &io);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
+	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
+
+	ev_io_stop(fctx->__p->loop, &io);
+
+	return recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
 }
 
 ssize_t fbr_sendto(FBR_P_ int sockfd, const void *buf, size_t len, int flags, const
 		struct sockaddr *dest_addr, socklen_t addrlen)
 {
-	struct fbr_fiber *fiber = CURRENT_FIBER;
-	int nbytes;
+	ev_io io;
+	struct fbr_ev_watcher watcher;
 
-	io_start(FBR_A_ fiber, sockfd, EV_WRITE);
-	fbr_yield(FBR_A);
-	io_stop(FBR_A_ fiber);
-	if (CALLED_BY_ROOT) {
-		nbytes = sendto(sockfd, buf, len, flags, dest_addr, addrlen);
-		return nbytes;
-	}
-	errno = EINTR;
-	return -1;
+	ev_io_set(&io, sockfd, EV_WRITE);
+	ev_io_start(fctx->__p->loop, &io);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
+	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
+
+	ev_io_stop(fctx->__p->loop, &io);
+
+	return sendto(sockfd, buf, len, flags, dest_addr, addrlen);
 }
 
 int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
-	struct fbr_fiber *fiber = CURRENT_FIBER;
 	int r;
+	ev_io io;
+	struct fbr_ev_watcher watcher;
 
-	io_start(FBR_A_ fiber, sockfd, EV_READ);
-	fbr_yield(FBR_A);
-	if (!CALLED_BY_ROOT) {
-		io_stop(FBR_A_ fiber);
-		errno = EINTR;
-		return -1;
-	}
+	ev_io_set(&io, sockfd, EV_READ);
+	ev_io_start(fctx->__p->loop, &io);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
+	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
+
 	do {
 		r = accept(sockfd, addr, addrlen);
 	} while (-1 == r && EINTR == errno);
 
-	io_stop(FBR_A_ fiber);
+	ev_io_stop(fctx->__p->loop, &io);
 
 	return r;
 }
