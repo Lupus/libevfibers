@@ -192,7 +192,7 @@ static void mutex_fiber6(FBR_P)
 			if(fbr_is_reclaimed(FBR_A_ fibers[i]))
 				goto finish;
 			else {
-				retval = fbr_call_noinfo(FBR_A_ fibers[i], 0);
+				retval = fbr_transfer(FBR_A_ fibers[i]);
 				fail_unless(0 == retval, NULL);
 			}
 		}

@@ -377,7 +377,7 @@ struct fbr_ev_watcher {
 void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, ev_watcher *w);
 struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[]);
 void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one);
-
+int fbr_transfer(FBR_P_ fbr_id_t to);
 
 /**
  * Initializes the library context.
@@ -624,18 +624,6 @@ int fbr_vcall(FBR_P_ fbr_id_t callee, int leave_info, int argnum, va_list ap)
  * @see fbr_vcall
  */
 int fbr_call(FBR_P_ fbr_id_t fiber, int argnum, ...)
-	__attribute__ ((warn_unused_result));
-
-/**
- * Calls the specified fiber.
- * @param [in] callee fiber pointer to call
- * @param [in] argnum number of arguments to pass
- * @return 0 on success, -1 on failure
- *
- * Behind the scenes this is a wrapper for fbr_vcall with leave_info of 0.
- * @see fbr_vcall
- */
-int fbr_call_noinfo(FBR_P_ fbr_id_t callee, int argnum, ...)
 	__attribute__ ((warn_unused_result));
 
 /**

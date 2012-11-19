@@ -350,9 +350,9 @@ START_TEST(test_udp)
 	writer = fbr_create(&context, "writer_udp", udp_writer_fiber, 0);
 	fail_if(0 == reader, NULL);
 
-	retval = fbr_call_noinfo(&context, reader, 0);
+	retval = fbr_transfer(&context, reader);
 	fail_unless(0 == retval, NULL);
-	retval = fbr_call_noinfo(&context, writer, 0);
+	retval = fbr_transfer(&context, writer);
 	fail_unless(0 == retval, NULL);
 
 	ev_run(EV_DEFAULT, 0);
