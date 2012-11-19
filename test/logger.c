@@ -20,6 +20,7 @@
 
  ********************************************************************/
 
+#include <stdio.h>
 #include <ev.h>
 #include <check.h>
 #include <evfibers_private/fiber.h>
@@ -29,6 +30,8 @@
 static void test_fiber(FBR_P)
 {
 	fctx->logger->level = FBR_LOG_DEBUG;
+
+	fprintf(stderr, "\n==== BEGIN LOGGER TEST ====\n\n");
 
 	fbr_dump_stack(FBR_A_ fbr_log_d);
 	fbr_dump_stack(FBR_A_ fbr_log_i);
@@ -41,6 +44,8 @@ static void test_fiber(FBR_P)
 	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_ENOFIBER));
 	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_ESYSTEM));
 	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ -1));
+
+	printf("\n==== END LOGGER TEST ====\n\n");
 }
 
 START_TEST(test_logger)

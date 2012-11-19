@@ -174,27 +174,27 @@ static void stdio_logger(struct fbr_logger *logger, enum fbr_log_level level,
 		case FBR_LOG_WARNING:
 			fprintf(stdout, "WARNING ");
 			vfprintf(stdout, format, ap);
-			fprintf(stderr, "\n");
+			fprintf(stdout, "\n");
 			break;
 		case FBR_LOG_NOTICE:
 			fprintf(stdout, "NOTICE ");
 			vfprintf(stdout, format, ap);
-			fprintf(stderr, "\n");
+			fprintf(stdout, "\n");
 			break;
 		case FBR_LOG_INFO:
 			fprintf(stdout, "INFO ");
 			vfprintf(stdout, format, ap);
-			fprintf(stderr, "\n");
+			fprintf(stdout, "\n");
 			break;
 		case FBR_LOG_DEBUG:
 			fprintf(stdout, "DEBUG ");
 			vfprintf(stdout, format, ap);
-			fprintf(stderr, "\n");
+			fprintf(stdout, "\n");
 			break;
 		default:
 			fprintf(stdout, "????? ");
 			vfprintf(stdout, format, ap);
-			fprintf(stderr, "\n");
+			fprintf(stdout, "\n");
 			break;
 	}
 }
@@ -970,8 +970,8 @@ void fbr_free_nd(FBR_P_ void *ptr)
 void fbr_dump_stack(FBR_P_ fbr_logutil_func_t log)
 {
 	struct fbr_stack_item *ptr = fctx->__p->sp;
-	(*log)(FBR_A_ "%s\n%s", "Fiber call stack:",
-			"-------------------------------");
+	(*log)(FBR_A_ "%s", "Fiber call stack:");
+	(*log)(FBR_A_ "%s", "-------------------------------");
 	while (ptr >= fctx->__p->stack) {
 		(*log)(FBR_A_ "fiber_call: %p\t%s",
 				ptr->fiber,
