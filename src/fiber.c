@@ -106,7 +106,7 @@ static void mutex_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 		if (TAILQ_EMPTY(&fctx->__p->mutexes))
 			ev_async_stop(EV_A_ &fctx->__p->mutex_async);
 
-		retval = fbr_call_noinfo(FBR_A_ mutex->locked_by, 0);
+		retval = fbr_transfer(FBR_A_ mutex->locked_by);
 		if (-1 == retval && FBR_ENOFIBER != fctx->f_errno) {
 			fbr_log_e(FBR_A_ "libevfibers: unexpected error trying"
 					" to call a fiber by id: %s",
@@ -131,7 +131,7 @@ static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 
 	item = TAILQ_FIRST(&fctx->__p->pending_fibers);
 	TAILQ_REMOVE(&fctx->__p->pending_fibers, item, entries);
-	retval = fbr_call_noinfo(FBR_A_ item->id, 0);
+	retval = fbr_transfer(FBR_A_ item->id);
 	if (-1 == retval && FBR_ENOFIBER != fctx->f_errno) {
 		fbr_log_e(FBR_A_ "libevfibers: unexpected error trying to call"
 				" a fiber by id: %s",
@@ -359,7 +359,7 @@ static void ev_watcher_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
 
 	fiber->ev.arrived = &ev->ev_base;
 
-	retval = fbr_call_noinfo(FBR_A_ fbr_id_pack(fiber), 0);
+	retval = fbr_transfer(FBR_A_ fbr_id_pack(fiber));
 	assert(0 == retval);
 }
 
@@ -494,6 +494,23 @@ void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one)
 	return;
 }
 
+int fbr_transfer(FBR_P_ fbr_id_t to)
+{
+	struct fbr_fiber *callee;
+	struct fbr_fiber *caller = fctx->__p->sp->fiber;
+
+	unpack_transfer_errno(&callee, to);
+
+	fctx->__p->sp++;
+
+	fctx->__p->sp->fiber = callee;
+	fill_trace_info(FBR_A_ &fctx->__p->sp->tinfo);
+
+	coro_transfer(&caller->ctx, &callee->ctx);
+
+	return_success;
+}
+
 int fbr_vcall(FBR_P_ fbr_id_t id, int leave_info, int argnum, va_list ap)
 {
 	struct fbr_fiber *callee;
@@ -539,16 +556,6 @@ int fbr_vcall(FBR_P_ fbr_id_t id, int leave_info, int argnum, va_list ap)
 	coro_transfer(&caller->ctx, &callee->ctx);
 
 	return_success;
-}
-
-int fbr_call_noinfo(FBR_P_ fbr_id_t callee, int argnum, ...)
-{
-	int retval;
-	va_list ap;
-	va_start(ap, argnum);
-	retval = fbr_vcall(FBR_A_ callee, 0, argnum, ap);
-	va_end(ap);
-	return retval;
 }
 
 int fbr_call(FBR_P_ fbr_id_t callee, int argnum, ...)

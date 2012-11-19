@@ -62,7 +62,7 @@ START_TEST(test_logger)
 	test = fbr_create(&context, "test", test_fiber, 0);
 	fail_if(0 == test, NULL);
 
-	retval = fbr_call_noinfo(&context, test, 0);
+	retval = fbr_transfer(&context, test);
 	fail_unless(0 == retval, NULL);
 
 	fbr_destroy(&context);

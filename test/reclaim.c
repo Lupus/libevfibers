@@ -67,20 +67,20 @@ START_TEST(test_disown)
 	new_parent = fbr_create(&context, "new_fiber", reclaim_fiber1, 0);
 	fail_if(0 == new_parent, NULL);
 
-	retval = fbr_call_noinfo(&context, fiber, 0);
+	retval = fbr_transfer(&context, fiber);
 	fail_unless(0 == retval, NULL);
 
 	fail_if(0 == test_fiber, NULL);
 	fail_unless(0 == fbr_is_reclaimed(&context, test_fiber), NULL);
 
-	retval = fbr_call_noinfo(&context, test_fiber, 0);
+	retval = fbr_transfer(&context, test_fiber);
 	fail_unless(0 == retval, NULL);
 
 	retval = fbr_reclaim(&context, fiber);
 	fail_unless(0 == retval, NULL);
 	fail_unless(fbr_is_reclaimed(&context, fiber), NULL);
 
-	retval = fbr_call_noinfo(&context, test_fiber, 0);
+	retval = fbr_transfer(&context, test_fiber);
 	fail_unless(0 == retval, NULL);
 
 	retval = fbr_reclaim(&context, new_parent);
@@ -103,7 +103,7 @@ START_TEST(test_reclaim)
 	fiber = fbr_create(&context, "reclaim_fiber", reclaim_fiber1, 0);
 	fail_if(0 == fiber, NULL);
 
-	retval = fbr_call_noinfo(&context, fiber, 0);
+	retval = fbr_transfer(&context, fiber);
 	fail_unless(0 == retval, NULL);
 
 	new_fiber = fbr_create(&context, "reclaim_fiber2", reclaim_fiber1, 0);
@@ -111,15 +111,15 @@ START_TEST(test_reclaim)
 	/* should be same pointer */
 	fail_unless((uint64_t)fiber == (uint64_t)new_fiber);
 	/* old id should be invalid any more to avoid ABA problem */
-	retval = fbr_call_noinfo(&context, fiber, 0);
+	retval = fbr_transfer(&context, fiber);
 	fail_unless(-1 == retval, NULL);
 	fail_unless(FBR_ENOFIBER == context.f_errno, NULL);
 
 	/* new fiber should be called without problems */
-	retval = fbr_call_noinfo(&context, new_fiber, 0);
+	retval = fbr_transfer(&context, new_fiber);
 	fail_unless(0 == retval, NULL);
 	/* but consequent call should fail as fiber is reclaimed */
-	retval = fbr_call_noinfo(&context, new_fiber, 0);
+	retval = fbr_transfer(&context, new_fiber);
 	fail_unless(-1 == retval, NULL);
 	fail_unless(FBR_ENOFIBER == context.f_errno, NULL);
 
