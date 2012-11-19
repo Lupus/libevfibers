@@ -904,28 +904,20 @@ int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 	return r;
 }
 
-static void timer_start(FBR_P_ struct fbr_fiber *fiber, ev_tstamp timeout,
-		ev_tstamp repeat)
-{
-	ev_timer_set(&fiber->w_timer, timeout, repeat);
-	ev_timer_start(fctx->__p->loop, &fiber->w_timer);
-	fiber->w_timer_expected = 1;
-	fill_trace_info(FBR_A_ &fiber->w_timer_tinfo);
-}
-
-static void timer_stop(FBR_P_ struct fbr_fiber *fiber)
-{
-	fiber->w_timer_expected = 0;
-	ev_timer_stop(fctx->__p->loop, &fiber->w_timer);
-}
-
 ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds)
 {
-	struct fbr_fiber *fiber = CURRENT_FIBER;
+	ev_timer timer;
+	struct fbr_ev_watcher watcher;
 	ev_tstamp expected = ev_now(fctx->__p->loop) + seconds;
-	timer_start(FBR_A_ fiber, seconds, 0.);
-	fbr_yield(FBR_A);
-	timer_stop(FBR_A_ fiber);
+
+	ev_timer_set(&timer, seconds, 0.);
+	ev_timer_start(fctx->__p->loop, &timer);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&timer);
+	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
+
+	ev_timer_stop(fctx->__p->loop, &timer);
+
 	return max(0., expected - ev_now(fctx->__p->loop));
 }
 
