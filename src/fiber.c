@@ -339,66 +339,6 @@ void fbr_enable_backtraces(FBR_P_ int enabled)
 
 }
 
-static void ev_wakeup_io(_unused_ EV_P_ ev_io *w, _unused_ int event)
-{
-	struct fbr_context *fctx;
-	struct fbr_fiber *fiber;
-	fiber = container_of(w, struct fbr_fiber, w_io);
-	fctx = (struct fbr_context *)w->data;
-	int retval;
-
-	ENSURE_ROOT_FIBER;
-	if (1 != fiber->w_io_expected) {
-		fbr_log_e(FBR_A_ "libevfibers: fiber ``%s'' is about to be"
-				" woken up by an io event but it does not"
-				" expect this.", fiber->name);
-		fbr_log_e(FBR_A_ "libevfibers: last registered io request for "
-				"this fiber was:");
-		fbr_log_e(FBR_A_ "--- begin trace ---");
-		print_trace_info(FBR_A_ &fiber->w_io_tinfo, fbr_log_e);
-		fbr_log_e(FBR_A_ "--- end trace ---");
-		abort();
-	}
-
-	retval = fbr_call_noinfo(FBR_A_ fbr_id_pack(fiber), 0);
-	if (0 == retval)
-		return;
-
-	fbr_log_e(FBR_A_ "libevfibers: failed to call fiber ``%s'': %s",
-			fiber->name, fbr_strerror(FBR_A_ fctx->f_errno));
-	abort();
-}
-
-static void ev_wakeup_timer(_unused_ EV_P_ ev_timer *w, _unused_ int event)
-{
-	struct fbr_context *fctx;
-	struct fbr_fiber *fiber;
-	fiber = container_of(w, struct fbr_fiber, w_timer);
-	fctx = (struct fbr_context *)w->data;
-	int retval;
-
-	ENSURE_ROOT_FIBER;
-	if (1 != fiber->w_timer_expected) {
-		fbr_log_e(FBR_A_ "libevfibers: fiber ``%s'' is about to be"
-				" woken up by a timer event but it does not"
-				" expect this.", fiber->name);
-		fbr_log_e(FBR_A_ "libevfibers: last registered timer request"
-				" for this fiber was:");
-		fbr_log_e(FBR_A_ "--- begin trace ---");
-		print_trace_info(FBR_A_ &fiber->w_io_tinfo, fbr_log_e);
-		fbr_log_e(FBR_A_ "--- end trace ---");
-		abort();
-	}
-
-	retval = fbr_call_noinfo(FBR_A_ fbr_id_pack(fiber), 0);
-	if (0 == retval)
-		return;
-
-	fbr_log_e(FBR_A_ "libevfibers: failed to call fiber ``%s'': %s",
-			fiber->name, fbr_strerror(FBR_A_ fctx->f_errno));
-	abort();
-}
-
 static void ev_watcher_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
 {
 	struct fbr_fiber *fiber;
@@ -446,8 +386,6 @@ static void fiber_cleanup(FBR_P_ struct fbr_fiber *fiber)
 {
 	struct mem_pool *p, *x;
 	/* coro_destroy(&fiber->ctx); */
-	ev_io_stop(fctx->__p->loop, &fiber->w_io);
-	ev_timer_stop(fctx->__p->loop, &fiber->w_timer);
 	LIST_REMOVE(fiber, entries.children);
 	LIST_FOREACH_SAFE(p, &fiber->pool, entries, x) {
 		fbr_free_in_fiber(FBR_A_ fiber, p + 1, 1);
@@ -481,19 +419,10 @@ fbr_id_t fbr_self(FBR_P)
 	return CURRENT_FIBER_ID;
 }
 
-static void fiber_prepare(FBR_P_ struct fbr_fiber *fiber)
-{
-	ev_init(&fiber->w_io, ev_wakeup_io);
-	ev_init(&fiber->w_timer, ev_wakeup_timer);
-	fiber->w_io.data = FBR_A;
-	fiber->w_timer.data = FBR_A;
-}
-
 static void call_wrapper(FBR_P_ _unused_ void (*func) (FBR_P))
 {
 	int retval;
 	struct fbr_fiber *fiber = CURRENT_FIBER;
-	fiber_prepare(FBR_A_ fiber);
 
 	fiber->func(FBR_A);
 
@@ -957,8 +886,6 @@ fbr_id_t fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
 	}
 	coro_create(&fiber->ctx, (coro_func)call_wrapper, FBR_A, fiber->stack,
 			FBR_STACK_SIZE);
-	fiber->w_io_expected = 0;
-	fiber->w_timer_expected = 0;
 	fiber->call_list = NULL;
 	fiber->call_list_size = 0;
 	LIST_INIT(&fiber->children);
