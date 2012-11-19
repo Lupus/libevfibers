@@ -124,7 +124,8 @@
  * sudo make install
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  * \subsection building_deb_ssec Building debian package
- * If you are running debian-based distribution, it will be more useful to build a debian package and install it.
+ * If you are running debian-based distribution, it will be more useful to
+ * build a debian package and install it.
  *
  * The following actions will bring you there:
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.sh}
@@ -287,7 +288,7 @@ struct fbr_call_info {
  * @param [in] ptr memory pointer for memory to be destroyed
  * @param [in] context user data pointer passed via fbr_alloc_set_destructor
  *
- * One can attache a destructor to a piece of memory allocated in a fiber. It
+ * One can attach a destructor to a piece of memory allocated in a fiber. It
  * will be called whenever memory is freed with original pointer allocated
  * along with a user context pointer passed to it.
  * @see fbr_alloc
