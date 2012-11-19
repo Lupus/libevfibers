@@ -74,12 +74,6 @@ struct fbr_fiber {
 	size_t stack_size;
 	struct fbr_call_info *call_list;
 	size_t call_list_size;
-	ev_io w_io;
-	int w_io_expected;
-	struct trace_info w_io_tinfo;
-	ev_timer w_timer;
-	struct trace_info w_timer_tinfo;
-	int w_timer_expected;
 	struct {
 		struct fbr_ev_base **waiting;
 		struct fbr_ev_base *arrived;
