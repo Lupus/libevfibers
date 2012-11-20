@@ -356,7 +356,7 @@ enum fbr_ev_type {
 	FBR_EV_WATCHER = 1,
 	FBR_EV_MESSAGE,
 	FBR_EV_MUTEX,
-	FBR_EV_COND,
+	FBR_EV_COND_VAR,
 };
 
 struct fbr_ev_base {
@@ -379,10 +379,16 @@ struct fbr_ev_mutex {
 	struct fbr_ev_base ev_base;
 };
 
+struct fbr_ev_cond_var {
+	struct fbr_cond_var *cond;
+	struct fbr_ev_base ev_base;
+};
 
 void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, ev_watcher *w);
 void fbr_ev_mutex_init(FBR_P_ struct fbr_ev_mutex *ev,
 		struct fbr_mutex *mutex);
+void fbr_ev_cond_var_init(FBR_P_ struct fbr_ev_cond_var *ev,
+		struct fbr_cond_var *cond);
 struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[]);
 void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one);
 int fbr_transfer(FBR_P_ fbr_id_t to);
