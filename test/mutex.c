@@ -26,129 +26,6 @@
 
 #include "mutex.h"
 
-static void mutex_fiber1(FBR_P_ _unused_ void *_arg)
-{
-	struct fbr_mutex *mutex;
-	struct fbr_call_info *info = NULL;
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(1 == info->argc, NULL);
-	mutex = info->argv[0].v;
-	fail_unless(fbr_mutex_trylock(FBR_A_ mutex), NULL);
-	fbr_yield(FBR_A);
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(0 == info->argc, NULL);
-	fbr_mutex_unlock(FBR_A_ mutex);
-	fbr_yield(FBR_A);
-}
-
-static void mutex_fiber2(FBR_P_ _unused_ void *_arg)
-{
-	struct fbr_mutex *mutex;
-	struct fbr_call_info *info = NULL;
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(1 == info->argc, NULL);
-	mutex = info->argv[0].v;
-	fail_if(fbr_mutex_trylock(FBR_A_ mutex), NULL);
-	fbr_yield(FBR_A);
-}
-
-static void mutex_fiber3(FBR_P_ _unused_ void *_arg)
-{
-	struct fbr_mutex *mutex;
-	struct fbr_call_info *info = NULL;
-	int *flag_ptr;
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(2 == info->argc, NULL);
-	mutex = info->argv[0].v;
-	flag_ptr = info->argv[1].v;
-	fbr_mutex_lock(FBR_A_ mutex);
-	*flag_ptr = 1;
-	fbr_yield(FBR_A);
-}
-
-static void mutex_fiber4(FBR_P_ _unused_ void *_arg)
-{
-	struct fbr_mutex *mutex;
-	struct fbr_call_info *info = NULL;
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(1 == info->argc, NULL);
-	mutex = info->argv[0].v;
-	fbr_mutex_lock(FBR_A_ mutex);
-	fail("Should never get here");
-}
-
-START_TEST(test_mutex)
-{
-	struct fbr_context context;
-	fbr_id_t fibers[5] = {0};
-	struct fbr_mutex *mutex = NULL;
-	int flag = 0;
-	int *flag_ptr = &flag;
-	int retval;
-
-	fbr_init(&context, EV_DEFAULT);
-
-	mutex = fbr_mutex_create(&context);
-	fail_if(NULL == mutex, NULL);
-
-	fibers[0] = fbr_create(&context, "mutex1", mutex_fiber1, NULL, 0);
-	fail_if(0 == fibers[0], NULL);
-	fibers[1] = fbr_create(&context, "mutex2", mutex_fiber2, NULL, 0);
-	fail_if(0 == fibers[1], NULL);
-	fibers[2] = fbr_create(&context, "mutex3", mutex_fiber3, NULL, 0);
-	fail_if(0 == fibers[2], NULL);
-	fibers[3] = fbr_create(&context, "mutex4", mutex_fiber4, NULL, 0);
-	fail_if(0 == fibers[3], NULL);
-
-	/* ``mutex1'' fiber will aquire the mutex and yield */
-	retval = fbr_call(&context, fibers[0], 1, fbr_arg_v(mutex));
-	fail_unless(0 == retval, NULL);
-	/* so we make sure that it holds the mutex */
-	fail_unless(mutex->locked_by == fibers[0], NULL);
-
-	/* ``mutex2'' fiber tries to lock and yields */
-	retval = fbr_call(&context, fibers[1], 1, fbr_arg_v(mutex));
-	fail_unless(0 == retval, NULL);
-	/* so we make sure that ``mutex1'' still holds the mutex */
-	fail_unless(mutex->locked_by == fibers[0], NULL);
-
-	/* ``mutex3'' fiber blocks on mutex lock and yields */
-	retval = fbr_call(&context, fibers[2], 2, fbr_arg_v(mutex),
-			fbr_arg_v(flag_ptr));
-	fail_unless(0 == retval, NULL);
-	/* we still expect ``mutex1'' to hold the mutex */
-	fail_unless(mutex->locked_by == fibers[0], NULL);
-
-	/* ``mutex4'' fiber blocks on mutex lock as well */
-	retval = fbr_call(&context, fibers[3], 1, fbr_arg_v(mutex));
-	fail_unless(0 == retval, NULL);
-	/* ``mutex'' shoud still hold the mutex */
-	fail_unless(mutex->locked_by == fibers[0], NULL);
-
-	/* ``mutex1'' releases the mutex */
-	retval = fbr_call(&context, fibers[0], 0);
-	fail_unless(0 == retval, NULL);
-	/* now mutex should be acquired by the next fiber in the queue:
-	 * ``mutex3''
-	 */
-	fail_unless(mutex->locked_by == fibers[2], NULL);
-
-	/* Call callback twice to check it's reentrance */
-	context.__p->mutex_async.cb(EV_DEFAULT, &context.__p->mutex_async, 0);
-	context.__p->mutex_async.cb(EV_DEFAULT, &context.__p->mutex_async, 0);
-	/* ensure that it's still locked by ``mutex3'' */
-	fail_unless(mutex->locked_by == fibers[2], NULL);
-	fail_if(0 == flag, NULL);
-
-	context.__p->mutex_async.cb(EV_DEFAULT, &context.__p->mutex_async, 0);
-	fail_unless(mutex->locked_by == fibers[2], NULL);
-	fail_if(0 == flag, NULL);
-
-	fbr_mutex_destroy(&context, mutex);
-	fbr_destroy(&context);
-}
-END_TEST
-
 static void mutex_fiber5(FBR_P_ _unused_ void *_arg)
 {
 	struct fbr_mutex *mutex;
@@ -243,7 +120,6 @@ END_TEST
 TCase * mutex_tcase(void)
 {
 	TCase *tc_mutex = tcase_create ("Mutex");
-	tcase_add_test(tc_mutex, test_mutex);
 	tcase_add_test(tc_mutex, test_mutex_evloop);
 	return tc_mutex;
 }
