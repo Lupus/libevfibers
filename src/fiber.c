@@ -431,7 +431,7 @@ static void prepare_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
 			break;
 		case FBR_EV_MESSAGE:
 		case FBR_EV_MUTEX:
-		case FBR_EV_COND:
+		case FBR_EV_COND_VAR:
 			/* NOP for now */
 			break;
 	}
@@ -1001,6 +1001,7 @@ void fbr_mutex_lock(FBR_P_ struct fbr_mutex *mutex)
 	}
 
 	item = id_tailq_i_for(FBR_A_ CURRENT_FIBER, &mutex->pending);
+	item->ev = &ev.ev_base;
 	TAILQ_INSERT_TAIL(&mutex->pending, item, entries);
 
 	fbr_ev_mutex_init(FBR_A_ &ev, mutex);
@@ -1052,6 +1053,13 @@ void fbr_mutex_destroy(_unused_ FBR_P_ struct fbr_mutex *mutex)
 	free(mutex);
 }
 
+void fbr_ev_cond_var_init(FBR_P_ struct fbr_ev_cond_var *ev,
+		struct fbr_cond_var *cond)
+{
+	watcher_base_init(FBR_A_ &ev->ev_base, FBR_EV_COND_VAR);
+	ev->cond = cond;
+}
+
 struct fbr_cond_var *fbr_cond_create(_unused_ FBR_P)
 {
 	struct fbr_cond_var *cond;
@@ -1074,33 +1082,51 @@ int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
 {
 	struct fiber_id_tailq_i *item;
 	struct fbr_fiber *fiber = CURRENT_FIBER;
+	struct fbr_ev_cond_var ev;
 	if (0 == mutex->locked_by)
 		return_error(FBR_EINVAL);
 	item = id_tailq_i_for(FBR_A_ fiber, &cond->waiting);
+	item->ev = &ev.ev_base;
 	TAILQ_INSERT_TAIL(&cond->waiting, item, entries);
 	fbr_mutex_unlock(FBR_A_ mutex);
-	fbr_yield(FBR_A);
-	while (!CALLED_BY_ROOT)
-		fbr_yield(FBR_A);
+	fbr_ev_cond_var_init(FBR_A_ &ev, cond);
+	fbr_ev_wait_one(FBR_A_ &ev.ev_base);
 	fbr_mutex_lock(FBR_A_ mutex);
 	return_success;
 }
 
 void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond)
 {
+	struct fiber_id_tailq_i *item;
+	struct fbr_fiber *fiber;
 	if (TAILQ_EMPTY(&cond->waiting))
 		return;
+	TAILQ_FOREACH(item, &cond->waiting, entries) {
+		if(-1 == fbr_id_unpack(FBR_A_ &fiber, item->id)) {
+			assert(FBR_ENOFIBER == fctx->f_errno);
+			continue;
+		}
+		fiber->ev.arrived = item->ev;
+	}
 	transfer_later_tailq(FBR_A_ &cond->waiting);
 }
 
 void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 {
 	struct fiber_id_tailq_i *item;
+	struct fbr_fiber *fiber;
 	int was_empty;
 	if (TAILQ_EMPTY(&cond->waiting))
 		return;
 	was_empty = TAILQ_EMPTY(&fctx->__p->pending_fibers);
 	item = TAILQ_FIRST(&cond->waiting);
+	if(-1 == fbr_id_unpack(FBR_A_ &fiber, item->id)) {
+		assert(FBR_ENOFIBER == fctx->f_errno);
+		return;
+	}
+
+	fiber->ev.arrived = item->ev;
+
 	TAILQ_REMOVE(&cond->waiting, item, entries);
 	transfer_later(FBR_A_ item);
 }
