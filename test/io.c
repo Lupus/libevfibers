@@ -44,6 +44,7 @@ static void reader_fiber(FBR_P_ _unused_ void *_arg)
 	fd = info->argv[0].i;
 	for (;;) {
 		retval = fbr_read(FBR_A_ fd, buf, buf_size);
+		abort();
 		if (0 == retval) {
 			fail_unless(1000 == count);
 			return;
@@ -100,6 +101,9 @@ START_TEST(test_read_write)
 	fail_unless(0 == retval, NULL);
 
 	ev_run(EV_DEFAULT, 0);
+
+	fail_unless(fbr_is_reclaimed(&context, reader));
+	fail_unless(fbr_is_reclaimed(&context, writer));
 
 	fbr_destroy(&context);
 }
@@ -162,6 +166,9 @@ START_TEST(test_read_write_all)
 	fail_unless(0 == retval, NULL);
 
 	ev_run(EV_DEFAULT, 0);
+
+	fail_unless(fbr_is_reclaimed(&context, reader));
+	fail_unless(fbr_is_reclaimed(&context, writer));
 
 	fbr_destroy(&context);
 }
@@ -264,6 +271,9 @@ START_TEST(test_read_line)
 
 	ev_run(EV_DEFAULT, 0);
 
+	fail_unless(fbr_is_reclaimed(&context, reader));
+	fail_unless(fbr_is_reclaimed(&context, writer));
+
 	fbr_destroy(&context);
 }
 END_TEST
@@ -356,6 +366,9 @@ START_TEST(test_udp)
 	fail_unless(0 == retval, NULL);
 
 	ev_run(EV_DEFAULT, 0);
+
+	fail_unless(fbr_is_reclaimed(&context, reader));
+	fail_unless(fbr_is_reclaimed(&context, writer));
 
 	fbr_destroy(&context);
 }
