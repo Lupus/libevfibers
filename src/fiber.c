@@ -1022,7 +1022,7 @@ int fbr_mutex_trylock(FBR_P_ struct fbr_mutex *mutex)
 void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 {
 	struct fiber_id_tailq_i *item, *x;
-	struct fbr_fiber *fiber;
+	struct fbr_fiber *fiber = NULL;
 
 	if (TAILQ_EMPTY(&mutex->pending)) {
 		mutex->locked_by = 0;
@@ -1116,10 +1116,8 @@ void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 {
 	struct fiber_id_tailq_i *item;
 	struct fbr_fiber *fiber;
-	int was_empty;
 	if (TAILQ_EMPTY(&cond->waiting))
 		return;
-	was_empty = TAILQ_EMPTY(&fctx->__p->pending_fibers);
 	item = TAILQ_FIRST(&cond->waiting);
 	if(-1 == fbr_id_unpack(FBR_A_ &fiber, item->id)) {
 		assert(FBR_ENOFIBER == fctx->f_errno);
