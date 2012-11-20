@@ -300,7 +300,7 @@ struct fbr_call_info {
  * @see fbr_free
  * @see fbr_alloc_set_destructor
  */
-typedef void (*fbr_alloc_destructor_func_t)(void *ptr, void *context);
+typedef void (*fbr_alloc_destructor_func_t)(FBR_P_ void *ptr, void *context);
 
 /**
  * Logging levels.
@@ -374,7 +374,15 @@ struct fbr_ev_watcher {
 	struct fbr_ev_base ev_base;
 };
 
+struct fbr_ev_mutex {
+	struct fbr_mutex *mutex;
+	struct fbr_ev_base ev_base;
+};
+
+
 void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, ev_watcher *w);
+void fbr_ev_mutex_init(FBR_P_ struct fbr_ev_mutex *ev,
+		struct fbr_mutex *mutex);
 struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[]);
 void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one);
 int fbr_transfer(FBR_P_ fbr_id_t to);

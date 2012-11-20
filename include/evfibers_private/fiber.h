@@ -59,6 +59,7 @@ LIST_HEAD(mem_pool_list, mem_pool);
 
 struct fiber_id_tailq_i {
 	fbr_id_t id;
+	struct fbr_ev_base *ev;
 	TAILQ_ENTRY(fiber_id_tailq_i) entries;
 };
 
@@ -113,9 +114,7 @@ struct fbr_context_private {
 	struct fbr_stack_item *sp;
 	struct fbr_fiber root;
 	struct fiber_list reclaimed;
-	struct ev_async mutex_async;
 	struct ev_async pending_async;
-	struct mutex_tailq mutexes;
 	struct fiber_id_tailq pending_fibers;
 	int backtraces_enabled;
 	uint64_t last_id;
