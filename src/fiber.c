@@ -224,6 +224,7 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 
 	fctx->__p->sp = fctx->__p->stack;
 	fctx->__p->sp->fiber = root;
+	fctx->__p->backtraces_enabled = 1;
 	fill_trace_info(FBR_A_ &fctx->__p->sp->tinfo);
 	fctx->__p->loop = loop;
 	fctx->__p->mutex_async.data = fctx;
