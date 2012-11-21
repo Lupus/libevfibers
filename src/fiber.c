@@ -426,7 +426,7 @@ static void prepare_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
 	struct fbr_ev_watcher *watcher;
 	switch (ev->type) {
 		case FBR_EV_WATCHER:
-			watcher = fbr_ev_cast(ev, fbr_ev_watcher);
+			watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
 			assert(ev_is_active(watcher->w));
 			watcher->w->data = watcher;
 			ev_set_cb(watcher->w, ev_watcher_cb);

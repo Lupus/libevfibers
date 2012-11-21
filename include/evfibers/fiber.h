@@ -366,7 +366,7 @@ struct fbr_ev_base {
 	struct fbr_context *fctx;
 };
 
-#define fbr_ev_cast(ptr, type_no_struct) \
+#define fbr_ev_upcast(ptr, type_no_struct) \
        fbr_container_of(ptr, struct type_no_struct, ev_base)
 
 struct fbr_ev_watcher {
