@@ -361,7 +361,6 @@ enum fbr_ev_type {
 
 struct fbr_ev_base {
 	enum fbr_ev_type type;
-	int user_type;
 	fbr_id_t id;
 	struct fbr_context *fctx;
 };
