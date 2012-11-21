@@ -30,7 +30,7 @@
 #include "io.h"
 #include "logger.h"
 
-Suite * evfibers_suite (void)
+Suite *evfibers_suite(void)
 {
 	Suite *s;
 	TCase *tc_init, *tc_mutex, *tc_cond, *tc_reclaim, *tc_io, *tc_logger;

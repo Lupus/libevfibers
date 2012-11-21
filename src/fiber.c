@@ -427,6 +427,7 @@ static void prepare_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
 	switch (ev->type) {
 		case FBR_EV_WATCHER:
 			watcher = fbr_ev_cast(ev, fbr_ev_watcher);
+			assert(ev_is_active(watcher->w));
 			watcher->w->data = watcher;
 			ev_set_cb(watcher->w, ev_watcher_cb);
 			break;
@@ -586,7 +587,8 @@ int fbr_fd_nonblock(FBR_P_ int fd)
 	return_success;
 }
 
-static void watcher_base_init(FBR_P_ struct fbr_ev_base *ev, enum fbr_ev_type type)
+static void ev_base_init(FBR_P_ struct fbr_ev_base *ev,
+		enum fbr_ev_type type)
 {
 	ev->type = type;
 	ev->id = CURRENT_FIBER_ID;
@@ -595,7 +597,7 @@ static void watcher_base_init(FBR_P_ struct fbr_ev_base *ev, enum fbr_ev_type ty
 
 void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, ev_watcher *w)
 {
-	watcher_base_init(FBR_A_ &ev->ev_base, FBR_EV_WATCHER);
+	ev_base_init(FBR_A_ &ev->ev_base, FBR_EV_WATCHER);
 	ev->w = w;
 }
 
@@ -605,7 +607,7 @@ ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count)
 	ev_io io;
 	struct fbr_ev_watcher watcher;
 
-	ev_io_set(&io, fd, EV_READ);
+	ev_io_init(&io, NULL, fd, EV_READ);
 	ev_io_start(fctx->__p->loop, &io);
 
 	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
@@ -627,7 +629,7 @@ ssize_t fbr_read_all(FBR_P_ int fd, void *buf, size_t count)
 	ev_io io;
 	struct fbr_ev_watcher watcher;
 
-	ev_io_set(&io, fd, EV_READ);
+	ev_io_init(&io, NULL, fd, EV_READ);
 	ev_io_start(fctx->__p->loop, &io);
 
 	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
@@ -712,7 +714,7 @@ ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count)
 	ev_io io;
 	struct fbr_ev_watcher watcher;
 
-	ev_io_set(&io, fd, EV_WRITE);
+	ev_io_init(&io, NULL, fd, EV_WRITE);
 	ev_io_start(fctx->__p->loop, &io);
 
 	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
@@ -733,7 +735,7 @@ ssize_t fbr_write_all(FBR_P_ int fd, const void *buf, size_t count)
 	ev_io io;
 	struct fbr_ev_watcher watcher;
 
-	ev_io_set(&io, fd, EV_WRITE);
+	ev_io_init(&io, NULL, fd, EV_WRITE);
 	ev_io_start(fctx->__p->loop, &io);
 
 	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
@@ -771,7 +773,7 @@ ssize_t fbr_recvfrom(FBR_P_ int sockfd, void *buf, size_t len, int flags,
 	ev_io io;
 	struct fbr_ev_watcher watcher;
 
-	ev_io_set(&io, sockfd, EV_READ);
+	ev_io_init(&io, NULL, sockfd, EV_READ);
 	ev_io_start(fctx->__p->loop, &io);
 
 	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
@@ -788,7 +790,7 @@ ssize_t fbr_sendto(FBR_P_ int sockfd, const void *buf, size_t len, int flags, co
 	ev_io io;
 	struct fbr_ev_watcher watcher;
 
-	ev_io_set(&io, sockfd, EV_WRITE);
+	ev_io_init(&io, NULL, sockfd, EV_WRITE);
 	ev_io_start(fctx->__p->loop, &io);
 
 	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
@@ -805,7 +807,7 @@ int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 	ev_io io;
 	struct fbr_ev_watcher watcher;
 
-	ev_io_set(&io, sockfd, EV_READ);
+	ev_io_init(&io, NULL, sockfd, EV_READ);
 	ev_io_start(fctx->__p->loop, &io);
 
 	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
@@ -826,7 +828,7 @@ ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds)
 	struct fbr_ev_watcher watcher;
 	ev_tstamp expected = ev_now(fctx->__p->loop) + seconds;
 
-	ev_timer_set(&timer, seconds, 0.);
+	ev_timer_init(&timer, NULL, seconds, 0.);
 	ev_timer_start(fctx->__p->loop, &timer);
 
 	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&timer);
@@ -978,7 +980,7 @@ static void transfer_later_tailq(FBR_P_ struct fiber_id_tailq *tailq)
 void fbr_ev_mutex_init(FBR_P_ struct fbr_ev_mutex *ev,
 		struct fbr_mutex *mutex)
 {
-	watcher_base_init(FBR_A_ &ev->ev_base, FBR_EV_MUTEX);
+	ev_base_init(FBR_A_ &ev->ev_base, FBR_EV_MUTEX);
 	ev->mutex = mutex;
 }
 
@@ -1057,7 +1059,7 @@ void fbr_mutex_destroy(_unused_ FBR_P_ struct fbr_mutex *mutex)
 void fbr_ev_cond_var_init(FBR_P_ struct fbr_ev_cond_var *ev,
 		struct fbr_cond_var *cond)
 {
-	watcher_base_init(FBR_A_ &ev->ev_base, FBR_EV_COND_VAR);
+	ev_base_init(FBR_A_ &ev->ev_base, FBR_EV_COND_VAR);
 	ev->cond = cond;
 }
 

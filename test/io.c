@@ -44,7 +44,6 @@ static void reader_fiber(FBR_P_ _unused_ void *_arg)
 	fd = info->argv[0].i;
 	for (;;) {
 		retval = fbr_read(FBR_A_ fd, buf, buf_size);
-		abort();
 		if (0 == retval) {
 			fail_unless(1000 == count);
 			return;
