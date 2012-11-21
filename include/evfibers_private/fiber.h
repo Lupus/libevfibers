@@ -35,11 +35,6 @@
 
 #define FBR_CALL_LIST_WARN 1000
 
-#define container_of(ptr, type, member) ({			\
-	const typeof( ((type *)0)->member ) *__mptr = (ptr);	\
-	(type *)( (char *)__mptr - offsetof(type, member) );	\
-		})
-
 #define max(a,b) ({						\
 		const typeof(a) __tmp_a = (a);			\
 		const typeof(b) __tmp_b = (b);			\
