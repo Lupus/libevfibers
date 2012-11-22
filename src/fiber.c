@@ -1081,20 +1081,16 @@ void fbr_cond_destroy(_unused_ FBR_P_ struct fbr_cond_var *cond)
 	free(cond);
 }
 
-int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
+int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond)
 {
 	struct fiber_id_tailq_i *item;
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	struct fbr_ev_cond_var ev;
-	if (0 == mutex->locked_by)
-		return_error(FBR_EINVAL);
 	item = id_tailq_i_for(FBR_A_ fiber, &cond->waiting);
 	item->ev = &ev.ev_base;
 	TAILQ_INSERT_TAIL(&cond->waiting, item, entries);
-	fbr_mutex_unlock(FBR_A_ mutex);
 	fbr_ev_cond_var_init(FBR_A_ &ev, cond);
 	fbr_ev_wait_one(FBR_A_ &ev.ev_base);
-	fbr_mutex_lock(FBR_A_ mutex);
 	return_success;
 }
 
