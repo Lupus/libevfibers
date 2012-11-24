@@ -1030,13 +1030,16 @@ void fbr_cond_destroy(FBR_P_ struct fbr_cond_var *cond);
  * Current fiber is suspended until a signal is sent via fbr_cond_signal or
  * fbr_cond_broadcast to the corresponding conditional variable.
  *
+ * A mutex must be acquired by the calling fiber prior to waiting for a
+ * condition. Internally mutex is released and reacquired again before
+ * returning. Upon successful return calling fiber will hold the mutex.
+ *
  * @see fbr_cond_create
  * @see fbr_cond_destroy
  * @see fbr_cond_broadcast
  * @see fbr_cond_signal
  */
-int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond);
-
+int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex);
 
 /**
  * Broadcasts a signal to all fibers waiting for condition.
