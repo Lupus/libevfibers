@@ -210,6 +210,7 @@ enum fbr_error_code {
 	FBR_EINVAL,
 	FBR_ENOFIBER,
 	FBR_ESYSTEM,
+	FBR_EBUFFERMMAP,
 };
 
 /**

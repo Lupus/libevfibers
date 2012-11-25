@@ -344,6 +344,7 @@ static void udp_writer_fiber(FBR_P_ _unused_ void *_arg)
 #undef PORT
 #undef ADDRESS
 #undef buf_size
+#undef count
 
 
 START_TEST(test_udp)
@@ -372,7 +373,6 @@ START_TEST(test_udp)
 	fbr_destroy(&context);
 }
 END_TEST
-
 
 TCase * io_tcase(void)
 {

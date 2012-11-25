@@ -62,16 +62,16 @@
 			return -1;                      \
 	} while (0)
 
-#define return_success                       \
+#define return_success(value)                \
 	do {                                 \
 		fctx->f_errno = FBR_SUCCESS; \
-		return 0;                    \
+		return (value);              \
 	} while (0)
 
-#define return_error(code)              \
+#define return_error(value, code)       \
 	do {                            \
 		fctx->f_errno = (code); \
-		return -1;              \
+		return (value);         \
 	} while (0)
 
 
@@ -87,7 +87,7 @@ static int fbr_id_unpack(FBR_P_ struct fbr_fiber **ptr, fbr_id_t id)
 	f_id = (uint64_t)(id >> 64);
 	fiber = (struct fbr_fiber *)(uint64_t)id;
 	if (fiber->id != f_id)
-		return_error(FBR_ENOFIBER);
+		return_error(-1, FBR_ENOFIBER);
 	if (ptr)
 		*ptr = fiber;
 	return 0;
@@ -109,16 +109,18 @@ static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 
 	item = TAILQ_FIRST(&fctx->__p->pending_fibers);
 	TAILQ_REMOVE(&fctx->__p->pending_fibers, item, entries);
+	if (TAILQ_EMPTY(&fctx->__p->pending_fibers))
+		ev_async_stop(EV_A_ &fctx->__p->pending_async);
+	else
+		ev_async_send(EV_A_ &fctx->__p->pending_async);
+
 	retval = fbr_transfer(FBR_A_ item->id);
+	free(item);
 	if (-1 == retval && FBR_ENOFIBER != fctx->f_errno) {
 		fbr_log_e(FBR_A_ "libevfibers: unexpected error trying to call"
 				" a fiber by id: %s",
 				fbr_strerror(FBR_A_ fctx->f_errno));
 	}
-	if (TAILQ_EMPTY(&fctx->__p->pending_fibers))
-		ev_async_stop(EV_A_ &fctx->__p->pending_async);
-	else
-		ev_async_send(EV_A_ &fctx->__p->pending_async);
 }
 
 static void *allocate_in_fiber(FBR_P_ size_t size, struct fbr_fiber *in)
@@ -223,6 +225,8 @@ const char *fbr_strerror(_unused_ FBR_P_ enum fbr_error_code code)
 			return "No such fiber";
 		case FBR_ESYSTEM:
 			return "System error, consult system errno";
+		case FBR_EBUFFERMMAP:
+			return "Failed to mmap two adjacent regions";
 	}
 	return "Unknown error";
 }
@@ -263,25 +267,17 @@ void fbr_log_d(FBR_P_ const char *format, ...)
 {
 	va_list ap;
 	va_start(ap, format);
-	(*fctx->logger->logv)(fctx->logger, FBR_LOG_DEBUG, format, ap);
+	(*fctx->logger->logv)(FBR_A_ fctx->logger, FBR_LOG_DEBUG, format, ap);
 	va_end(ap);
 }
 
-static void fiber_id_tailq_i_destructor(_unused_ FBR_P_ void *ptr, void *context)
-{
-	struct fiber_id_tailq_i *item = ptr;
-	struct fiber_id_tailq *head = context;
-	TAILQ_REMOVE(head, item, entries);
-}
-
-static struct fiber_id_tailq_i *id_tailq_i_for(FBR_P_ struct fbr_fiber *fiber,
-		struct fiber_id_tailq *head)
+static struct fiber_id_tailq_i *id_tailq_i_for(_unused_ FBR_P_
+		struct fbr_fiber *fiber)
 {
 	struct fiber_id_tailq_i *item;
-	item = allocate_in_fiber(FBR_A_ sizeof(struct fiber_id_tailq_i), fiber);
+	item = malloc(sizeof(struct fiber_id_tailq_i));
 	item->id = fbr_id_pack(fiber);
 	item->ev = NULL;
-	fbr_alloc_set_destructor(FBR_A_ item, fiber_id_tailq_i_destructor, head);
 	return item;
 }
 
@@ -382,7 +378,7 @@ int fbr_reclaim(FBR_P_ fbr_id_t id)
 	fiber->id = fctx->__p->last_id++;
 	LIST_INSERT_HEAD(&fctx->__p->reclaimed, fiber, entries.reclaimed);
 
-	return_success;
+	return_success(0);
 }
 
 int fbr_is_reclaimed(_unused_ FBR_P_ fbr_id_t id)
@@ -486,7 +482,7 @@ int fbr_transfer(FBR_P_ fbr_id_t to)
 
 	coro_transfer(&caller->ctx, &callee->ctx);
 
-	return_success;
+	return_success(0);
 }
 
 int fbr_vcall(FBR_P_ fbr_id_t id, int leave_info, int argnum, va_list ap)
@@ -500,7 +496,7 @@ int fbr_vcall(FBR_P_ fbr_id_t id, int leave_info, int argnum, va_list ap)
 		fbr_log_n(FBR_A_ "libevfibers: attempt to pass %d argumens"
 				" while FBR_MAX_ARG_NUM is %d", argnum,
 				FBR_MAX_ARG_NUM);
-		return_error(FBR_EINVAL);
+		return_error(-1, FBR_EINVAL);
 	}
 
 	unpack_transfer_errno(&callee, id);
@@ -512,7 +508,7 @@ int fbr_vcall(FBR_P_ fbr_id_t id, int leave_info, int argnum, va_list ap)
 
 	if (0 == leave_info) {
 		coro_transfer(&caller->ctx, &callee->ctx);
-		return_success;
+		return_success(0);
 	}
 
 	info = fbr_alloc(FBR_A_ sizeof(struct fbr_call_info));
@@ -533,7 +529,7 @@ int fbr_vcall(FBR_P_ fbr_id_t id, int leave_info, int argnum, va_list ap)
 
 	coro_transfer(&caller->ctx, &callee->ctx);
 
-	return_success;
+	return_success(0);
 }
 
 int fbr_call(FBR_P_ fbr_id_t callee, int argnum, ...)
@@ -580,14 +576,14 @@ int fbr_fd_nonblock(FBR_P_ int fd)
 
 	flags = fcntl(fd, F_GETFL, 0);
 	if (flags == -1)
-		return_error(FBR_ESYSTEM);
+		return_error(-1, FBR_ESYSTEM);
 
 	flags |= O_NONBLOCK;
 	s = fcntl(fd, F_SETFL, flags);
 	if (s == -1)
-		return_error(FBR_ESYSTEM);
+		return_error(-1, FBR_ESYSTEM);
 
-	return_success;
+	return_success(0);
 }
 
 static void ev_base_init(FBR_P_ struct fbr_ev_base *ev,
@@ -901,7 +897,7 @@ int fbr_disown(FBR_P_ fbr_id_t parent_id)
 	LIST_REMOVE(fiber, entries.children);
 	LIST_INSERT_HEAD(&parent->children, fiber, entries.children);
 	fiber->parent = parent;
-	return_success;
+	return_success(0);
 }
 
 fbr_id_t fbr_parent(FBR_P)
@@ -1006,7 +1002,7 @@ void fbr_mutex_lock(FBR_P_ struct fbr_mutex *mutex)
 		return;
 	}
 
-	item = id_tailq_i_for(FBR_A_ CURRENT_FIBER, &mutex->pending);
+	item = id_tailq_i_for(FBR_A_ CURRENT_FIBER);
 	item->ev = &ev.ev_base;
 	TAILQ_INSERT_TAIL(&mutex->pending, item, entries);
 
@@ -1038,7 +1034,7 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 		TAILQ_REMOVE(&mutex->pending, item, entries);
 		if (-1 == fbr_id_unpack(FBR_A_ &fiber, item->id)) {
 			assert(FBR_ENOFIBER == fctx->f_errno);
-			fbr_free_nd(FBR_A_ item);
+			free(item);
 			continue;
 		}
 		break;
@@ -1054,7 +1050,7 @@ void fbr_mutex_destroy(_unused_ FBR_P_ struct fbr_mutex *mutex)
 {
 	struct fiber_id_tailq_i *item, *x;
 	TAILQ_FOREACH_SAFE(item, &mutex->pending, entries, x) {
-		fbr_free_nd(FBR_A_ item);
+		free(item);
 	}
 	free(mutex);
 }
@@ -1079,7 +1075,7 @@ void fbr_cond_destroy(_unused_ FBR_P_ struct fbr_cond_var *cond)
 {
 	struct fiber_id_tailq_i *item, *x;
 	TAILQ_FOREACH_SAFE(item, &cond->waiting, entries, x) {
-		fbr_free_nd(FBR_A_ item);
+		free(item);
 	}
 	free(cond);
 }
@@ -1090,15 +1086,15 @@ int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	struct fbr_ev_cond_var ev;
 	if (0 == mutex->locked_by)
-		return_error(FBR_EINVAL);
-	item = id_tailq_i_for(FBR_A_ fiber, &cond->waiting);
+		return_error(-1, FBR_EINVAL);
+	item = id_tailq_i_for(FBR_A_ fiber);
 	item->ev = &ev.ev_base;
 	TAILQ_INSERT_TAIL(&cond->waiting, item, entries);
 	fbr_mutex_unlock(FBR_A_ mutex);
 	fbr_ev_cond_var_init(FBR_A_ &ev, cond);
 	fbr_ev_wait_one(FBR_A_ &ev.ev_base);
 	fbr_mutex_lock(FBR_A_ mutex);
-	return_success;
+	return_success(0);
 }
 
 void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond)
@@ -1133,4 +1129,165 @@ void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 
 	TAILQ_REMOVE(&cond->waiting, item, entries);
 	transfer_later(FBR_A_ item);
+}
+
+struct fbr_buffer *fbr_buffer_create(FBR_P_ size_t size)
+{
+	char path[] = "/dev/shm/fbr-buffer-XXXXXX";
+	int fd;
+	void *address;
+	int retval;
+	struct fbr_buffer *buffer;
+
+	buffer = malloc(sizeof(struct fbr_buffer));
+	if(NULL == buffer)
+		return_error(NULL, FBR_ESYSTEM);
+
+	fd = mkstemp(path);
+	if (-1 == fd)
+		return_error(NULL, FBR_ESYSTEM);
+
+	retval = unlink (path);
+	if (-1 == retval)
+		return_error(NULL, FBR_ESYSTEM);
+
+	buffer->count_bytes = round_up_to_page_size(size);
+	buffer->write_offset_bytes = 0;
+	buffer->read_offset_bytes = 0;
+	buffer->prepared_bytes = 0;
+	buffer->committed_cond = fbr_cond_create(FBR_A);
+	buffer->bytes_freed_cond = fbr_cond_create(FBR_A);
+	buffer->write_mutex = fbr_mutex_create(FBR_A);
+	buffer->read_mutex = fbr_mutex_create(FBR_A);
+
+	retval = ftruncate(fd, buffer->count_bytes);
+	if (-1 == retval)
+		return_error(NULL, FBR_ESYSTEM);
+
+	buffer->address = mmap(NULL, buffer->count_bytes << 1, PROT_NONE,
+			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+
+	if (buffer->address == MAP_FAILED)
+		return_error(NULL, FBR_ESYSTEM);
+
+	address = mmap(buffer->address, buffer->count_bytes, PROT_READ |
+			PROT_WRITE, MAP_FIXED | MAP_SHARED, fd, 0);
+
+	if (address != buffer->address)
+		return_error(NULL, FBR_EBUFFERMMAP);
+
+	address = mmap(buffer->address + buffer->count_bytes,
+			buffer->count_bytes, PROT_READ | PROT_WRITE, MAP_FIXED
+			| MAP_SHARED, fd, 0);
+
+	if (address != buffer->address + buffer->count_bytes)
+		return_error(NULL, FBR_EBUFFERMMAP);
+
+	retval = close(fd);
+	if (-1 == retval)
+		return_error(NULL, FBR_ESYSTEM);
+
+	return_success(buffer);
+}
+
+int fbr_buffer_free(FBR_P_ struct fbr_buffer *buffer)
+{
+	int retval;
+
+	retval = munmap (buffer->address, buffer->count_bytes << 1);
+	if (-1 == retval)
+		return_error(-1, FBR_ESYSTEM);
+
+	fbr_mutex_destroy(FBR_A_ buffer->read_mutex);
+	fbr_mutex_destroy(FBR_A_ buffer->write_mutex);
+	fbr_cond_destroy(FBR_A_ buffer->committed_cond);
+	fbr_cond_destroy(FBR_A_ buffer->bytes_freed_cond);
+
+	free(buffer);
+
+	return_success(0);
+}
+
+void *fbr_buffer_alloc_prepare(FBR_P_ struct fbr_buffer *buffer, size_t size)
+{
+	if (size > buffer->count_bytes)
+		return_error(NULL, FBR_EINVAL);
+
+	fbr_mutex_lock(FBR_A_ buffer->write_mutex);
+
+	while (buffer->prepared_bytes > 0)
+		fbr_cond_wait(FBR_A_ buffer->committed_cond,
+				buffer->write_mutex);
+
+	assert(0 == buffer->prepared_bytes);
+
+	buffer->prepared_bytes = size;
+
+	while (fbr_buffer_free_bytes(FBR_A_ buffer) < size)
+		fbr_cond_wait(FBR_A_ buffer->bytes_freed_cond,
+				buffer->write_mutex);
+
+	return buffer->address + buffer->write_offset_bytes;
+}
+
+void fbr_buffer_alloc_commit(FBR_P_ struct fbr_buffer *buffer)
+{
+	buffer->write_offset_bytes += buffer->prepared_bytes;
+	buffer->prepared_bytes = 0;
+	fbr_cond_signal(FBR_A_ buffer->committed_cond);
+	fbr_mutex_unlock(FBR_A_ buffer->write_mutex);
+}
+
+void fbr_buffer_alloc_abort(FBR_P_ struct fbr_buffer *buffer)
+{
+	buffer->prepared_bytes = 0;
+	fbr_cond_signal(FBR_A_ buffer->committed_cond);
+	fbr_mutex_unlock(FBR_A_ buffer->write_mutex);
+}
+
+void *fbr_buffer_read_address(FBR_P_ struct fbr_buffer *buffer, size_t size)
+{
+	int retval;
+	if (size > buffer->count_bytes)
+		return_error(NULL, FBR_EINVAL);
+
+	fbr_mutex_lock(FBR_A_ buffer->read_mutex);
+
+	while (fbr_buffer_bytes(FBR_A_ buffer) < size) {
+		retval = fbr_cond_wait(FBR_A_ buffer->committed_cond,
+				buffer->read_mutex);
+		assert(0 == retval);
+	}
+
+	buffer->waiting_bytes = size;
+
+	return_success(buffer->address + buffer->read_offset_bytes);
+}
+
+void fbr_buffer_read_advance(FBR_P_ struct fbr_buffer *buffer)
+{
+	buffer->read_offset_bytes += buffer->waiting_bytes;
+
+	if (buffer->read_offset_bytes >= buffer->count_bytes) {
+		buffer->read_offset_bytes -= buffer->count_bytes;
+		buffer->write_offset_bytes -= buffer->count_bytes;
+	}
+
+	fbr_cond_signal(FBR_A_ buffer->bytes_freed_cond);
+	fbr_mutex_unlock(FBR_A_ buffer->read_mutex);
+}
+
+void fbr_buffer_read_discard(FBR_P_ struct fbr_buffer *buffer)
+{
+	fbr_mutex_unlock(FBR_A_ buffer->read_mutex);
+}
+
+size_t fbr_buffer_bytes(_unused_ FBR_P_ struct fbr_buffer *buffer)
+{
+	return buffer->write_offset_bytes - buffer->read_offset_bytes;
+}
+
+size_t fbr_buffer_free_bytes(FBR_P_ struct fbr_buffer *buffer)
+{
+	return buffer->count_bytes - fbr_buffer_bytes(FBR_A_ buffer);
 }
