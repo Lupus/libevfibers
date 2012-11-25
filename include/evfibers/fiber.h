@@ -329,7 +329,7 @@ struct fbr_logger;
  * @see fbr_logger
  * @see fbr_log_func_t
  */
-typedef void (*fbr_log_func_t)(struct fbr_logger *logger,
+typedef void (*fbr_log_func_t)(FBR_P_ struct fbr_logger *logger,
 		enum fbr_log_level level, const char *format, va_list ap);
 /**
  * Logger utility function type.

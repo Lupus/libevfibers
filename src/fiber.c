@@ -137,44 +137,47 @@ static void *allocate_in_fiber(FBR_P_ size_t size, struct fbr_fiber *in)
 	return pool_entry + 1;
 }
 
-static void stdio_logger(struct fbr_logger *logger, enum fbr_log_level level,
+static void stdio_logger(FBR_P_ struct fbr_logger *logger, enum fbr_log_level level,
 		const char *format, va_list ap)
 {
+	struct fbr_fiber *fiber;
+	FILE* stream;
+	char *str_level;
+
 	if (level > logger->level)
 		return;
 
+	fiber = CURRENT_FIBER;
+
 	switch (level) {
 		case FBR_LOG_ERROR:
-			fprintf(stderr, "ERROR ");
-			vfprintf(stderr, format, ap);
-			fprintf(stderr, "\n");
+			str_level = "ERROR";
+			stream = stderr;
 			break;
 		case FBR_LOG_WARNING:
-			fprintf(stdout, "WARNING ");
-			vfprintf(stdout, format, ap);
-			fprintf(stdout, "\n");
+			str_level = "WARNING";
+			stream = stdout;
 			break;
 		case FBR_LOG_NOTICE:
-			fprintf(stdout, "NOTICE ");
-			vfprintf(stdout, format, ap);
-			fprintf(stdout, "\n");
+			str_level = "NOTICE";
+			stream = stdout;
 			break;
 		case FBR_LOG_INFO:
-			fprintf(stdout, "INFO ");
-			vfprintf(stdout, format, ap);
-			fprintf(stdout, "\n");
+			str_level = "INFO";
+			stream = stdout;
 			break;
 		case FBR_LOG_DEBUG:
-			fprintf(stdout, "DEBUG ");
-			vfprintf(stdout, format, ap);
-			fprintf(stdout, "\n");
+			str_level = "DEBUG";
+			stream = stdout;
 			break;
 		default:
-			fprintf(stdout, "????? ");
-			vfprintf(stdout, format, ap);
-			fprintf(stdout, "\n");
+			str_level = "?????";
+			stream = stdout;
 			break;
 	}
+	fprintf(stream, "%-7s %-16s ", str_level, fiber->name);
+	vfprintf(stream, format, ap);
+	fprintf(stream, "\n");
 }
 
 void fbr_init(FBR_P_ struct ev_loop *loop)
@@ -228,7 +231,7 @@ void fbr_log_e(FBR_P_ const char *format, ...)
 {
 	va_list ap;
 	va_start(ap, format);
-	(*fctx->logger->logv)(fctx->logger, FBR_LOG_ERROR, format, ap);
+	(*fctx->logger->logv)(FBR_A_ fctx->logger, FBR_LOG_ERROR, format, ap);
 	va_end(ap);
 }
 
@@ -236,7 +239,7 @@ void fbr_log_w(FBR_P_ const char *format, ...)
 {
 	va_list ap;
 	va_start(ap, format);
-	(*fctx->logger->logv)(fctx->logger, FBR_LOG_WARNING, format, ap);
+	(*fctx->logger->logv)(FBR_A_ fctx->logger, FBR_LOG_WARNING, format, ap);
 	va_end(ap);
 }
 
@@ -244,7 +247,7 @@ void fbr_log_n(FBR_P_ const char *format, ...)
 {
 	va_list ap;
 	va_start(ap, format);
-	(*fctx->logger->logv)(fctx->logger, FBR_LOG_NOTICE, format, ap);
+	(*fctx->logger->logv)(FBR_A_ fctx->logger, FBR_LOG_NOTICE, format, ap);
 	va_end(ap);
 }
 
@@ -252,7 +255,7 @@ void fbr_log_i(FBR_P_ const char *format, ...)
 {
 	va_list ap;
 	va_start(ap, format);
-	(*fctx->logger->logv)(fctx->logger, FBR_LOG_INFO, format, ap);
+	(*fctx->logger->logv)(FBR_A_ fctx->logger, FBR_LOG_INFO, format, ap);
 	va_end(ap);
 }
 
