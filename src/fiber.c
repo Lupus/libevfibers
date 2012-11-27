@@ -940,7 +940,6 @@ void fbr_free_nd(FBR_P_ void *ptr)
 	fbr_free_in_fiber(FBR_A_ CURRENT_FIBER, ptr, 0);
 }
 
-
 void fbr_dump_stack(FBR_P_ fbr_logutil_func_t log)
 {
 	struct fbr_stack_item *ptr = fctx->__p->sp;
