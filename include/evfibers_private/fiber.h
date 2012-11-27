@@ -65,17 +65,6 @@ struct fbr_buffer {
 	struct fbr_mutex *read_mutex;
 };
 
-struct fbr_buffer *fbr_buffer_create(FBR_P_ size_t size);
-int fbr_buffer_free(FBR_P_ struct fbr_buffer *buffer);
-void *fbr_buffer_alloc_prepare(FBR_P_ struct fbr_buffer *buffer, size_t size);
-void fbr_buffer_alloc_commit(FBR_P_ struct fbr_buffer *buffer);
-void fbr_buffer_alloc_abort(FBR_P_ struct fbr_buffer *buffer);
-void *fbr_buffer_read_address(FBR_P_ struct fbr_buffer *buffer, size_t size);
-void fbr_buffer_read_advance(FBR_P_ struct fbr_buffer *buffer);
-void fbr_buffer_read_discard(FBR_P_ struct fbr_buffer *buffer);
-size_t fbr_buffer_bytes(FBR_P_ struct fbr_buffer *buffer);
-size_t fbr_buffer_free_bytes(FBR_P_ struct fbr_buffer *buffer);
-
 struct fiber_id_tailq_i {
 	fbr_id_t id;
 	struct fbr_ev_base *ev;

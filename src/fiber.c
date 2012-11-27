@@ -430,7 +430,6 @@ static void prepare_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
 			watcher->w->data = watcher;
 			ev_set_cb(watcher->w, ev_watcher_cb);
 			break;
-		case FBR_EV_MESSAGE:
 		case FBR_EV_MUTEX:
 		case FBR_EV_COND_VAR:
 			/* NOP for now */
