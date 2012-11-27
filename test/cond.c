@@ -26,17 +26,18 @@
 
 #include "cond.h"
 
-static void cond_fiber1(FBR_P_ _unused_ void *_arg)
-{
+struct fiber_arg {
 	struct fbr_mutex *mutex;
 	struct fbr_cond_var *cond;
-	struct fbr_call_info *info = NULL;
 	int *flag_ptr;
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(3 == info->argc, NULL);
-	mutex = info->argv[0].v;
-	cond = info->argv[1].v;
-	flag_ptr = info->argv[2].v;
+};
+
+static void cond_fiber1(FBR_P_ void *_arg)
+{
+	struct fiber_arg *arg = _arg;
+	struct fbr_mutex *mutex = arg->mutex;
+	struct fbr_cond_var *cond = arg->cond;
+	int *flag_ptr = arg->flag_ptr;
 	fbr_mutex_lock(FBR_A_ mutex);
 	fbr_cond_wait(FBR_A_ cond, mutex);
 	*flag_ptr += 1;
@@ -50,26 +51,27 @@ START_TEST(test_cond_broadcast)
 	struct fbr_mutex *mutex = NULL;
 	struct fbr_cond_var *cond = NULL;
 	int flag = 0;
-	int *flag_ptr = &flag;
 	int i;
 	const int num_fibers = 100;
 	int retval;
+	struct fiber_arg arg = {
+		.flag_ptr = &flag
+	};
 
 	fbr_init(&context, EV_DEFAULT);
 
 	mutex = fbr_mutex_create(&context);
 	fail_if(NULL == mutex, NULL);
+	arg.mutex = mutex;
 
 	cond = fbr_cond_create(&context);
 	fail_if(NULL == cond, NULL);
+	arg.cond = cond;
 
 	for(i = 0; i < num_fibers; i++) {
-		fiber = fbr_create(&context, "cond_i", cond_fiber1, NULL, 0);
+		fiber = fbr_create(&context, "cond_i", cond_fiber1, &arg, 0);
 		fail_if(0 == fiber);
-		retval = fbr_call(&context, fiber, 3,
-				fbr_arg_v(mutex),
-				fbr_arg_v(cond),
-				fbr_arg_v(flag_ptr));
+		retval = fbr_transfer(&context, fiber);
 		fail_unless(0 == retval, NULL);
 	}
 
@@ -95,26 +97,27 @@ START_TEST(test_cond_signal)
 	struct fbr_mutex *mutex = NULL;
 	struct fbr_cond_var *cond = NULL;
 	int flag = 0;
-	int *flag_ptr = &flag;
 	int i;
 	const int num_fibers = 100;
 	int retval;
+	struct fiber_arg arg = {
+		.flag_ptr = &flag
+	};
 
 	fbr_init(&context, EV_DEFAULT);
 
 	mutex = fbr_mutex_create(&context);
 	fail_if(NULL == mutex, NULL);
+	arg.mutex = mutex;
 
 	cond = fbr_cond_create(&context);
 	fail_if(NULL == cond, NULL);
+	arg.cond = cond;
 
 	for(i = 0; i < num_fibers; i++) {
-		fiber = fbr_create(&context, "cond_i", cond_fiber1, NULL, 0);
+		fiber = fbr_create(&context, "cond_i", cond_fiber1, &arg, 0);
 		fail_if(0 == fiber);
-		retval = fbr_call(&context, fiber, 3,
-				fbr_arg_v(mutex),
-				fbr_arg_v(cond),
-				fbr_arg_v(flag_ptr));
+		retval = fbr_transfer(&context, fiber);
 		fail_unless(0 == retval, NULL);
 	}
 

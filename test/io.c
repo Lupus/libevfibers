@@ -31,17 +31,13 @@
 
 #include "io.h"
 
-static void reader_fiber(FBR_P_ _unused_ void *_arg)
+static void reader_fiber(FBR_P_ void *_arg)
 {
-	int fd;
+	int fd = *(int *)_arg;
 	const int buf_size = 10;
 	char buf[buf_size];
 	size_t retval;
 	size_t count = 0;
-	struct fbr_call_info *info = NULL;
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(1 == info->argc, NULL);
-	fd = info->argv[0].i;
 	for (;;) {
 		retval = fbr_read(FBR_A_ fd, buf, buf_size);
 		if (0 == retval) {
@@ -53,18 +49,14 @@ static void reader_fiber(FBR_P_ _unused_ void *_arg)
 	}
 }
 
-static void writer_fiber(FBR_P_ _unused_ void *_arg)
+static void writer_fiber(FBR_P_ void *_arg)
 {
-	int fd;
+	int fd = *(int *)_arg;
 	int i;
 	int retval;
 	const int buf_size = 100;
 	char buf[buf_size];
-	struct fbr_call_info *info = NULL;
 	memset(buf, 0x00, buf_size);
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(1 == info->argc, NULL);
-	fd = info->argv[0].i;
 	for(i = 0; i < 10; i++) {
 		retval = fbr_write(FBR_A_ fd, buf, buf_size);
 		fail_if(retval != buf_size);
@@ -89,14 +81,14 @@ START_TEST(test_read_write)
 
 	fbr_init(&context, EV_DEFAULT);
 
-	reader = fbr_create(&context, "reader", reader_fiber, NULL, 0);
+	reader = fbr_create(&context, "reader", reader_fiber, fds + 0, 0);
 	fail_if(0 == reader, NULL);
-	writer = fbr_create(&context, "writer", writer_fiber, NULL, 0);
+	writer = fbr_create(&context, "writer", writer_fiber, fds + 1, 0);
 	fail_if(0 == reader, NULL);
 
-	retval = fbr_call(&context, reader, 1, fbr_arg_i(fds[0]));
+	retval = fbr_transfer(&context, reader);
 	fail_unless(0 == retval, NULL);
-	retval = fbr_call(&context, writer, 1, fbr_arg_i(fds[1]));
+	retval = fbr_transfer(&context, writer);
 	fail_unless(0 == retval, NULL);
 
 	ev_run(EV_DEFAULT, 0);
@@ -109,28 +101,20 @@ START_TEST(test_read_write)
 END_TEST
 
 #define buf_size (1 * 1024 * 1024)
-static void all_reader_fiber(FBR_P_ _unused_ void *_arg)
+static void all_reader_fiber(FBR_P_ void *_arg)
 {
-	int fd;
+	int fd = *(int *)_arg;
 	char *buf = fbr_alloc(FBR_A_ buf_size);
 	size_t retval;
-	struct fbr_call_info *info = NULL;
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(1 == info->argc, NULL);
-	fd = info->argv[0].i;
 	retval = fbr_read_all(FBR_A_ fd, buf, buf_size);
 	fail_unless(buf_size == retval, NULL);
 }
 
-static void all_writer_fiber(FBR_P_ _unused_ void *_arg)
+static void all_writer_fiber(FBR_P_ void *_arg)
 {
-	int fd;
+	int fd = *(int *)_arg;
 	size_t retval;
 	char *buf = fbr_calloc(FBR_A_ buf_size, 1);
-	struct fbr_call_info *info = NULL;
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(1 == info->argc, NULL);
-	fd = info->argv[0].i;
 	retval = fbr_write_all(FBR_A_ fd, buf, buf_size);
 	fail_if(retval != buf_size, NULL);
 	close(fd);
@@ -154,14 +138,14 @@ START_TEST(test_read_write_all)
 
 	fbr_init(&context, EV_DEFAULT);
 
-	reader = fbr_create(&context, "reader_all", all_reader_fiber, NULL, 0);
+	reader = fbr_create(&context, "reader_all", all_reader_fiber, fds + 0, 0);
 	fail_if(0 == reader, NULL);
-	writer = fbr_create(&context, "writer_all", all_writer_fiber, NULL, 0);
+	writer = fbr_create(&context, "writer_all", all_writer_fiber, fds + 1, 0);
 	fail_if(0 == reader, NULL);
 
-	retval = fbr_call(&context, reader, 1, fbr_arg_i(fds[0]));
+	retval = fbr_transfer(&context, reader);
 	fail_unless(0 == retval, NULL);
-	retval = fbr_call(&context, writer, 1, fbr_arg_i(fds[1]));
+	retval = fbr_transfer(&context, writer);
 	fail_unless(0 == retval, NULL);
 
 	ev_run(EV_DEFAULT, 0);
@@ -173,17 +157,13 @@ START_TEST(test_read_write_all)
 }
 END_TEST
 
-static void line_reader_fiber(FBR_P_ _unused_ void *_arg)
+static void line_reader_fiber(FBR_P_ void *_arg)
 {
-	int fd;
+	int fd = *(int *)_arg;
 	const int buf_size = 34;
 	char buf[buf_size];
 	char *expected;
 	size_t retval;
-	struct fbr_call_info *info = NULL;
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(1 == info->argc, NULL);
-	fd = info->argv[0].i;
 
 	expected = "Lorem ipsum dolor sit amet,\n";
 	retval = fbr_readline(FBR_A_ fd, buf, buf_size);
@@ -224,7 +204,7 @@ static void line_reader_fiber(FBR_P_ _unused_ void *_arg)
 
 static void line_writer_fiber(FBR_P_ _unused_ void *_arg)
 {
-	int fd;
+	int fd = *(int *)_arg;
 	size_t retval;
 	char *buf = "Lorem ipsum dolor sit amet,\n"
 		"consectetur adipiscing elit.\n"
@@ -233,10 +213,6 @@ static void line_writer_fiber(FBR_P_ _unused_ void *_arg)
 		"Cras placerat egestas tortor,\n"
 		"vel ullamcorper turpis commodo vitae.\n"
 		"In.";
-	struct fbr_call_info *info = NULL;
-	fail_unless(fbr_next_call_info(FBR_A_ &info), NULL);
-	fail_unless(1 == info->argc, NULL);
-	fd = info->argv[0].i;
 	retval = fbr_write_all(FBR_A_ fd, buf, strlen(buf));
 	fail_unless(retval > 0, NULL);
 	close(fd);
@@ -258,14 +234,14 @@ START_TEST(test_read_line)
 
 	fbr_init(&context, EV_DEFAULT);
 
-	reader = fbr_create(&context, "reader_line", line_reader_fiber, NULL, 0);
+	reader = fbr_create(&context, "reader_line", line_reader_fiber, fds + 0, 0);
 	fail_if(0 == reader, NULL);
-	writer = fbr_create(&context, "writer_line", line_writer_fiber, NULL, 0);
+	writer = fbr_create(&context, "writer_line", line_writer_fiber, fds + 1, 0);
 	fail_if(0 == reader, NULL);
 
-	retval = fbr_call(&context, reader, 1, fbr_arg_i(fds[0]));
+	retval = fbr_transfer(&context, reader);
 	fail_unless(0 == retval, NULL);
-	retval = fbr_call(&context, writer, 1, fbr_arg_i(fds[1]));
+	retval = fbr_transfer(&context, writer);
 	fail_unless(0 == retval, NULL);
 
 	ev_run(EV_DEFAULT, 0);

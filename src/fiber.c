@@ -406,20 +406,6 @@ static void call_wrapper(FBR_P)
 	assert(NULL);
 }
 
-struct fbr_fiber_arg fbr_arg_i(int i)
-{
-	struct fbr_fiber_arg arg;
-	arg.i = i;
-	return arg;
-}
-
-struct fbr_fiber_arg fbr_arg_v(void *v)
-{
-	struct fbr_fiber_arg arg;
-	arg.v = v;
-	return arg;
-}
-
 static void prepare_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
 {
 	struct fbr_ev_watcher *watcher;
@@ -482,84 +468,6 @@ int fbr_transfer(FBR_P_ fbr_id_t to)
 	coro_transfer(&caller->ctx, &callee->ctx);
 
 	return_success(0);
-}
-
-int fbr_vcall(FBR_P_ fbr_id_t id, int leave_info, int argnum, va_list ap)
-{
-	struct fbr_fiber *callee;
-	struct fbr_fiber *caller = fctx->__p->sp->fiber;
-	int i;
-	struct fbr_call_info *info;
-
-	if (argnum >= FBR_MAX_ARG_NUM) {
-		fbr_log_n(FBR_A_ "libevfibers: attempt to pass %d argumens"
-				" while FBR_MAX_ARG_NUM is %d", argnum,
-				FBR_MAX_ARG_NUM);
-		return_error(-1, FBR_EINVAL);
-	}
-
-	unpack_transfer_errno(&callee, id);
-
-	fctx->__p->sp++;
-
-	fctx->__p->sp->fiber = callee;
-	fill_trace_info(FBR_A_ &fctx->__p->sp->tinfo);
-
-	if (0 == leave_info) {
-		coro_transfer(&caller->ctx, &callee->ctx);
-		return_success(0);
-	}
-
-	info = fbr_alloc(FBR_A_ sizeof(struct fbr_call_info));
-	info->caller = id;
-	info->argc = argnum;
-	for (i = 0; i < argnum; i++)
-		info->argv[i] = va_arg(ap, struct fbr_fiber_arg);
-
-	DL_APPEND(callee->call_list, info);
-	callee->call_list_size++;
-	if (callee->call_list_size >= FBR_CALL_LIST_WARN) {
-		fbr_log_n(FBR_A_ "libevfibers: call list for ``%s'' contains"
-				" %zu elements, which looks suspicious. Is"
-				" anyone fetching the calls?", callee->name,
-				callee->call_list_size);
-		fbr_dump_stack(FBR_A_ fbr_log_n);
-	}
-
-	coro_transfer(&caller->ctx, &callee->ctx);
-
-	return_success(0);
-}
-
-int fbr_call(FBR_P_ fbr_id_t callee, int argnum, ...)
-{
-	int retval;
-	va_list ap;
-	va_start(ap, argnum);
-	retval = fbr_vcall(FBR_A_ callee, 1, argnum, ap);
-	va_end(ap);
-	return retval;
-}
-
-int fbr_next_call_info(FBR_P_ struct fbr_call_info **info_ptr)
-{
-	struct fbr_fiber *fiber = CURRENT_FIBER;
-	struct fbr_call_info *tmp;
-
-	if (NULL == fiber->call_list)
-		return 0;
-	tmp = fiber->call_list;
-	DL_DELETE(fiber->call_list, fiber->call_list);
-	fiber->call_list_size--;
-
-	if (NULL == info_ptr)
-		fbr_free(FBR_A_ tmp);
-	else {
-		if (NULL != *info_ptr)
-			fbr_free(FBR_A_ *info_ptr);
-		*info_ptr = tmp;
-	}
-	return 1;
 }
 
 void fbr_yield(FBR_P)

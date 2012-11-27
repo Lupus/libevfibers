@@ -155,18 +155,13 @@
 #include <ev.h>
 
 /**
- * Maximum allowed level of fbr_call nesting within fibers.
+ * Maximum allowed level of fbr_transfer nesting within fibers.
  */
 #define FBR_CALL_STACK_SIZE 16
 /**
  * Default stack size for a fiber of 64 KB.
  */
 #define FBR_STACK_SIZE (64 * 1024) /* 64 KB */
-/**
- * Maximum allowed arguments that might be attached to fiber
- * invocation via fbr_call.
- */
-#define FBR_MAX_ARG_NUM 10
 
 /**
  * @def fbr_assert
@@ -270,35 +265,6 @@ struct fbr_context {
  * @see fbr_context
  */
 typedef void (*fbr_fiber_func_t)(FBR_P_ void *_arg);
-
-/**
- * Actual argument of a fiber call.
- * It's implemented as a union between integer (i.e. enum or some other
- * constant) and pointer which covers a lot of use cases.
- * @see fbr_call
- */
-struct fbr_fiber_arg {
-	union {
-		long i; /*!< some integer value, enum for example */
-		void *v; /*!< some pointer to an object */
-	};
-};
-
-/**
- * Information about a call made to a fiber.
- *
- * Whenever some fiber calls another fiber, such a structure is allocated and
- * appended to callee call queue.
- * @see fbr_next_call_info
- * @see fbr_call
- */
-struct fbr_call_info {
-	int argc; /*!< number of arguments passed */
-	struct fbr_fiber_arg argv[FBR_MAX_ARG_NUM]; /*!< actual array of
-						      arguments */
-	fbr_id_t caller; /*!< which fiber was the caller */
-	struct fbr_call_info *next, *prev;
-};
 
 /**
  * Destructor function type for the memory allocated in a fiber.
@@ -720,40 +686,6 @@ struct fbr_fiber_arg fbr_arg_i(int i);
 struct fbr_fiber_arg fbr_arg_v(void *v);
 
 /**
- * Actually calls the specified fiber.
- * @param [in] callee fiber pointer to call
- * @param [in] leave_info flag, indicating that fbr_call_info should
- * be queued
- * @param [in] argnum number of arguments to pass
- * @param [in] ap variadic argument list
- * @return 0 on success, -1 on failure. Function returns immediately if callee
- * is busy or eventually whenever callee yields
- *
- * This function adds fbr_call_info if desired to the callee call list and
- * transfers the control to callee execution context.
- *
- * Variadic arguments are supposed to be of type fbr_fiber_arg.
- *
- * If callee is reclaimed --- runtime error is generated.
- * @see fbr_yield
- * @see fbr_strerror
- */
-int fbr_vcall(FBR_P_ fbr_id_t callee, int leave_info, int argnum, va_list ap)
-	__attribute__ ((warn_unused_result));
-
-/**
- * Calls the specified fiber.
- * @param [in] fiber fiber pointer to call
- * @param [in] argnum number of arguments to pass
- * @return 0 on success, -1 on failure
- *
- * Behind the scenes this is a wrapper for fbr_vcall with leave_info of 1.
- * @see fbr_vcall
- */
-int fbr_call(FBR_P_ fbr_id_t fiber, int argnum, ...)
-	__attribute__ ((warn_unused_result));
-
-/**
  * Yields execution to other fiber.
  *
  * When a fiber is waiting for some incoming event --- it should yield. This
@@ -762,7 +694,6 @@ int fbr_call(FBR_P_ fbr_id_t fiber, int argnum, ...)
  * one.
  *
  * It loops through all fibers subscribed to specified multicast group id.
- * @see fbr_call
  * @see fbr_transfer
  */
 void fbr_yield(FBR_P);
@@ -833,29 +764,6 @@ void fbr_free(FBR_P_ void *ptr);
  * @see fbr_alloc_set_destructor
  */
 void fbr_free_nd(FBR_P_ void *ptr);
-
-/**
- * Fetches next call info.
- * @param [in,out] info_ptr pointer to info pointer
- * @return 1 if more are pending, 0 otherwise
- *
- * Should be used in a loop until returns 0. Afterwards a fiber probably needs
- * to yield and to expect more call infos available after fbr_yield returns.
- *
- * Function writes new info pointer into specified location. If that location
- * contains an address of previous info --- it will be freed and that's
- * probably the behavior you want. Just ensure that you set your pointer to
- * NULL before passing it to this function first time.
- *
- * Also bear in mind that the first invocation of a fiber that might be
- * considered the starting (or initializing) one is still queued into a call
- * list and you need to fetch if you want to fetch anything else. If you are
- * not interested in call info --- just pass NULL as location (i.e. info_ptr).
- * Next call info will just be freed in this case.
- * @see fbr_call
- * @see fbr_call_info
- */
-int fbr_next_call_info(FBR_P_ struct fbr_call_info **info_ptr);
 
 /**
  * Utility function to make file descriptor non-blocking.
