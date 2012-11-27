@@ -27,7 +27,7 @@
 
 #include "logger.h"
 
-static void test_fiber(FBR_P)
+static void test_fiber(FBR_P_ _unused_ void *_arg)
 {
 	fctx->logger->level = FBR_LOG_DEBUG;
 
@@ -59,10 +59,10 @@ START_TEST(test_logger)
 	fbr_enable_backtraces(&context, 0);
 	fbr_enable_backtraces(&context, 1);
 
-	test = fbr_create(&context, "test", test_fiber, 0);
+	test = fbr_create(&context, "test", test_fiber, NULL, 0);
 	fail_if(0 == test, NULL);
 
-	retval = fbr_call_noinfo(&context, test, 0);
+	retval = fbr_transfer(&context, test);
 	fail_unless(0 == retval, NULL);
 
 	fbr_destroy(&context);

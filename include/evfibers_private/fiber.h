@@ -23,6 +23,7 @@
 #ifndef _FBR_FIBER_PRIVATE_H_
 #define _FBR_FIBER_PRIVATE_H_
 
+#include <stdarg.h>
 #include <sys/queue.h>
 #include <evfibers/fiber.h>
 #include <evfibers_private/trace.h>
@@ -33,11 +34,6 @@
 #define obstack_chunk_free free
 
 #define FBR_CALL_LIST_WARN 1000
-
-#define container_of(ptr, type, member) ({			\
-	const typeof( ((type *)0)->member ) *__mptr = (ptr);	\
-	(type *)( (char *)__mptr - offsetof(type, member) );	\
-		})
 
 #define max(a,b) ({						\
 		const typeof(a) __tmp_a = (a);			\
@@ -56,8 +52,22 @@ struct mem_pool {
 
 LIST_HEAD(mem_pool_list, mem_pool);
 
+struct fbr_buffer {
+	void *address;
+	size_t count_bytes;
+	size_t write_offset_bytes;
+	size_t read_offset_bytes;
+	size_t prepared_bytes;
+	size_t waiting_bytes;
+	struct fbr_cond_var *committed_cond;
+	struct fbr_mutex *write_mutex;
+	struct fbr_cond_var *bytes_freed_cond;
+	struct fbr_mutex *read_mutex;
+};
+
 struct fiber_id_tailq_i {
 	fbr_id_t id;
+	struct fbr_ev_base *ev;
 	TAILQ_ENTRY(fiber_id_tailq_i) entries;
 };
 
@@ -69,17 +79,16 @@ struct fbr_fiber {
 	uint64_t id;
 	const char *name;
 	fbr_fiber_func_t func;
+	void *func_arg;
 	coro_context ctx;
 	char *stack;
 	size_t stack_size;
 	struct fbr_call_info *call_list;
 	size_t call_list_size;
-	ev_io w_io;
-	int w_io_expected;
-	struct trace_info w_io_tinfo;
-	ev_timer w_timer;
-	struct trace_info w_timer_tinfo;
-	int w_timer_expected;
+	struct {
+		struct fbr_ev_base **waiting;
+		struct fbr_ev_base *arrived;
+	} ev;
 	struct trace_info reclaim_tinfo;
 	struct fiber_list children;
 	struct fbr_fiber *parent;
@@ -113,9 +122,7 @@ struct fbr_context_private {
 	struct fbr_stack_item *sp;
 	struct fbr_fiber root;
 	struct fiber_list reclaimed;
-	struct ev_async mutex_async;
 	struct ev_async pending_async;
-	struct mutex_tailq mutexes;
 	struct fiber_id_tailq pending_fibers;
 	int backtraces_enabled;
 	uint64_t last_id;

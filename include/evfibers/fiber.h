@@ -187,10 +187,26 @@
 	} while (0)
 #endif
 
+/**
+ * Just for convenience we have container_of macro here.
+ *
+ * Nothing specific. You can find the same one in the linux kernel tree.
+ */
+#define fbr_container_of(ptr, type, member) ({                       \
+		const typeof( ((type *)0)->member ) *__mptr = (ptr); \
+		(type *)( (char *)__mptr - offsetof(type,member) );  \
+		})
+
 struct fbr_context_private;
 struct fbr_mutex;
 struct fbr_logger;
+struct fbr_buffer;
 struct fbr_cond_var;
+/**
+ * Fiber ID type.
+ *
+ * For you it's just an opaque type.
+ */
 typedef __uint128_t fbr_id_t;
 
 /**
@@ -205,6 +221,7 @@ enum fbr_error_code {
 	FBR_EINVAL,
 	FBR_ENOFIBER,
 	FBR_ESYSTEM,
+	FBR_EBUFFERMMAP,
 };
 
 /**
@@ -252,7 +269,7 @@ struct fbr_context {
  * @see FBR_P
  * @see fbr_context
  */
-typedef void (*fbr_fiber_func_t)(FBR_P);
+typedef void (*fbr_fiber_func_t)(FBR_P_ void *_arg);
 
 /**
  * Actual argument of a fiber call.
@@ -295,7 +312,7 @@ struct fbr_call_info {
  * @see fbr_free
  * @see fbr_alloc_set_destructor
  */
-typedef void (*fbr_alloc_destructor_func_t)(void *ptr, void *context);
+typedef void (*fbr_alloc_destructor_func_t)(FBR_P_ void *ptr, void *context);
 
 /**
  * Logging levels.
@@ -324,7 +341,7 @@ struct fbr_logger;
  * @see fbr_logger
  * @see fbr_log_func_t
  */
-typedef void (*fbr_log_func_t)(struct fbr_logger *logger,
+typedef void (*fbr_log_func_t)(FBR_P_ struct fbr_logger *logger,
 		enum fbr_log_level level, const char *format, va_list ap);
 /**
  * Logger utility function type.
@@ -346,6 +363,146 @@ struct fbr_logger {
 	enum fbr_log_level level; /*!< Current log level */
 	void *data; /*!< User data pointer */
 };
+
+/**
+ * Type of events supported by the library.
+ * @see fbr_ev_wait
+ */
+enum fbr_ev_type {
+	FBR_EV_WATCHER = 1, /*!< libev watcher event */
+	FBR_EV_MUTEX, /*!< fbr_mutex event */
+	FBR_EV_COND_VAR, /*!< fbr_cond_var event */
+};
+
+/**
+ * Base struct for all events.
+ *
+ * All other event structures ``inherit'' this one by inclusion of it as
+ * ev_base member.
+ * @see fbr_ev_upcast
+ * @see fbr_ev_wait
+ */
+struct fbr_ev_base {
+	enum fbr_ev_type type; /*!< type of the event */
+	fbr_id_t id; /*!< id of a fiber that is waiting for this event */
+	struct fbr_context *fctx; //Private
+};
+
+/**
+ * Convenience macro to save some typing.
+ *
+ * Allows you to cast fbr_ev_base to some other event struct via
+ * fbr_container_of magic.
+ * @see fbr_container_of
+ * @see fbr_ev_base
+ */
+#define fbr_ev_upcast(ptr, type_no_struct) \
+       fbr_container_of(ptr, struct type_no_struct, ev_base)
+
+/**
+ * libev watcher event.
+ *
+ * This event struct can represent any libev watcher which should be
+ * initialized and started. You can safely pass NULL as a callback for the
+ * watcher since the library sets up it's own callback.
+ * @see fbr_ev_upcast
+ * @see fbr_ev_wait
+ */
+struct fbr_ev_watcher {
+	ev_watcher *w; /*!< libev watcher */
+	struct fbr_ev_base ev_base;
+};
+
+/**
+ * fbr_mutex event.
+ *
+ * This event struct can represent mutex aquisition waiting.
+ * @see fbr_ev_upcast
+ * @see fbr_ev_wait
+ */
+struct fbr_ev_mutex {
+	struct fbr_mutex *mutex; /*!< mutex we're interested in */
+	struct fbr_ev_base ev_base;
+};
+
+/**
+ * fbr_cond_var event.
+ *
+ * This event struct can represent conditional variable waiting.
+ * @see fbr_ev_upcast
+ * @see fbr_ev_wait
+ */
+struct fbr_ev_cond_var {
+	struct fbr_cond_var *cond; /*!< conditional variable we're interested
+				     in */
+	struct fbr_ev_base ev_base;
+};
+
+/**
+ * Initializer for libev watcher event.
+ *
+ * This functions properly initializes fbr_ev_watcher struct. You should not do
+ * it manually.
+ * @see fbr_ev_watcher
+ * @see fbr_ev_wait
+ */
+void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, ev_watcher *w);
+
+/**
+ * Initializer for mutex event.
+ *
+ * This functions properly initializes fbr_ev_mutex struct. You should not do
+ * it manually.
+ * @see fbr_ev_mutex
+ * @see fbr_ev_wait
+ */
+void fbr_ev_mutex_init(FBR_P_ struct fbr_ev_mutex *ev,
+		struct fbr_mutex *mutex);
+
+/**
+ * Initializer for conditional variable event.
+ *
+ * This functions properly initializes fbr_ev_cond_var struct. You should not do
+ * it manually.
+ * @see fbr_ev_cond_var
+ * @see fbr_ev_wait
+ */
+void fbr_ev_cond_var_init(FBR_P_ struct fbr_ev_cond_var *ev,
+		struct fbr_cond_var *cond);
+
+/**
+ * Event awaiting function (one event only wrapper).
+ * @param [in] one the event base pointer of the event to wait for
+ *
+ * This functions wraps fbr_ev_wait passing only one event to it.
+ * @see fbr_ev_base
+ * @see fbr_ev_wait
+ */
+void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one);
+
+/**
+ * Event awaiting function (generic one).
+ * @param [in] events array of event base pointers
+ * @returns an event that has arrived.
+ *
+ * This function waits until any event from events array arrives. Only one
+ * event can arrive at a time. It returns a pointer to the same event that was
+ * passed in events array.
+ * @see fbr_ev_base
+ * @see fbr_ev_wait_one
+ */
+struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[]);
+
+/**
+ * Transfer of fiber context to another fiber.
+ * @param [in] to callee id
+ * @returns 0 on success, -1 on failure with f_errno set.
+ *
+ * This function transfers the execution context to other fiber. It returns as
+ * soon as the called fiber yields. In case of error it returns immediately.
+ * @see fbr_yield
+ */
+int fbr_transfer(FBR_P_ fbr_id_t to);
 
 /**
  * Initializes the library context.
@@ -465,6 +622,7 @@ void fbr_log_d(FBR_P_ const char *format, ...)
  * backtraces, etc.
  * @param [in] func function used as a fiber's ``main''.
  * @param [in] stack_size stack size (0 for default).
+ * @param [in] arg user supplied argument to a fiber.
  * @return Pointer to the created fiber.
  *
  * The created fiber is not running in any shape or form, it's just created and
@@ -484,8 +642,9 @@ void fbr_log_d(FBR_P_ const char *format, ...)
  * @see fbr_disown
  * @see fbr_parent
  */
-fbr_id_t fbr_create(FBR_P_ const char *name, void (*func) (FBR_P),
+fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		size_t stack_size);
+
 
 /**
  * Changes parent of current fiber.
@@ -595,18 +754,6 @@ int fbr_call(FBR_P_ fbr_id_t fiber, int argnum, ...)
 	__attribute__ ((warn_unused_result));
 
 /**
- * Calls the specified fiber.
- * @param [in] callee fiber pointer to call
- * @param [in] argnum number of arguments to pass
- * @return 0 on success, -1 on failure
- *
- * Behind the scenes this is a wrapper for fbr_vcall with leave_info of 0.
- * @see fbr_vcall
- */
-int fbr_call_noinfo(FBR_P_ fbr_id_t callee, int argnum, ...)
-	__attribute__ ((warn_unused_result));
-
-/**
  * Yields execution to other fiber.
  *
  * When a fiber is waiting for some incoming event --- it should yield. This
@@ -616,6 +763,7 @@ int fbr_call_noinfo(FBR_P_ fbr_id_t callee, int argnum, ...)
  *
  * It loops through all fibers subscribed to specified multicast group id.
  * @see fbr_call
+ * @see fbr_transfer
  */
 void fbr_yield(FBR_P);
 
@@ -1022,8 +1170,8 @@ void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond);
 /**
  * Signals to first fiber waiting for condition.
  *
- * Exactly one fiber (first one) waiting for a condition will be added to run queue (and will
- * eventually be run, one per event loop iteration).
+ * Exactly one fiber (first one) waiting for a condition will be added to run
+ * queue (and will eventually be run, one per event loop iteration).
  *
  * @see fbr_cond_create
  * @see fbr_cond_destroy
@@ -1031,5 +1179,122 @@ void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond);
  * @see fbr_cond_signal
  */
 void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond);
+
+/**
+ * Creates a circular buffer with pipe semantics.
+ * @param [in] size size hint for the buffer
+ * @returns fbr_buffer pointer on succes, NULL upon failure with f_errno set.
+ *
+ * This allocates a buffer with pipe semantics: you can write into it and later
+ * read what you have written. The buffer will occupy size rounded up to page
+ * size in physical memory, while occupying twice this size in virtual process
+ * memory due to usage of two mirrored adjacent mmaps.
+ */
+struct fbr_buffer *fbr_buffer_create(FBR_P_ size_t size);
+
+/**
+ * Frees a circular buffer.
+ * @param [in] buffer a pointer to fbr_buffer to free
+ *
+ * This unmaps all mmaped memory for the buffer. It does not do any fancy stuff
+ * like waiting until buffer is empty etc., it just frees it.
+ */
+int fbr_buffer_free(FBR_P_ struct fbr_buffer *buffer);
+
+/**
+ * Prepares a chunk of memory to be committed to buffer.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @param [in] size required size
+ * @returns pointer to memory reserved for commit.
+ *
+ * This function reserves a chunk of memory (or waits until there is one
+ * available, blocking current fiber) and returns pointer to it.
+ *
+ * A fiber trying to reserve a chunk of memory after some other fiber already
+ * reserved it leads to the former fiber being blocked until the latter one
+ * commits or aborts.
+ * @see fbr_buffer_alloc_commit
+ * @see fbr_buffer_alloc_abort
+ */
+void *fbr_buffer_alloc_prepare(FBR_P_ struct fbr_buffer *buffer, size_t size);
+
+/**
+ * Commits a chunk of memory to the buffer.
+ * @param [in] buffer a pointer to fbr_buffer
+ *
+ * This function commits a chunk of memory previously reserved.
+ * @see fbr_buffer_alloc_prepare
+ * @see fbr_buffer_alloc_abort
+ */
+void fbr_buffer_alloc_commit(FBR_P_ struct fbr_buffer *buffer);
+
+/**
+ * Aborts a chunk of memory in the buffer.
+ * @param [in] buffer a pointer to fbr_buffer
+ *
+ * This function aborts prepared chunk of memory previously reserved. It will
+ * not be committed and the next fiber may reuse it for it's own purposes.
+ * @see fbr_buffer_alloc_prepare
+ * @see fbr_buffer_alloc_commit
+ */
+void fbr_buffer_alloc_abort(FBR_P_ struct fbr_buffer *buffer);
+
+/**
+ * Aborts a chunk of memory in the buffer.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @param [in] size number of bytes required
+ * @returns read address containing size bytes
+ *
+ * This function reserves (or waits till data is available, blocking current
+ * fiber) a chunk of memory for reading. While a chunk of memory is reserved
+ * for reading no other fiber can read from this buffer blocking until current
+ * read is advanced or discarded.
+ * @see fbr_buffer_read_advance
+ * @see fbr_buffer_read_discard
+ */
+void *fbr_buffer_read_address(FBR_P_ struct fbr_buffer *buffer, size_t size);
+
+/**
+ * Confirms a read of chunk of memory in the buffer.
+ * @param [in] buffer a pointer to fbr_buffer
+ *
+ * This function confirms that bytes obtained with fbr_buffer_read_address are
+ * read and no other fiber will be able to read them.
+ * @see fbr_buffer_read_address
+ * @see fbr_buffer_read_discard
+ */
+void fbr_buffer_read_advance(FBR_P_ struct fbr_buffer *buffer);
+
+/**
+ * Discards a read of chunk of memory in the buffer.
+ * @param [in] buffer a pointer to fbr_buffer
+ *
+ * This function discards bytes obtained with fbr_buffer_read_address. Next
+ * fiber trying to read something from a buffer may obtain those bytes.
+ * @see fbr_buffer_read_address
+ * @see fbr_buffer_read_advance
+ */
+void fbr_buffer_read_discard(FBR_P_ struct fbr_buffer *buffer);
+
+/**
+ * Amount of bytes filled with data.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @returns number of bytes written to the buffer
+ *
+ * This function can be used to check if fbr_buffer_read_address will block.
+ * @see fbr_buffer_free_bytes
+ */
+size_t fbr_buffer_bytes(FBR_P_ struct fbr_buffer *buffer);
+
+/**
+ * Amount of free bytes.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @returns number of free bytes in the buffer
+ *
+ * This function can be used to check if fbr_buffer_alloc_prepare will block.
+ * @see fbr_buffer_bytes
+ */
+size_t fbr_buffer_free_bytes(FBR_P_ struct fbr_buffer *buffer);
+
 
 #endif
