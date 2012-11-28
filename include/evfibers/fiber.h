@@ -1204,5 +1204,25 @@ size_t fbr_buffer_bytes(FBR_P_ struct fbr_buffer *buffer);
  */
 size_t fbr_buffer_free_bytes(FBR_P_ struct fbr_buffer *buffer);
 
+/**
+ * Gets fiber user data pointer.
+ * @param [in] id fiber id
+ * @returns user data pointer on success, NULL on failure with f_errno set
+ *
+ * This function allows you to retrieve user data pointer.
+ * @see fbr_set_user_data
+ */
+void *fbr_get_user_data(FBR_P_ fbr_id_t id);
+
+/**
+ * Sets fiber user data pointer.
+ * @param [in] id fiber id
+ * @param [in] data pointer to user data
+ * @returns 0 on success, -1 upon failure with f_errno set
+ *
+ * This function allows you to extend fiber with some user structure.
+ * @see fbr_get_user_data
+ */
+int fbr_set_user_data(FBR_P_ fbr_id_t id, void *data);
 
 #endif

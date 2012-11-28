@@ -127,10 +127,33 @@ START_TEST(test_reclaim)
 }
 END_TEST
 
+START_TEST(test_user_data)
+{
+	struct fbr_context context;
+	fbr_id_t fiber = 0;
+	int retval;
+	void *ptr = (void *)0xdeadbeaf;
+
+	fbr_init(&context, EV_DEFAULT);
+
+	fiber = fbr_create(&context, "null_fiber", NULL, NULL, 0);
+	fail_if(0 == fiber);
+
+	retval = fbr_set_user_data(&context, fiber, ptr);
+	fail_unless(0 == retval);
+
+	fail_if(ptr != fbr_get_user_data(&context, fiber));
+
+	fbr_destroy(&context);
+}
+END_TEST
+
+
 TCase * reclaim_tcase(void)
 {
 	TCase *tc_reclaim = tcase_create ("Reclaim");
 	tcase_add_test(tc_reclaim, test_reclaim);
 	tcase_add_test(tc_reclaim, test_disown);
+	tcase_add_test(tc_reclaim, test_user_data);
 	return tc_reclaim;
 }

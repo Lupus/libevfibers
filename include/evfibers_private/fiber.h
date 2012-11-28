@@ -97,6 +97,7 @@ struct fbr_fiber {
 		LIST_ENTRY(fbr_fiber) reclaimed;
 		LIST_ENTRY(fbr_fiber) children;
 	} entries;
+	void *user_data;
 };
 
 struct fbr_mutex {

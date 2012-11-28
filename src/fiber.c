@@ -56,10 +56,10 @@
 #define CURRENT_FIBER_ID (fbr_id_pack(CURRENT_FIBER))
 #define CALLED_BY_ROOT ((fctx->__p->sp - 1)->fiber == &fctx->__p->root)
 
-#define unpack_transfer_errno(ptr, id)                  \
+#define unpack_transfer_errno(value, ptr, id)           \
 	do {                                            \
 		if (-1 == fbr_id_unpack(fctx, ptr, id)) \
-			return -1;                      \
+			return (value);                 \
 	} while (0)
 
 #define return_success(value)                \
@@ -370,7 +370,7 @@ int fbr_reclaim(FBR_P_ fbr_id_t id)
 {
 	struct fbr_fiber *fiber;
 
-	unpack_transfer_errno(&fiber, id);
+	unpack_transfer_errno(-1, &fiber, id);
 
 	fill_trace_info(FBR_A_ &fiber->reclaim_tinfo);
 	reclaim_children(FBR_A_ fiber);
@@ -458,7 +458,7 @@ int fbr_transfer(FBR_P_ fbr_id_t to)
 	struct fbr_fiber *callee;
 	struct fbr_fiber *caller = fctx->__p->sp->fiber;
 
-	unpack_transfer_errno(&callee, to);
+	unpack_transfer_errno(-1, &callee, to);
 
 	fctx->__p->sp++;
 
@@ -797,7 +797,7 @@ int fbr_disown(FBR_P_ fbr_id_t parent_id)
 {
 	struct fbr_fiber *fiber, *parent;
 	if (parent_id > 0)
-		unpack_transfer_errno(&parent, parent_id);
+		unpack_transfer_errno(-1, &parent, parent_id);
 	else
 		parent = &fctx->__p->root;
 	fiber = CURRENT_FIBER;
@@ -1196,4 +1196,19 @@ size_t fbr_buffer_bytes(_unused_ FBR_P_ struct fbr_buffer *buffer)
 size_t fbr_buffer_free_bytes(FBR_P_ struct fbr_buffer *buffer)
 {
 	return buffer->count_bytes - fbr_buffer_bytes(FBR_A_ buffer);
+}
+
+void *fbr_get_user_data(FBR_P_ fbr_id_t id)
+{
+	struct fbr_fiber *fiber;
+	unpack_transfer_errno(NULL, &fiber, id);
+	return_success(fiber->user_data);
+}
+
+int fbr_set_user_data(FBR_P_ fbr_id_t id, void *data)
+{
+	struct fbr_fiber *fiber;
+	unpack_transfer_errno(-1, &fiber, id);
+	fiber->user_data = data;
+	return_success(0);
 }
