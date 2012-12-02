@@ -406,20 +406,94 @@ static void call_wrapper(FBR_P)
 	assert(NULL);
 }
 
-static void prepare_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
+enum ev_action_hint {
+	EV_AH_OK = 0,
+	EV_AH_ARRIVED,
+	EV_AH_EINVAL
+};
+
+static enum ev_action_hint prepare_ev(FBR_P_ struct fbr_ev_base *ev)
 {
-	struct fbr_ev_watcher *watcher;
+	struct fbr_ev_watcher *e_watcher;
+	struct fbr_ev_mutex *e_mutex;
+	struct fbr_ev_cond_var *e_cond;
+	struct fiber_id_tailq_i *item;
 	switch (ev->type) {
-		case FBR_EV_WATCHER:
-			watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
-			assert(ev_is_active(watcher->w));
-			watcher->w->data = watcher;
-			ev_set_cb(watcher->w, ev_watcher_cb);
-			break;
-		case FBR_EV_MUTEX:
-		case FBR_EV_COND_VAR:
-			/* NOP for now */
-			break;
+	case FBR_EV_WATCHER:
+		e_watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
+		if (!ev_is_active(e_watcher->w))
+			return EV_AH_EINVAL;
+		e_watcher->w->data = e_watcher;
+		ev_set_cb(e_watcher->w, ev_watcher_cb);
+		break;
+	case FBR_EV_MUTEX:
+		e_mutex = fbr_ev_upcast(ev, fbr_ev_mutex);
+		if (0 == e_mutex->mutex->locked_by) {
+			e_mutex->mutex->locked_by = CURRENT_FIBER_ID;
+			return EV_AH_ARRIVED;
+		}
+
+		item = id_tailq_i_for(FBR_A_ CURRENT_FIBER);
+		item->ev = ev;
+		ev->data = item;
+		TAILQ_INSERT_TAIL(&e_mutex->mutex->pending, item, entries);
+		break;
+	case FBR_EV_COND_VAR:
+		e_cond = fbr_ev_upcast(ev, fbr_ev_cond_var);
+		if (0 == e_cond->mutex->locked_by)
+			return_error(-1, FBR_EINVAL);
+		item = id_tailq_i_for(FBR_A_ CURRENT_FIBER);
+		item->ev = ev;
+		ev->data = item;
+		TAILQ_INSERT_TAIL(&e_cond->cond->waiting, item, entries);
+		fbr_mutex_unlock(FBR_A_ e_cond->mutex);
+		break;
+	}
+	return EV_AH_OK;
+}
+
+static void finish_ev(FBR_P_ struct fbr_ev_base *ev)
+{
+	struct fbr_ev_cond_var *e_cond;
+	struct fbr_ev_watcher *e_watcher;
+	switch (ev->type) {
+	case FBR_EV_COND_VAR:
+		e_cond = fbr_ev_upcast(ev, fbr_ev_cond_var);
+		fbr_mutex_lock(FBR_A_ e_cond->mutex);
+		break;
+	case FBR_EV_WATCHER:
+		e_watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
+		ev_set_cb(e_watcher->w, NULL);
+		break;
+	case FBR_EV_MUTEX:
+		/* NOP */
+		break;
+	}
+}
+
+static void cancel_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
+{
+	struct fbr_ev_watcher *e_watcher;
+	struct fbr_ev_mutex *e_mutex;
+	struct fbr_ev_cond_var *e_cond;
+	struct fiber_id_tailq_i *item;
+	switch (ev->type) {
+	case FBR_EV_WATCHER:
+		e_watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
+		ev_set_cb(e_watcher->w, NULL);
+		break;
+	case FBR_EV_MUTEX:
+		e_mutex = fbr_ev_upcast(ev, fbr_ev_mutex);
+		item = e_mutex->ev_base.data;
+		TAILQ_REMOVE(&e_mutex->mutex->pending, item, entries);
+		free(item);
+		break;
+	case FBR_EV_COND_VAR:
+		e_cond = fbr_ev_upcast(ev, fbr_ev_cond_var);
+		item = e_cond->ev_base.data;
+		TAILQ_REMOVE(&e_cond->cond->waiting, item, entries);
+		free(item);
+		break;
 	}
 }
 
@@ -428,13 +502,27 @@ struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	struct fbr_ev_base **ev_pptr;
 	struct fbr_ev_base *ev_ptr;
-
-	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++)
-		prepare_ev(FBR_A_ *ev_pptr);
+	struct fbr_ev_base *ev_last = NULL;
+	enum ev_action_hint hint;
 
 	fiber->ev.arrived = NULL;
 	fiber->ev.waiting = events;
 
+	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++) {
+		hint = prepare_ev(FBR_A_ *ev_pptr);
+		switch (hint) {
+		case EV_AH_OK:
+			break;
+		case EV_AH_ARRIVED:
+			fiber->ev.arrived = *ev_pptr;
+			ev_last = *(ev_pptr + 1);
+			goto loop_end;
+		case EV_AH_EINVAL:
+			return_error(NULL, FBR_EINVAL);
+		}
+	}
+
+loop_end:
 	while (NULL == fiber->ev.arrived)
 		fbr_yield(FBR_A);
 
@@ -442,7 +530,14 @@ struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 	fiber->ev.arrived = NULL;
 	fiber->ev.waiting = NULL;
 
-	return ev_ptr;
+	for (ev_pptr = events; ev_last != *ev_pptr; ev_pptr++) {
+		if (ev_ptr == *ev_pptr)
+			continue;
+		cancel_ev(FBR_A_ ev_ptr);
+	}
+
+	finish_ev(FBR_A_ ev_ptr);
+	return_success(ev_ptr);
 }
 
 void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one)
@@ -900,17 +995,7 @@ struct fbr_mutex *fbr_mutex_create(_unused_ FBR_P)
 
 void fbr_mutex_lock(FBR_P_ struct fbr_mutex *mutex)
 {
-	struct fiber_id_tailq_i *item;
 	struct fbr_ev_mutex ev;
-
-	if (0 == mutex->locked_by) {
-		mutex->locked_by = CURRENT_FIBER_ID;
-		return;
-	}
-
-	item = id_tailq_i_for(FBR_A_ CURRENT_FIBER);
-	item->ev = &ev.ev_base;
-	TAILQ_INSERT_TAIL(&mutex->pending, item, entries);
 
 	fbr_ev_mutex_init(FBR_A_ &ev, mutex);
 	fbr_ev_wait_one(FBR_A_ &ev.ev_base);
@@ -962,10 +1047,11 @@ void fbr_mutex_destroy(_unused_ FBR_P_ struct fbr_mutex *mutex)
 }
 
 void fbr_ev_cond_var_init(FBR_P_ struct fbr_ev_cond_var *ev,
-		struct fbr_cond_var *cond)
+		struct fbr_cond_var *cond, struct fbr_mutex *mutex)
 {
 	ev_base_init(FBR_A_ &ev->ev_base, FBR_EV_COND_VAR);
 	ev->cond = cond;
+	ev->mutex = mutex;
 }
 
 struct fbr_cond_var *fbr_cond_create(_unused_ FBR_P)
@@ -988,18 +1074,13 @@ void fbr_cond_destroy(_unused_ FBR_P_ struct fbr_cond_var *cond)
 
 int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
 {
-	struct fiber_id_tailq_i *item;
-	struct fbr_fiber *fiber = CURRENT_FIBER;
 	struct fbr_ev_cond_var ev;
+
 	if (0 == mutex->locked_by)
 		return_error(-1, FBR_EINVAL);
-	item = id_tailq_i_for(FBR_A_ fiber);
-	item->ev = &ev.ev_base;
-	TAILQ_INSERT_TAIL(&cond->waiting, item, entries);
-	fbr_mutex_unlock(FBR_A_ mutex);
-	fbr_ev_cond_var_init(FBR_A_ &ev, cond);
+
+	fbr_ev_cond_var_init(FBR_A_ &ev, cond, mutex);
 	fbr_ev_wait_one(FBR_A_ &ev.ev_base);
-	fbr_mutex_lock(FBR_A_ mutex);
 	return_success(0);
 }
 
@@ -1196,6 +1277,16 @@ size_t fbr_buffer_bytes(_unused_ FBR_P_ struct fbr_buffer *buffer)
 size_t fbr_buffer_free_bytes(FBR_P_ struct fbr_buffer *buffer)
 {
 	return buffer->count_bytes - fbr_buffer_bytes(FBR_A_ buffer);
+}
+
+struct fbr_cond_var *fbr_buffer_cond_read(_unused_ FBR_P_ struct fbr_buffer *buffer)
+{
+	return buffer->committed_cond;
+}
+
+struct fbr_cond_var *fbr_buffer_cond_write(_unused_ FBR_P_ struct fbr_buffer *buffer)
+{
+	return buffer->bytes_freed_cond;
 }
 
 void *fbr_get_user_data(FBR_P_ fbr_id_t id)

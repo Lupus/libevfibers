@@ -352,6 +352,7 @@ struct fbr_ev_base {
 	enum fbr_ev_type type; /*!< type of the event */
 	fbr_id_t id; /*!< id of a fiber that is waiting for this event */
 	struct fbr_context *fctx; //Private
+	void *data; //Private
 };
 
 /**
@@ -401,6 +402,7 @@ struct fbr_ev_mutex {
 struct fbr_ev_cond_var {
 	struct fbr_cond_var *cond; /*!< conditional variable we're interested
 				     in */
+	struct fbr_mutex *mutex; /*!< mutex to protect conditional variable*/
 	struct fbr_ev_base ev_base;
 };
 
@@ -434,7 +436,7 @@ void fbr_ev_mutex_init(FBR_P_ struct fbr_ev_mutex *ev,
  * @see fbr_ev_wait
  */
 void fbr_ev_cond_var_init(FBR_P_ struct fbr_ev_cond_var *ev,
-		struct fbr_cond_var *cond);
+		struct fbr_cond_var *cond, struct fbr_mutex *mutex);
 
 /**
  * Event awaiting function (one event only wrapper).
@@ -1203,6 +1205,9 @@ size_t fbr_buffer_bytes(FBR_P_ struct fbr_buffer *buffer);
  * @see fbr_buffer_bytes
  */
 size_t fbr_buffer_free_bytes(FBR_P_ struct fbr_buffer *buffer);
+
+struct fbr_cond_var *fbr_buffer_cond_read(FBR_P_ struct fbr_buffer *buffer);
+struct fbr_cond_var *fbr_buffer_cond_write(FBR_P_ struct fbr_buffer *buffer);
 
 /**
  * Gets fiber user data pointer.
