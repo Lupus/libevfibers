@@ -313,6 +313,52 @@ void fbr_enable_backtraces(FBR_P_ int enabled)
 
 }
 
+static void cancel_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
+{
+	struct fbr_ev_watcher *e_watcher;
+	struct fbr_ev_mutex *e_mutex;
+	struct fbr_ev_cond_var *e_cond;
+	struct fiber_id_tailq_i *item;
+	switch (ev->type) {
+	case FBR_EV_WATCHER:
+		e_watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
+		ev_set_cb(e_watcher->w, NULL);
+		break;
+	case FBR_EV_MUTEX:
+		e_mutex = fbr_ev_upcast(ev, fbr_ev_mutex);
+		item = e_mutex->ev_base.data;
+		TAILQ_REMOVE(&e_mutex->mutex->pending, item, entries);
+		free(item);
+		break;
+	case FBR_EV_COND_VAR:
+		e_cond = fbr_ev_upcast(ev, fbr_ev_cond_var);
+		item = e_cond->ev_base.data;
+		TAILQ_REMOVE(&e_cond->cond->waiting, item, entries);
+		free(item);
+		break;
+	}
+}
+
+static void post_ev(FBR_P_ struct fbr_fiber *fiber, struct fbr_ev_base *ev)
+{
+	struct fbr_ev_base **ev_pptr;
+	struct fbr_ev_base *ev_ptr;
+
+	assert(NULL == fiber->ev.arrived);
+	assert(NULL != fiber->ev.waiting);
+
+	fiber->ev.arrived = ev;
+
+	for (ev_pptr = fiber->ev.waiting; NULL != *ev_pptr; ev_pptr++) {
+		ev_ptr = *ev_pptr;
+		printf("ev_ptr %p != %p arrived\n", ev_ptr, fiber->ev.arrived);
+		if (ev_ptr != fiber->ev.arrived) {
+			printf("calcelling ev_ptr = %p\n", ev_ptr);
+			cancel_ev(FBR_A_ ev_ptr);
+		}
+	}
+}
+
 static void ev_watcher_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
 {
 	struct fbr_fiber *fiber;
@@ -330,7 +376,7 @@ static void ev_watcher_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
 		abort();
 	}
 
-	fiber->ev.arrived = &ev->ev_base;
+	post_ev(FBR_A_ fiber, &ev->ev_base);
 
 	retval = fbr_transfer(FBR_A_ fbr_id_pack(fiber));
 	assert(0 == retval);
@@ -471,38 +517,11 @@ static void finish_ev(FBR_P_ struct fbr_ev_base *ev)
 	}
 }
 
-static void cancel_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
-{
-	struct fbr_ev_watcher *e_watcher;
-	struct fbr_ev_mutex *e_mutex;
-	struct fbr_ev_cond_var *e_cond;
-	struct fiber_id_tailq_i *item;
-	switch (ev->type) {
-	case FBR_EV_WATCHER:
-		e_watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
-		ev_set_cb(e_watcher->w, NULL);
-		break;
-	case FBR_EV_MUTEX:
-		e_mutex = fbr_ev_upcast(ev, fbr_ev_mutex);
-		item = e_mutex->ev_base.data;
-		TAILQ_REMOVE(&e_mutex->mutex->pending, item, entries);
-		free(item);
-		break;
-	case FBR_EV_COND_VAR:
-		e_cond = fbr_ev_upcast(ev, fbr_ev_cond_var);
-		item = e_cond->ev_base.data;
-		TAILQ_REMOVE(&e_cond->cond->waiting, item, entries);
-		free(item);
-		break;
-	}
-}
-
 struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	struct fbr_ev_base **ev_pptr;
 	struct fbr_ev_base *ev_ptr;
-	struct fbr_ev_base *ev_last = NULL;
 	enum ev_action_hint hint;
 
 	fiber->ev.arrived = NULL;
@@ -515,7 +534,8 @@ struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 			break;
 		case EV_AH_ARRIVED:
 			fiber->ev.arrived = *ev_pptr;
-			ev_last = *(ev_pptr + 1);
+			while (--ev_pptr >= events)
+				cancel_ev(FBR_A_ *ev_pptr);
 			goto loop_end;
 		case EV_AH_EINVAL:
 			return_error(NULL, FBR_EINVAL);
@@ -529,12 +549,6 @@ loop_end:
 	ev_ptr = fiber->ev.arrived;
 	fiber->ev.arrived = NULL;
 	fiber->ev.waiting = NULL;
-
-	for (ev_pptr = events; ev_last != *ev_pptr; ev_pptr++) {
-		if (ev_ptr == *ev_pptr)
-			continue;
-		cancel_ev(FBR_A_ ev_ptr);
-	}
 
 	finish_ev(FBR_A_ ev_ptr);
 	return_success(ev_ptr);
@@ -1032,7 +1046,7 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 	}
 
 	mutex->locked_by = item->id;
-	fiber->ev.arrived = item->ev;
+	post_ev(FBR_A_ fiber, item->ev);
 
 	transfer_later(FBR_A_ item);
 }
@@ -1095,7 +1109,7 @@ void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond)
 			assert(FBR_ENOFIBER == fctx->f_errno);
 			continue;
 		}
-		fiber->ev.arrived = item->ev;
+		post_ev(FBR_A_ fiber, item->ev);
 	}
 	transfer_later_tailq(FBR_A_ &cond->waiting);
 }
@@ -1111,8 +1125,7 @@ void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 		assert(FBR_ENOFIBER == fctx->f_errno);
 		return;
 	}
-
-	fiber->ev.arrived = item->ev;
+	post_ev(FBR_A_ fiber, item->ev);
 
 	TAILQ_REMOVE(&cond->waiting, item, entries);
 	transfer_later(FBR_A_ item);
@@ -1138,7 +1151,11 @@ struct fbr_buffer *fbr_buffer_create(FBR_P_ size_t size)
 	if (-1 == retval)
 		return_error(NULL, FBR_ESYSTEM);
 
-	buffer->count_bytes = round_up_to_page_size(size);
+	if (size)
+		buffer->count_bytes = round_up_to_page_size(size);
+	else
+		//One page default size
+		buffer->count_bytes = round_up_to_page_size(1);
 	buffer->write_offset_bytes = 0;
 	buffer->read_offset_bytes = 0;
 	buffer->prepared_bytes = 0;
