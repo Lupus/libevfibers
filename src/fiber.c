@@ -351,11 +351,8 @@ static void post_ev(FBR_P_ struct fbr_fiber *fiber, struct fbr_ev_base *ev)
 
 	for (ev_pptr = fiber->ev.waiting; NULL != *ev_pptr; ev_pptr++) {
 		ev_ptr = *ev_pptr;
-		printf("ev_ptr %p != %p arrived\n", ev_ptr, fiber->ev.arrived);
-		if (ev_ptr != fiber->ev.arrived) {
-			printf("calcelling ev_ptr = %p\n", ev_ptr);
+		if (ev_ptr != fiber->ev.arrived)
 			cancel_ev(FBR_A_ ev_ptr);
-		}
 	}
 }
 
@@ -1133,74 +1130,25 @@ void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 
 struct fbr_buffer *fbr_buffer_create(FBR_P_ size_t size)
 {
-	char path[] = "/dev/shm/fbr-buffer-XXXXXX";
-	int fd;
-	void *address;
-	int retval;
 	struct fbr_buffer *buffer;
 
 	buffer = malloc(sizeof(struct fbr_buffer));
 	if(NULL == buffer)
 		return_error(NULL, FBR_ESYSTEM);
 
-	fd = mkstemp(path);
-	if (-1 == fd)
-		return_error(NULL, FBR_ESYSTEM);
-
-	retval = unlink (path);
-	if (-1 == retval)
-		return_error(NULL, FBR_ESYSTEM);
-
-	if (size)
-		buffer->count_bytes = round_up_to_page_size(size);
-	else
-		//One page default size
-		buffer->count_bytes = round_up_to_page_size(1);
-	buffer->write_offset_bytes = 0;
-	buffer->read_offset_bytes = 0;
+	buffer->vrb = vrb_new(size, NULL);
 	buffer->prepared_bytes = 0;
+	buffer->waiting_bytes = 0;
 	buffer->committed_cond = fbr_cond_create(FBR_A);
 	buffer->bytes_freed_cond = fbr_cond_create(FBR_A);
 	buffer->write_mutex = fbr_mutex_create(FBR_A);
 	buffer->read_mutex = fbr_mutex_create(FBR_A);
-
-	retval = ftruncate(fd, buffer->count_bytes);
-	if (-1 == retval)
-		return_error(NULL, FBR_ESYSTEM);
-
-	buffer->address = mmap(NULL, buffer->count_bytes << 1, PROT_NONE,
-			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-
-	if (buffer->address == MAP_FAILED)
-		return_error(NULL, FBR_ESYSTEM);
-
-	address = mmap(buffer->address, buffer->count_bytes, PROT_READ |
-			PROT_WRITE, MAP_FIXED | MAP_SHARED, fd, 0);
-
-	if (address != buffer->address)
-		return_error(NULL, FBR_EBUFFERMMAP);
-
-	address = mmap(buffer->address + buffer->count_bytes,
-			buffer->count_bytes, PROT_READ | PROT_WRITE, MAP_FIXED
-			| MAP_SHARED, fd, 0);
-
-	if (address != buffer->address + buffer->count_bytes)
-		return_error(NULL, FBR_EBUFFERMMAP);
-
-	retval = close(fd);
-	if (-1 == retval)
-		return_error(NULL, FBR_ESYSTEM);
-
 	return_success(buffer);
 }
 
-int fbr_buffer_free(FBR_P_ struct fbr_buffer *buffer)
+void fbr_buffer_free(FBR_P_ struct fbr_buffer *buffer)
 {
-	int retval;
-
-	retval = munmap (buffer->address, buffer->count_bytes << 1);
-	if (-1 == retval)
-		return_error(-1, FBR_ESYSTEM);
+	vrb_destroy(buffer->vrb);
 
 	fbr_mutex_destroy(FBR_A_ buffer->read_mutex);
 	fbr_mutex_destroy(FBR_A_ buffer->write_mutex);
@@ -1208,13 +1156,11 @@ int fbr_buffer_free(FBR_P_ struct fbr_buffer *buffer)
 	fbr_cond_destroy(FBR_A_ buffer->bytes_freed_cond);
 
 	free(buffer);
-
-	return_success(0);
 }
 
 void *fbr_buffer_alloc_prepare(FBR_P_ struct fbr_buffer *buffer, size_t size)
 {
-	if (size > buffer->count_bytes)
+	if (size > vrb_capacity(buffer->vrb))
 		return_error(NULL, FBR_EINVAL);
 
 	fbr_mutex_lock(FBR_A_ buffer->write_mutex);
@@ -1227,16 +1173,16 @@ void *fbr_buffer_alloc_prepare(FBR_P_ struct fbr_buffer *buffer, size_t size)
 
 	buffer->prepared_bytes = size;
 
-	while (fbr_buffer_free_bytes(FBR_A_ buffer) < size)
+	while ((size_t)vrb_space_len(buffer->vrb) < size)
 		fbr_cond_wait(FBR_A_ buffer->bytes_freed_cond,
 				buffer->write_mutex);
 
-	return buffer->address + buffer->write_offset_bytes;
+	return vrb_space_ptr(buffer->vrb);
 }
 
 void fbr_buffer_alloc_commit(FBR_P_ struct fbr_buffer *buffer)
 {
-	buffer->write_offset_bytes += buffer->prepared_bytes;
+	vrb_give(buffer->vrb, buffer->prepared_bytes);
 	buffer->prepared_bytes = 0;
 	fbr_cond_signal(FBR_A_ buffer->committed_cond);
 	fbr_mutex_unlock(FBR_A_ buffer->write_mutex);
@@ -1252,12 +1198,12 @@ void fbr_buffer_alloc_abort(FBR_P_ struct fbr_buffer *buffer)
 void *fbr_buffer_read_address(FBR_P_ struct fbr_buffer *buffer, size_t size)
 {
 	int retval;
-	if (size > buffer->count_bytes)
+	if (size > vrb_capacity(buffer->vrb))
 		return_error(NULL, FBR_EINVAL);
 
 	fbr_mutex_lock(FBR_A_ buffer->read_mutex);
 
-	while (fbr_buffer_bytes(FBR_A_ buffer) < size) {
+	while ((size_t)vrb_data_len(buffer->vrb) < size) {
 		retval = fbr_cond_wait(FBR_A_ buffer->committed_cond,
 				buffer->read_mutex);
 		assert(0 == retval);
@@ -1265,17 +1211,12 @@ void *fbr_buffer_read_address(FBR_P_ struct fbr_buffer *buffer, size_t size)
 
 	buffer->waiting_bytes = size;
 
-	return_success(buffer->address + buffer->read_offset_bytes);
+	return_success(vrb_data_ptr(buffer->vrb));
 }
 
 void fbr_buffer_read_advance(FBR_P_ struct fbr_buffer *buffer)
 {
-	buffer->read_offset_bytes += buffer->waiting_bytes;
-
-	if (buffer->read_offset_bytes >= buffer->count_bytes) {
-		buffer->read_offset_bytes -= buffer->count_bytes;
-		buffer->write_offset_bytes -= buffer->count_bytes;
-	}
+	vrb_take(buffer->vrb, buffer->waiting_bytes);
 
 	fbr_cond_signal(FBR_A_ buffer->bytes_freed_cond);
 	fbr_mutex_unlock(FBR_A_ buffer->read_mutex);
@@ -1288,12 +1229,12 @@ void fbr_buffer_read_discard(FBR_P_ struct fbr_buffer *buffer)
 
 size_t fbr_buffer_bytes(_unused_ FBR_P_ struct fbr_buffer *buffer)
 {
-	return buffer->write_offset_bytes - buffer->read_offset_bytes;
+	return vrb_data_len(buffer->vrb);
 }
 
-size_t fbr_buffer_free_bytes(FBR_P_ struct fbr_buffer *buffer)
+size_t fbr_buffer_free_bytes(_unused_ FBR_P_ struct fbr_buffer *buffer)
 {
-	return buffer->count_bytes - fbr_buffer_bytes(FBR_A_ buffer);
+	return vrb_space_len(buffer->vrb);
 }
 
 struct fbr_cond_var *fbr_buffer_cond_read(_unused_ FBR_P_ struct fbr_buffer *buffer)

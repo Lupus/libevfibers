@@ -29,6 +29,7 @@
 #include <evfibers_private/trace.h>
 #include <coro.h>
 #include <uthash.h>
+#include <vrb.h>
 
 #define obstack_chunk_alloc malloc
 #define obstack_chunk_free free
@@ -53,10 +54,7 @@ struct mem_pool {
 LIST_HEAD(mem_pool_list, mem_pool);
 
 struct fbr_buffer {
-	void *address;
-	size_t count_bytes;
-	size_t write_offset_bytes;
-	size_t read_offset_bytes;
+	vrb_p vrb;
 	size_t prepared_bytes;
 	size_t waiting_bytes;
 	struct fbr_cond_var *committed_cond;

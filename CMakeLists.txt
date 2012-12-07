@@ -30,7 +30,7 @@ set_target_properties(evfibers
 	SOVERSION ${VERSION_MAJOR}
 	VERSION ${VERSION_STRING}
 	)
-target_link_libraries(evfibers ev)
+target_link_libraries(evfibers ev vrb)
 
 add_library(evfibers_static STATIC ${SOURCES})
 set_target_properties(evfibers_static  PROPERTIES OUTPUT_NAME evfibers)

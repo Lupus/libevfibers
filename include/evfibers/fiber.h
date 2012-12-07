@@ -1109,7 +1109,7 @@ struct fbr_buffer *fbr_buffer_create(FBR_P_ size_t size);
  * This unmaps all mmaped memory for the buffer. It does not do any fancy stuff
  * like waiting until buffer is empty etc., it just frees it.
  */
-int fbr_buffer_free(FBR_P_ struct fbr_buffer *buffer);
+void fbr_buffer_free(FBR_P_ struct fbr_buffer *buffer);
 
 /**
  * Prepares a chunk of memory to be committed to buffer.
