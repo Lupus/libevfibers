@@ -296,6 +296,21 @@ enum fbr_log_level {
 struct fbr_logger;
 
 /**
+ * Convenient macro to test if certain log level will actually be logged.
+ *
+ * Useful when you need to perform some processing before logging. Wrapping
+ * your processing in ``if'' statement based on this macros' result can perform
+ * the processing only if it's result will get logged.
+ */
+#define fbr_need_log(fctx, test_level) ((test_level) > (fctx)->logger->level)
+
+/**
+ * Convenient macro to set current log level.
+ */
+#define fbr_set_log_level(fctx, desired_level) \
+	(fctx)->logger->level = (desired_level)
+
+/**
  * Logger function type.
  * @param [in] logger currently configured logger
  * @param [in] level log level of message
