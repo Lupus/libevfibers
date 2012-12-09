@@ -1,3 +1,17 @@
+libevfibers (0.2.0) unstable; urgency=low
+
+  * Dropped ``call'' and ``multicall'' interfaces alltogether
+  * Added fbr_ev_wait and corresponding machinery
+  * Added transactional ring buffer
+  * Implemented error subsystem with f_errno
+  * Fixed ABA problem with reclaimed fibers
+  * Added logging system
+  * Added conditional variables
+  * Minor utility additions to API
+  * Unit tests
+
+ -- Konstantin Olkhovskiy <lupus@lupus-desktop>  Sun, 09 Dec 2012 21:00:33 +0400
+
 libevfibers (0.1.2) unstable; urgency=low
 
   * Fixed mutexes

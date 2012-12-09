@@ -1,7 +1,7 @@
 Source: libevfibers
 Priority: extra
 Maintainer: Konstantin Olkhovskiy <lupus@oxnull.net>
-Build-Depends: debhelper (>= 8.0.0), cmake, libev-dev, uthash-dev, valgrind,
+Build-Depends: debhelper (>= 8.0.0), cmake, libev-dev, libvrb0-dev, valgrind,
  check
 Standards-Version: 3.9.2
 Section: libs
@@ -24,6 +24,6 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: Small C fibers library --- runtime files
  Small c fiber library that uses libev based event loop and libcoro based
- coroutine context switching. as libcoro alone is barely enough to do something
+ coroutine context switching. As libcoro alone is barely enough to do something
  useful, this project aims at building a complete fiber api around it while
  leveraging libev's high performance and flexibility.
