@@ -82,12 +82,10 @@
  * - [libev](http://software.schmorp.de/pkg/libev.html) development files
  *
  *   Well-known and robust event loop.
- * - [uthash](http://uthash.sourceforge.net) development files
+ * - [VRB](http://vrb.slashusr.org) development files
  *
- *   Macro-based hash library that was used in earlier versions. Currently no
- *   hashes are used, but I still have utlist used somewhere. Will get rid of
- *   this dependency soon in favor of <sys/queue.h>.
- *
+ *   Virtual ring buffer library, used as underlying data structure in
+ *   fbr_buffer.
  * - [valgrind](http://valgrind.org) development files
  *
  *   libevfibers makes use of client requests in valgrind to register stacks.
@@ -101,12 +99,13 @@
  *
  * As far as runtime dependencies concerned, the following is required:
  *  - [libev](http://software.schmorp.de/pkg/libev.html) runtime files
+ *  - [VRB](http://vrb.slashusr.org) runtime files
  *
  * For debian-based distributions users (i.e. Ubuntu) you can use the following
  * command to install all the dependencies:
  *
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.sh}
- * sudo apt-get install cmake libev-dev uthash-dev valgrind check
+ * sudo apt-get install cmake libev-dev libvrb0-dev valgrind check
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
  * \subsection building_ssec Building
@@ -149,6 +148,7 @@
  */
 #include <unistd.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <assert.h>

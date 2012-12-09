@@ -26,6 +26,7 @@
 #include <errno.h>
 #include <utlist.h>
 #include <stdio.h>
+#include <string.h>
 #include <err.h>
 #include <valgrind/valgrind.h>
 

@@ -24,11 +24,11 @@
 #define _FBR_FIBER_PRIVATE_H_
 
 #include <stdarg.h>
+#include <stdint.h>
 #include <sys/queue.h>
 #include <evfibers/fiber.h>
 #include <evfibers_private/trace.h>
 #include <coro.h>
-#include <uthash.h>
 #include <vrb.h>
 
 #define obstack_chunk_alloc malloc
