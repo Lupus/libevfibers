@@ -302,7 +302,7 @@ struct fbr_logger;
  * your processing in ``if'' statement based on this macros' result can perform
  * the processing only if it's result will get logged.
  */
-#define fbr_need_log(fctx, test_level) ((test_level) > (fctx)->logger->level)
+#define fbr_need_log(fctx, test_level) ((test_level) <= (fctx)->logger->level)
 
 /**
  * Convenient macro to set current log level.
