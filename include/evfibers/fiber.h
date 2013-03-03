@@ -151,6 +151,7 @@
 #include <stddef.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/queue.h>
 #include <assert.h>
 #include <ev.h>
 
@@ -324,6 +325,7 @@ struct fbr_logger;
  */
 typedef void (*fbr_log_func_t)(FBR_P_ struct fbr_logger *logger,
 		enum fbr_log_level level, const char *format, va_list ap);
+
 /**
  * Logger utility function type.
  * @param [in] format printf-compatible format string
@@ -355,6 +357,57 @@ enum fbr_ev_type {
 	FBR_EV_COND_VAR, /*!< fbr_cond_var event */
 };
 
+struct fbr_ev_base;
+
+/**
+ * Destructor function type.
+ * @param [in] arg user-defined data argument
+ *
+ * This function gets called when containing fiber dies or destructor is
+ * removed with call flag set to 1.
+ * @see fbr_destructor
+ * @see fbr_log_func_t
+ */
+typedef void (*fbr_destructor_func_t)(FBR_P_ void *arg);
+
+/**
+ * Destructor structure.
+ *
+ * This structure holds information required for destruction. As it's defined
+ * in public interface, it may be used as stack-allocatable destructor (it's
+ * used internally the same way).
+ *
+ * Stack-allocated destructor might be useful if one has some resource (e.g.
+ * file descriptor), which needs to be destructed in some way, and it's
+ * lifespan continues across several fbr_* calls. While being in some library
+ * call, a fiber may be reclaimed, but it's stack remains intact until
+ * reclaimed. Destructor is called before the stack becomes dangerous to use
+ * and guarantees resource destruction.
+ *
+ * User is supposed to fill in the func and arg fields.
+ * @see fbr_destructor_func_t
+ * @see fbr_destructor_add
+ * @see fbr_destructor_remove
+ */
+struct fbr_destructor {
+	fbr_destructor_func_t func; /*!< destructor function */
+	void *arg; /*!< destructor function argument (optional) */
+	TAILQ_ENTRY(fbr_destructor) entries; //Private
+};
+
+struct fbr_id_tailq;
+
+struct fbr_id_tailq_i {
+	/* Private structure */
+	fbr_id_t id;
+	struct fbr_ev_base *ev;
+	TAILQ_ENTRY(fbr_id_tailq_i) entries;
+	struct fbr_destructor dtor;
+	struct fbr_id_tailq *head;
+};
+
+TAILQ_HEAD(fbr_id_tailq, fbr_id_tailq_i);
+
 /**
  * Base struct for all events.
  *
@@ -366,8 +419,10 @@ enum fbr_ev_type {
 struct fbr_ev_base {
 	enum fbr_ev_type type; /*!< type of the event */
 	fbr_id_t id; /*!< id of a fiber that is waiting for this event */
+	int arrived; /*!< flag indicating that this event has arrived */
 	struct fbr_context *fctx; //Private
 	void *data; //Private
+	struct fbr_id_tailq_i item; //Private
 };
 
 /**
@@ -422,6 +477,29 @@ struct fbr_ev_cond_var {
 };
 
 /**
+ * Adds destructor to fiber list.
+ * @param [in] dtor destructor to register
+ *
+ * This function registers a destructor. User must guarantee that destructor
+ * object stays alive until fiber is reclaimed or destructor is removed,
+ * whichever comes first.
+ * @see fbr_destructor
+ */
+void fbr_destructor_add(FBR_P_ struct fbr_destructor *dtor);
+
+/**
+ * Removes destructor from fiber list.
+ * @param [in] dtor destructor to unregister
+ * @param [in] call flag indicating if destructor needs to be called
+ *
+ * This function unregisters a destructor. User may specify a flag for
+ * destructor function to be called.
+ * @see fbr_destructor
+ */
+void fbr_destructor_remove(FBR_P_ struct fbr_destructor *dtor,
+		int call);
+
+/**
  * Initializer for libev watcher event.
  *
  * This functions properly initializes fbr_ev_watcher struct. You should not do
@@ -456,17 +534,18 @@ void fbr_ev_cond_var_init(FBR_P_ struct fbr_ev_cond_var *ev,
 /**
  * Event awaiting function (one event only wrapper).
  * @param [in] one the event base pointer of the event to wait for
+ * @returns 0 on success, -1 upon error
  *
  * This functions wraps fbr_ev_wait passing only one event to it.
  * @see fbr_ev_base
  * @see fbr_ev_wait
  */
-void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one);
+int fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one);
 
 /**
  * Event awaiting function (generic one).
  * @param [in] events array of event base pointers
- * @returns an event that has arrived.
+ * @returns the number of events arrived or -1 upon error
  *
  * This function waits until any event from events array arrives. Only one
  * event can arrive at a time. It returns a pointer to the same event that was
@@ -474,7 +553,7 @@ void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one);
  * @see fbr_ev_base
  * @see fbr_ev_wait_one
  */
-struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[]);
+int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[]);
 
 /**
  * Transfer of fiber context to another fiber.

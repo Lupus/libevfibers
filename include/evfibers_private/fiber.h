@@ -63,14 +63,7 @@ struct fbr_buffer {
 	struct fbr_mutex *read_mutex;
 };
 
-struct fiber_id_tailq_i {
-	fbr_id_t id;
-	struct fbr_ev_base *ev;
-	TAILQ_ENTRY(fiber_id_tailq_i) entries;
-};
-
-TAILQ_HEAD(fiber_id_tailq, fiber_id_tailq_i);
-
+TAILQ_HEAD(fiber_destructor_tailq, fbr_destructor);
 LIST_HEAD(fiber_list, fbr_fiber);
 
 struct fbr_fiber {
@@ -85,7 +78,7 @@ struct fbr_fiber {
 	size_t call_list_size;
 	struct {
 		struct fbr_ev_base **waiting;
-		struct fbr_ev_base *arrived;
+		int arrived;
 	} ev;
 	struct trace_info reclaim_tinfo;
 	struct fiber_list children;
@@ -95,12 +88,13 @@ struct fbr_fiber {
 		LIST_ENTRY(fbr_fiber) reclaimed;
 		LIST_ENTRY(fbr_fiber) children;
 	} entries;
+	struct fiber_destructor_tailq destructors;
 	void *user_data;
 };
 
 struct fbr_mutex {
 	fbr_id_t locked_by;
-	struct fiber_id_tailq pending;
+	struct fbr_id_tailq pending;
 	TAILQ_ENTRY(fbr_mutex) entries;
 };
 
@@ -108,7 +102,7 @@ TAILQ_HEAD(mutex_tailq, fbr_mutex);
 
 struct fbr_cond_var {
 	struct fbr_mutex *mutex;
-	struct fiber_id_tailq waiting;
+	struct fbr_id_tailq waiting;
 };
 
 struct fbr_stack_item {
@@ -122,7 +116,7 @@ struct fbr_context_private {
 	struct fbr_fiber root;
 	struct fiber_list reclaimed;
 	struct ev_async pending_async;
-	struct fiber_id_tailq pending_fibers;
+	struct fbr_id_tailq pending_fibers;
 	int backtraces_enabled;
 	uint64_t last_id;
 

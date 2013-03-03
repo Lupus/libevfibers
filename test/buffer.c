@@ -104,46 +104,60 @@ START_TEST(test_buffer)
 	fail_unless(fbr_is_reclaimed(&context, writer2));
 	fail_unless(fbr_is_reclaimed(&context, reader));
 
+	fbr_buffer_free(&context, arg.buffer);
 	fbr_destroy(&context);
 }
 END_TEST
 
-
-START_TEST(test_buffer_basic)
+static void buffer_basic_fiber(FBR_P_ _unused_ void *_arg)
 {
-	struct fbr_context context;
 	struct fbr_buffer *buffer;
 	const uint64_t count = 1e3;
 	uint64_t i;
 	uint64_t *ptr;
 
-	fbr_init(&context, EV_DEFAULT);
+	buffer = fbr_buffer_create(FBR_A_ count * sizeof(uint64_t));
 
-	buffer = fbr_buffer_create(&context, count * sizeof(uint64_t));
-
-	ptr = fbr_buffer_alloc_prepare(&context, buffer, 10 * sizeof(uint64_t));
+	ptr = fbr_buffer_alloc_prepare(FBR_A_ buffer, 10 * sizeof(uint64_t));
 	fail_if(NULL == ptr);
-	fbr_buffer_alloc_abort(&context, buffer);
+	fbr_buffer_alloc_abort(FBR_A_ buffer);
 
 	for (i = 0; i < count; i++) {
-		ptr = fbr_buffer_alloc_prepare(&context, buffer, sizeof(uint64_t));
+		ptr = fbr_buffer_alloc_prepare(FBR_A_ buffer, sizeof(uint64_t));
 		*ptr = i;
-		fbr_buffer_alloc_commit(&context, buffer);
+		fbr_buffer_alloc_commit(FBR_A_ buffer);
 	}
 
-	ptr = fbr_buffer_read_address(&context, buffer, sizeof(uint64_t));
+	ptr = fbr_buffer_read_address(FBR_A_ buffer, sizeof(uint64_t));
 	fail_if(NULL == ptr);
-	fbr_buffer_read_discard(&context, buffer);
+	fbr_buffer_read_discard(FBR_A_ buffer);
 
 	for (i = 0; i < count; i++) {
-		ptr = fbr_buffer_read_address(&context, buffer, sizeof(uint64_t));
+		ptr = fbr_buffer_read_address(FBR_A_ buffer, sizeof(uint64_t));
 		fail_if(NULL == ptr);
 		fail_unless(*ptr == i);
-		fbr_buffer_read_advance(&context, buffer);
+		fbr_buffer_read_advance(FBR_A_ buffer);
 	}
 
-	fbr_buffer_free(&context, buffer);
+	fbr_buffer_free(FBR_A_ buffer);
+}
+
+START_TEST(test_buffer_basic)
+{
+	struct fbr_context context;
+	fbr_id_t fiber;
+	int retval;
+
+	fbr_init(&context, EV_DEFAULT);
+
+	fiber = fbr_create(&context, "basic_buffer", buffer_basic_fiber, NULL, 0);
+	fail_if(0 == fiber, NULL);
+
+	retval = fbr_transfer(&context, fiber);
+	fail_unless(0 == retval, NULL);
+
 	fbr_destroy(&context);
+
 }
 END_TEST
 

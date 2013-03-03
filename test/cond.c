@@ -161,6 +161,81 @@ START_TEST(test_cond_bad_mutex)
 }
 END_TEST
 
+struct fiber_arg2 {
+	struct fbr_cond_var *cond1;
+	struct fbr_mutex *mutex1;
+	struct fbr_cond_var *cond2;
+	struct fbr_mutex *mutex2;
+};
+
+static void cond_fiber_waiter(FBR_P_ void *_arg)
+{
+	struct fiber_arg2 *arg = _arg;
+	struct fbr_ev_cond_var ev_c1;
+	struct fbr_ev_cond_var ev_c2;
+	struct fbr_ev_base *fb_events[3];
+	int n_events;
+
+	fbr_ev_cond_var_init(FBR_A_ &ev_c1, arg->cond1, arg->mutex1);
+	fbr_ev_cond_var_init(FBR_A_ &ev_c2, arg->cond2, arg->mutex2);
+
+	fb_events[0] = &ev_c1.ev_base;
+	fb_events[1] = &ev_c2.ev_base;
+	fb_events[2] = NULL;
+
+	fbr_mutex_lock(FBR_A_ arg->mutex1);
+	fbr_mutex_lock(FBR_A_ arg->mutex2);
+
+	n_events = fbr_ev_wait(FBR_A_ fb_events);
+	fail_unless(n_events > 0);
+	fail_unless(ev_c1.ev_base.arrived);
+	fail_unless(ev_c2.ev_base.arrived);
+
+	fbr_mutex_unlock(FBR_A_ arg->mutex1);
+	fbr_mutex_unlock(FBR_A_ arg->mutex2);
+}
+
+static void cond_fiber_signaller(FBR_P_ void *_arg)
+{
+	struct fiber_arg2 *arg = _arg;
+
+	fbr_sleep(FBR_A_ 0.3);
+	fbr_cond_signal(FBR_A_ arg->cond1);
+	fbr_cond_signal(FBR_A_ arg->cond2);
+}
+
+START_TEST(test_two_conds)
+{
+	struct fbr_context context;
+	fbr_id_t fiber_waiter = 0, fiber_signaller = 0;
+	int retval;
+	struct fiber_arg2 arg;
+
+	fbr_init(&context, EV_DEFAULT);
+	arg.cond1 = fbr_cond_create(&context);
+	arg.mutex1 = fbr_mutex_create(&context);
+	arg.cond2 = fbr_cond_create(&context);
+	arg.mutex2 = fbr_mutex_create(&context);
+
+	fiber_waiter = fbr_create(&context, "cond_waiter", cond_fiber_waiter, &arg, 0);
+	fail_if(0 == fiber_waiter);
+	retval = fbr_transfer(&context, fiber_waiter);
+	fail_unless(0 == retval, NULL);
+
+	fiber_signaller = fbr_create(&context, "cond_signaller", cond_fiber_signaller, &arg, 0);
+	fail_if(0 == fiber_signaller);
+	retval = fbr_transfer(&context, fiber_signaller);
+	fail_unless(0 == retval, NULL);
+
+	ev_run(EV_DEFAULT, 0);
+
+	fbr_cond_destroy(&context, arg.cond1);
+	fbr_mutex_destroy(&context, arg.mutex1);
+	fbr_cond_destroy(&context, arg.cond2);
+	fbr_mutex_destroy(&context, arg.mutex2);
+	fbr_destroy(&context);
+}
+END_TEST
 
 TCase * cond_tcase(void)
 {
@@ -168,6 +243,7 @@ TCase * cond_tcase(void)
 	tcase_add_test(tc_cond, test_cond_broadcast);
 	tcase_add_test(tc_cond, test_cond_signal);
 	tcase_add_test(tc_cond, test_cond_bad_mutex);
+	tcase_add_test(tc_cond, test_two_conds);
 	return tc_cond;
 }
 

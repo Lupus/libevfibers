@@ -135,6 +135,9 @@ START_TEST(test_mutex)
 	fail_unless(mutex->locked_by == fibers[2], NULL);
 	fail_if(0 == flag, NULL);
 
+	/* Run event loot to make sure async watcher stops itself */
+	ev_run(EV_DEFAULT, 0);
+
 	fbr_mutex_destroy(&context, mutex);
 	fbr_destroy(&context);
 }

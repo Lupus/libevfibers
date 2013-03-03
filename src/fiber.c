@@ -97,7 +97,7 @@ static int fbr_id_unpack(FBR_P_ struct fbr_fiber **ptr, fbr_id_t id)
 static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 {
 	struct fbr_context *fctx;
-	struct fiber_id_tailq_i *item;
+	struct fbr_id_tailq_i *item;
 	fctx = (struct fbr_context *)w->data;
 	int retval;
 
@@ -109,14 +109,13 @@ static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 	}
 
 	item = TAILQ_FIRST(&fctx->__p->pending_fibers);
-	TAILQ_REMOVE(&fctx->__p->pending_fibers, item, entries);
-	if (TAILQ_EMPTY(&fctx->__p->pending_fibers))
-		ev_async_stop(EV_A_ &fctx->__p->pending_async);
-	else
-		ev_async_send(EV_A_ &fctx->__p->pending_async);
+	assert(item->head == &fctx->__p->pending_fibers);
+	/* item shall be removed from the queue by a destructor, which shall be
+	 * set by the procedure demanding delayed execution. Destructor
+	 * guarantees removal upon the reclaim of fiber. */
+	ev_async_send(EV_A_ &fctx->__p->pending_async);
 
 	retval = fbr_transfer(FBR_A_ item->id);
-	free(item);
 	if (-1 == retval && FBR_ENOFIBER != fctx->f_errno) {
 		fbr_log_e(FBR_A_ "libevfibers: unexpected error trying to call"
 				" a fiber by id: %s",
@@ -192,6 +191,7 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	LIST_INIT(&fctx->__p->reclaimed);
 	LIST_INIT(&fctx->__p->root.children);
 	LIST_INIT(&fctx->__p->root.pool);
+	TAILQ_INIT(&fctx->__p->root.destructors);
 	TAILQ_INIT(&fctx->__p->pending_fibers);
 
 	root = &fctx->__p->root;
@@ -272,14 +272,12 @@ void fbr_log_d(FBR_P_ const char *format, ...)
 	va_end(ap);
 }
 
-static struct fiber_id_tailq_i *id_tailq_i_for(_unused_ FBR_P_
+void id_tailq_i_set(_unused_ FBR_P_
+		struct fbr_id_tailq_i *item,
 		struct fbr_fiber *fiber)
 {
-	struct fiber_id_tailq_i *item;
-	item = malloc(sizeof(struct fiber_id_tailq_i));
 	item->id = fbr_id_pack(fiber);
 	item->ev = NULL;
-	return item;
 }
 
 static void reclaim_children(FBR_P_ struct fbr_fiber *fiber)
@@ -290,11 +288,19 @@ static void reclaim_children(FBR_P_ struct fbr_fiber *fiber)
 	}
 }
 
+static void fbr_free_in_fiber(_unused_ FBR_P_ _unused_ struct fbr_fiber *fiber,
+		void *ptr, int destructor);
+
 void fbr_destroy(FBR_P)
 {
 	struct fbr_fiber *fiber, *x;
+	struct mem_pool *p, *x2;
 
 	reclaim_children(FBR_A_ &fctx->__p->root);
+
+	LIST_FOREACH_SAFE(p, &fctx->__p->root.pool, entries, x2) {
+		fbr_free_in_fiber(FBR_A_ &fctx->__p->root, p + 1, 1);
+	}
 
 	LIST_FOREACH_SAFE(fiber, &fctx->__p->reclaimed, entries.reclaimed, x) {
 		if (0 != munmap(fiber->stack, fiber->stack_size))
@@ -316,45 +322,15 @@ void fbr_enable_backtraces(FBR_P_ int enabled)
 
 static void cancel_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
 {
-	struct fbr_ev_watcher *e_watcher;
-	struct fbr_ev_mutex *e_mutex;
-	struct fbr_ev_cond_var *e_cond;
-	struct fiber_id_tailq_i *item;
-	switch (ev->type) {
-	case FBR_EV_WATCHER:
-		e_watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
-		ev_set_cb(e_watcher->w, NULL);
-		break;
-	case FBR_EV_MUTEX:
-		e_mutex = fbr_ev_upcast(ev, fbr_ev_mutex);
-		item = e_mutex->ev_base.data;
-		TAILQ_REMOVE(&e_mutex->mutex->pending, item, entries);
-		free(item);
-		break;
-	case FBR_EV_COND_VAR:
-		e_cond = fbr_ev_upcast(ev, fbr_ev_cond_var);
-		item = e_cond->ev_base.data;
-		TAILQ_REMOVE(&e_cond->cond->waiting, item, entries);
-		free(item);
-		break;
-	}
+	fbr_destructor_remove(FBR_A_ &ev->item.dtor, 1 /* call it */);
 }
 
-static void post_ev(FBR_P_ struct fbr_fiber *fiber, struct fbr_ev_base *ev)
+static void post_ev(_unused_ FBR_P_ struct fbr_fiber *fiber, struct fbr_ev_base *ev)
 {
-	struct fbr_ev_base **ev_pptr;
-	struct fbr_ev_base *ev_ptr;
-
-	assert(NULL == fiber->ev.arrived);
 	assert(NULL != fiber->ev.waiting);
 
-	fiber->ev.arrived = ev;
-
-	for (ev_pptr = fiber->ev.waiting; NULL != *ev_pptr; ev_pptr++) {
-		ev_ptr = *ev_pptr;
-		if (ev_ptr != fiber->ev.arrived)
-			cancel_ev(FBR_A_ ev_ptr);
-	}
+	fiber->ev.arrived = 1;
+	ev->arrived = 1;
 }
 
 static void ev_watcher_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
@@ -456,17 +432,35 @@ enum ev_action_hint {
 	EV_AH_EINVAL
 };
 
+static void item_dtor(_unused_ FBR_P_ void *arg)
+{
+	struct fbr_id_tailq_i *item = arg;
+
+	if (item->head) {
+		TAILQ_REMOVE(item->head, item, entries);
+	}
+}
+
 static enum ev_action_hint prepare_ev(FBR_P_ struct fbr_ev_base *ev)
 {
 	struct fbr_ev_watcher *e_watcher;
 	struct fbr_ev_mutex *e_mutex;
 	struct fbr_ev_cond_var *e_cond;
-	struct fiber_id_tailq_i *item;
+	struct fbr_id_tailq_i *item = &ev->item;
+
+	ev->arrived = 0;
+	ev->item.dtor.func = item_dtor;
+	ev->item.dtor.arg = item;
+	fbr_destructor_add(FBR_A_ &ev->item.dtor);
+
 	switch (ev->type) {
 	case FBR_EV_WATCHER:
 		e_watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
-		if (!ev_is_active(e_watcher->w))
+		if (!ev_is_active(e_watcher->w)) {
+			fbr_destructor_remove(FBR_A_ &ev->item.dtor,
+					0 /* call it */);
 			return EV_AH_EINVAL;
+		}
 		e_watcher->w->data = e_watcher;
 		ev_set_cb(e_watcher->w, ev_watcher_cb);
 		break;
@@ -476,20 +470,24 @@ static enum ev_action_hint prepare_ev(FBR_P_ struct fbr_ev_base *ev)
 			e_mutex->mutex->locked_by = CURRENT_FIBER_ID;
 			return EV_AH_ARRIVED;
 		}
-
-		item = id_tailq_i_for(FBR_A_ CURRENT_FIBER);
+		id_tailq_i_set(FBR_A_ item, CURRENT_FIBER);
 		item->ev = ev;
 		ev->data = item;
 		TAILQ_INSERT_TAIL(&e_mutex->mutex->pending, item, entries);
+		item->head = &e_mutex->mutex->pending;
 		break;
 	case FBR_EV_COND_VAR:
 		e_cond = fbr_ev_upcast(ev, fbr_ev_cond_var);
-		if (0 == e_cond->mutex->locked_by)
-			return_error(-1, FBR_EINVAL);
-		item = id_tailq_i_for(FBR_A_ CURRENT_FIBER);
+		if (0 == e_cond->mutex->locked_by) {
+			fbr_destructor_remove(FBR_A_ &ev->item.dtor,
+					0 /* call it */);
+			return EV_AH_EINVAL;
+		}
+		id_tailq_i_set(FBR_A_ item, CURRENT_FIBER);
 		item->ev = ev;
 		ev->data = item;
 		TAILQ_INSERT_TAIL(&e_cond->cond->waiting, item, entries);
+		item->head = &e_cond->cond->waiting;
 		fbr_mutex_unlock(FBR_A_ e_cond->mutex);
 		break;
 	}
@@ -500,6 +498,7 @@ static void finish_ev(FBR_P_ struct fbr_ev_base *ev)
 {
 	struct fbr_ev_cond_var *e_cond;
 	struct fbr_ev_watcher *e_watcher;
+	fbr_destructor_remove(FBR_A_ &ev->item.dtor, 1 /* call it */);
 	switch (ev->type) {
 	case FBR_EV_COND_VAR:
 		e_cond = fbr_ev_upcast(ev, fbr_ev_cond_var);
@@ -515,14 +514,14 @@ static void finish_ev(FBR_P_ struct fbr_ev_base *ev)
 	}
 }
 
-struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
+int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	struct fbr_ev_base **ev_pptr;
-	struct fbr_ev_base *ev_ptr;
 	enum ev_action_hint hint;
+	int num = 0;
 
-	fiber->ev.arrived = NULL;
+	fiber->ev.arrived = 0;
 	fiber->ev.waiting = events;
 
 	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++) {
@@ -531,33 +530,31 @@ struct fbr_ev_base *fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 		case EV_AH_OK:
 			break;
 		case EV_AH_ARRIVED:
-			fiber->ev.arrived = *ev_pptr;
-			while (--ev_pptr >= events)
-				cancel_ev(FBR_A_ *ev_pptr);
-			goto loop_end;
+			fiber->ev.arrived = 1;
+			(*ev_pptr)->arrived = 1;
+			break;
 		case EV_AH_EINVAL:
-			return_error(NULL, FBR_EINVAL);
+			return_error(-1, FBR_EINVAL);
 		}
 	}
 
-loop_end:
-	while (NULL == fiber->ev.arrived)
+	while (0 == fiber->ev.arrived)
 		fbr_yield(FBR_A);
 
-	ev_ptr = fiber->ev.arrived;
-	fiber->ev.arrived = NULL;
-	fiber->ev.waiting = NULL;
-
-	finish_ev(FBR_A_ ev_ptr);
-	return_success(ev_ptr);
+	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++) {
+		if ((*ev_pptr)->arrived) {
+			num++;
+			finish_ev(FBR_A_ *ev_pptr);
+		} else
+			cancel_ev(FBR_A_ *ev_pptr);
+	}
+	return_success(num);
 }
 
-void fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one)
+int fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one)
 {
-	struct fbr_ev_base *ev_ptr;
-	ev_ptr = fbr_ev_wait(FBR_A_ (struct fbr_ev_base *[]){one, NULL});
-	assert(ev_ptr == one);
-	return;
+	struct fbr_ev_base *events[] = {one, NULL};
+	return fbr_ev_wait(FBR_A_ events);
 }
 
 int fbr_transfer(FBR_P_ fbr_id_t to)
@@ -603,6 +600,7 @@ int fbr_fd_nonblock(FBR_P_ int fd)
 static void ev_base_init(FBR_P_ struct fbr_ev_base *ev,
 		enum fbr_ev_type type)
 {
+	memset(ev, 0x00, sizeof(*ev));
 	ev->type = type;
 	ev->id = CURRENT_FIBER_ID;
 	ev->fctx = fctx;
@@ -892,6 +890,7 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 	fiber->call_list_size = 0;
 	LIST_INIT(&fiber->children);
 	LIST_INIT(&fiber->pool);
+	TAILQ_INIT(&fiber->destructors);
 	fiber->name = name;
 	fiber->func = func;
 	fiber->func_arg = arg;
@@ -969,23 +968,30 @@ void fbr_dump_stack(FBR_P_ fbr_logutil_func_t log)
 	}
 }
 
-static void transfer_later(FBR_P_ struct fiber_id_tailq_i *item)
+static void transfer_later(FBR_P_ struct fbr_id_tailq_i *item)
 {
 	int was_empty;
 	was_empty = TAILQ_EMPTY(&fctx->__p->pending_fibers);
 	TAILQ_INSERT_TAIL(&fctx->__p->pending_fibers, item, entries);
-	if (was_empty && !TAILQ_EMPTY(&fctx->__p->pending_fibers))
+	item->head = &fctx->__p->pending_fibers;
+	if (was_empty && !TAILQ_EMPTY(&fctx->__p->pending_fibers)) {
 		ev_async_start(fctx->__p->loop, &fctx->__p->pending_async);
+	}
 	ev_async_send(fctx->__p->loop, &fctx->__p->pending_async);
 }
 
-static void transfer_later_tailq(FBR_P_ struct fiber_id_tailq *tailq)
+static void transfer_later_tailq(FBR_P_ struct fbr_id_tailq *tailq)
 {
 	int was_empty;
+	struct fbr_id_tailq_i *item;
+	TAILQ_FOREACH(item, tailq, entries) {
+		item->head = &fctx->__p->pending_fibers;
+	}
 	was_empty = TAILQ_EMPTY(&fctx->__p->pending_fibers);
 	TAILQ_CONCAT(&fctx->__p->pending_fibers, tailq, entries);
-	if (was_empty && !TAILQ_EMPTY(&fctx->__p->pending_fibers))
+	if (was_empty && !TAILQ_EMPTY(&fctx->__p->pending_fibers)) {
 		ev_async_start(fctx->__p->loop, &fctx->__p->pending_async);
+	}
 	ev_async_send(fctx->__p->loop, &fctx->__p->pending_async);
 }
 
@@ -1025,7 +1031,7 @@ int fbr_mutex_trylock(FBR_P_ struct fbr_mutex *mutex)
 
 void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 {
-	struct fiber_id_tailq_i *item, *x;
+	struct fbr_id_tailq_i *item, *x;
 	struct fbr_fiber *fiber = NULL;
 
 	if (TAILQ_EMPTY(&mutex->pending)) {
@@ -1034,10 +1040,12 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 	}
 
 	TAILQ_FOREACH_SAFE(item, &mutex->pending, entries, x) {
+		assert(item->head == &mutex->pending);
 		TAILQ_REMOVE(&mutex->pending, item, entries);
 		if (-1 == fbr_id_unpack(FBR_A_ &fiber, item->id)) {
-			assert(FBR_ENOFIBER == fctx->f_errno);
-			free(item);
+			fbr_log_e(FBR_A_ "libevfibers: unexpected error trying"
+					" to find a fiber by id: %s",
+					fbr_strerror(FBR_A_ fctx->f_errno));
 			continue;
 		}
 		break;
@@ -1051,10 +1059,6 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 
 void fbr_mutex_destroy(_unused_ FBR_P_ struct fbr_mutex *mutex)
 {
-	struct fiber_id_tailq_i *item, *x;
-	TAILQ_FOREACH_SAFE(item, &mutex->pending, entries, x) {
-		free(item);
-	}
 	free(mutex);
 }
 
@@ -1077,10 +1081,6 @@ struct fbr_cond_var *fbr_cond_create(_unused_ FBR_P)
 
 void fbr_cond_destroy(_unused_ FBR_P_ struct fbr_cond_var *cond)
 {
-	struct fiber_id_tailq_i *item, *x;
-	TAILQ_FOREACH_SAFE(item, &cond->waiting, entries, x) {
-		free(item);
-	}
 	free(cond);
 }
 
@@ -1098,7 +1098,7 @@ int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
 
 void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond)
 {
-	struct fiber_id_tailq_i *item;
+	struct fbr_id_tailq_i *item;
 	struct fbr_fiber *fiber;
 	if (TAILQ_EMPTY(&cond->waiting))
 		return;
@@ -1114,7 +1114,7 @@ void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond)
 
 void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 {
-	struct fiber_id_tailq_i *item;
+	struct fbr_id_tailq_i *item;
 	struct fbr_fiber *fiber;
 	if (TAILQ_EMPTY(&cond->waiting))
 		return;
@@ -1125,6 +1125,7 @@ void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 	}
 	post_ev(FBR_A_ fiber, item->ev);
 
+	assert(item->head == &cond->waiting);
 	TAILQ_REMOVE(&cond->waiting, item, entries);
 	transfer_later(FBR_A_ item);
 }
@@ -1238,12 +1239,14 @@ size_t fbr_buffer_free_bytes(_unused_ FBR_P_ struct fbr_buffer *buffer)
 	return vrb_space_len(buffer->vrb);
 }
 
-struct fbr_cond_var *fbr_buffer_cond_read(_unused_ FBR_P_ struct fbr_buffer *buffer)
+struct fbr_cond_var *fbr_buffer_cond_read(_unused_ FBR_P_
+		struct fbr_buffer *buffer)
 {
 	return buffer->committed_cond;
 }
 
-struct fbr_cond_var *fbr_buffer_cond_write(_unused_ FBR_P_ struct fbr_buffer *buffer)
+struct fbr_cond_var *fbr_buffer_cond_write(_unused_ FBR_P_
+		struct fbr_buffer *buffer)
 {
 	return buffer->bytes_freed_cond;
 }
@@ -1261,4 +1264,19 @@ int fbr_set_user_data(FBR_P_ fbr_id_t id, void *data)
 	unpack_transfer_errno(-1, &fiber, id);
 	fiber->user_data = data;
 	return_success(0);
+}
+
+void fbr_destructor_add(FBR_P_ struct fbr_destructor *dtor)
+{
+	struct fbr_fiber *fiber = CURRENT_FIBER;
+	TAILQ_INSERT_TAIL(&fiber->destructors, dtor, entries);
+}
+
+void fbr_destructor_remove(FBR_P_ struct fbr_destructor *dtor,
+		int call)
+{
+	struct fbr_fiber *fiber = CURRENT_FIBER;
+	TAILQ_REMOVE(&fiber->destructors, dtor, entries);
+	if (call)
+		dtor->func(FBR_A_ dtor->arg);
 }
