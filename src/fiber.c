@@ -145,6 +145,7 @@ static void stdio_logger(FBR_P_ struct fbr_logger *logger, enum fbr_log_level le
 	struct fbr_fiber *fiber;
 	FILE* stream;
 	char *str_level;
+	ev_tstamp tstamp;
 
 	if (level > logger->level)
 		return;
@@ -177,7 +178,8 @@ static void stdio_logger(FBR_P_ struct fbr_logger *logger, enum fbr_log_level le
 			stream = stdout;
 			break;
 	}
-	fprintf(stream, "%-7s %-16s ", str_level, fiber->name);
+	tstamp = ev_now(fctx->__p->loop);
+	fprintf(stream, "%.6f  %-7s %-16s ", tstamp, str_level, fiber->name);
 	vfprintf(stream, format, ap);
 	fprintf(stream, "\n");
 }
