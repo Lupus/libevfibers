@@ -237,6 +237,89 @@ START_TEST(test_two_conds)
 }
 END_TEST
 
+struct fiber_arg3 {
+	struct fbr_cond_var *cond;
+	struct fbr_mutex *mutex;
+	fbr_id_t *fibers;
+	int fiber_num;
+};
+
+static void cond_premature_waiter(FBR_P_ void *_arg)
+{
+	struct fiber_arg3 *arg = _arg;
+	struct fbr_ev_cond_var ev_cond;
+	int retval;
+
+	fbr_ev_cond_var_init(FBR_A_ &ev_cond, arg->cond, arg->mutex);
+
+	fbr_mutex_lock(FBR_A_ arg->mutex);
+
+	retval = fbr_ev_wait_one(FBR_A_ &ev_cond.ev_base);
+	fail_unless(0 == retval);
+
+	fbr_mutex_unlock(FBR_A_ arg->mutex);
+}
+
+static void cond_premature_reaper(FBR_P_ void *_arg)
+{
+	struct fiber_arg3 *arg = _arg;
+	int i;
+
+	for(i = 0; i < arg->fiber_num / 4; i++)
+		fbr_cond_signal(FBR_A_ arg->cond);
+
+	for(i = arg->fiber_num / 4; i < arg->fiber_num; i++)
+		fbr_reclaim(FBR_A_ arg->fibers[i]);
+
+	for(i = 0; i < arg->fiber_num; i++)
+		fbr_cond_signal(FBR_A_ arg->cond);
+}
+
+START_TEST(test_premature_cond)
+{
+	struct fbr_context context;
+	int retval;
+	struct fiber_arg3 arg;
+	const int num_fibers = 100;
+	fbr_id_t fibers[num_fibers];
+	fbr_id_t fiber;
+	int i;
+
+	fbr_init(&context, EV_DEFAULT);
+
+	arg.mutex = fbr_mutex_create(&context);
+	fail_if(NULL == arg.mutex, NULL);
+
+	arg.cond = fbr_cond_create(&context);
+	fail_if(NULL == arg.cond, NULL);
+
+	for(i = 0; i < num_fibers; i++) {
+		fiber = fbr_create(&context, "cond_premature_i",
+				cond_premature_waiter, &arg, 0);
+		fail_if(0 == fiber);
+		retval = fbr_transfer(&context, fiber);
+		fail_unless(0 == retval, NULL);
+		fibers[i] = fiber;
+	}
+
+	arg.fibers = fibers;
+	arg.fiber_num = num_fibers;
+
+	fiber = fbr_create(&context, "cond_premature_reaper",
+			cond_premature_reaper, &arg, 0);
+	fail_if(0 == fiber);
+	retval = fbr_transfer(&context, fiber);
+	fail_unless(0 == retval, NULL);
+	fibers[i] = fiber;
+
+	ev_run(EV_DEFAULT, 0);
+
+	fbr_cond_destroy(&context, arg.cond);
+	fbr_mutex_destroy(&context, arg.mutex);
+	fbr_destroy(&context);
+}
+END_TEST
+
 TCase * cond_tcase(void)
 {
 	TCase *tc_cond = tcase_create ("Cond");
@@ -244,6 +327,7 @@ TCase * cond_tcase(void)
 	tcase_add_test(tc_cond, test_cond_signal);
 	tcase_add_test(tc_cond, test_cond_bad_mutex);
 	tcase_add_test(tc_cond, test_two_conds);
+	tcase_add_test(tc_cond, test_premature_cond);
 	return tc_cond;
 }
 
