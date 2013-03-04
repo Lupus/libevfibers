@@ -379,8 +379,12 @@ static void fbr_free_in_fiber(_unused_ FBR_P_ _unused_ struct fbr_fiber *fiber,
 static void fiber_cleanup(FBR_P_ struct fbr_fiber *fiber)
 {
 	struct mem_pool *p, *x;
+	struct fbr_destructor *dtor;
 	/* coro_destroy(&fiber->ctx); */
 	LIST_REMOVE(fiber, entries.children);
+	TAILQ_FOREACH(dtor, &fiber->destructors, entries) {
+		dtor->func(FBR_A_ dtor->arg);
+	}
 	LIST_FOREACH_SAFE(p, &fiber->pool, entries, x) {
 		fbr_free_in_fiber(FBR_A_ fiber, p + 1, 1);
 	}
