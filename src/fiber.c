@@ -557,8 +557,12 @@ int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 
 int fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one)
 {
+	int n_events;
 	struct fbr_ev_base *events[] = {one, NULL};
-	return fbr_ev_wait(FBR_A_ events);
+	n_events = fbr_ev_wait(FBR_A_ events);
+	if (1 == n_events)
+		return 0;
+	return -1;
 }
 
 int fbr_transfer(FBR_P_ fbr_id_t to)
