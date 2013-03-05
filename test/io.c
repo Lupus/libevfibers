@@ -100,6 +100,41 @@ START_TEST(test_read_write)
 }
 END_TEST
 
+START_TEST(test_read_write_premature)
+{
+	struct fbr_context context;
+	fbr_id_t reader = 0;
+	int fds[2];
+	int retval;
+
+	retval = pipe(fds);
+	fail_unless(0 == retval);
+	retval = fbr_fd_nonblock(&context, fds[0]);
+	fail_unless(0 == retval);
+	retval = fbr_fd_nonblock(&context, fds[1]);
+	fail_unless(0 == retval);
+
+	fbr_init(&context, EV_DEFAULT);
+
+	reader = fbr_create(&context, "reader", reader_fiber, fds + 0, 0);
+	fail_if(0 == reader, NULL);
+
+	retval = fbr_transfer(&context, reader);
+	fail_unless(0 == retval, NULL);
+
+	close(fds[1]);
+
+	retval = fbr_reclaim(&context, reader);
+	fail_unless(0 == retval, NULL);
+
+	ev_run(EV_DEFAULT, 0);
+
+	fail_unless(fbr_is_reclaimed(&context, reader));
+
+	fbr_destroy(&context);
+}
+END_TEST
+
 #define buf_size (1 * 1024 * 1024)
 static void all_reader_fiber(FBR_P_ void *_arg)
 {
@@ -357,5 +392,6 @@ TCase * io_tcase(void)
 	tcase_add_test(tc_io, test_read_write_all);
 	tcase_add_test(tc_io, test_read_line);
 	tcase_add_test(tc_io, test_udp);
+	tcase_add_test(tc_io, test_read_write_premature);
 	return tc_io;
 }
