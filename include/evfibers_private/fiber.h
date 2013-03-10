@@ -53,16 +53,6 @@ struct mem_pool {
 
 LIST_HEAD(mem_pool_list, mem_pool);
 
-struct fbr_buffer {
-	vrb_p vrb;
-	size_t prepared_bytes;
-	size_t waiting_bytes;
-	struct fbr_cond_var *committed_cond;
-	struct fbr_mutex *write_mutex;
-	struct fbr_cond_var *bytes_freed_cond;
-	struct fbr_mutex *read_mutex;
-};
-
 TAILQ_HEAD(fiber_destructor_tailq, fbr_destructor);
 LIST_HEAD(fiber_list, fbr_fiber);
 
@@ -92,18 +82,7 @@ struct fbr_fiber {
 	void *user_data;
 };
 
-struct fbr_mutex {
-	fbr_id_t locked_by;
-	struct fbr_id_tailq pending;
-	TAILQ_ENTRY(fbr_mutex) entries;
-};
-
 TAILQ_HEAD(mutex_tailq, fbr_mutex);
-
-struct fbr_cond_var {
-	struct fbr_mutex *mutex;
-	struct fbr_id_tailq waiting;
-};
 
 struct fbr_stack_item {
 	struct fbr_fiber *fiber;

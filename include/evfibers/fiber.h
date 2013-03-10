@@ -194,10 +194,7 @@
 		})
 
 struct fbr_context_private;
-struct fbr_mutex;
 struct fbr_logger;
-struct fbr_buffer;
-struct fbr_cond_var;
 /**
  * Fiber ID type.
  *
@@ -474,6 +471,49 @@ struct fbr_ev_cond_var {
 				     in */
 	struct fbr_mutex *mutex; /*!< mutex to protect conditional variable*/
 	struct fbr_ev_base ev_base;
+};
+
+/**
+ * Mutex structure.
+ *
+ * This structure represent a mutex.
+ * @see fbr_mutex_init
+ * @see fbr_mutex_destroy
+ */
+struct fbr_mutex {
+	fbr_id_t locked_by;
+	struct fbr_id_tailq pending;
+	TAILQ_ENTRY(fbr_mutex) entries;
+};
+
+/**
+ * Conditional variable structure.
+ *
+ * This structure represent a conditional variable.
+ * @see fbr_mutex_init
+ * @see fbr_mutex_destroy
+ */
+struct fbr_cond_var {
+	struct fbr_mutex *mutex;
+	struct fbr_id_tailq waiting;
+};
+
+struct vrb;
+/**
+ * Inter-fiber communication pipe.
+ *
+ * This structure represent a communication pipe between two (or more) fibers.
+ * @see fbr_buffer_init
+ * @see fbr_buffer_destroy
+ */
+struct fbr_buffer {
+	struct vrb *vrb;
+	size_t prepared_bytes;
+	size_t waiting_bytes;
+	struct fbr_cond_var committed_cond;
+	struct fbr_mutex write_mutex;
+	struct fbr_cond_var bytes_freed_cond;
+	struct fbr_mutex read_mutex;
 };
 
 /**
@@ -1045,8 +1085,8 @@ ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds);
 void fbr_dump_stack(FBR_P_ fbr_logutil_func_t log);
 
 /**
- * Creates a mutex.
- * @return newly allocated mutex
+ * Initializes a mutex.
+ * @param [in] mutex a mutex structure to initialize
  *
  * Mutexes are helpful when your fiber has a critical code section including
  * several fbr_* calls. In this case execution of multiple copies of your fiber
@@ -1057,16 +1097,16 @@ void fbr_dump_stack(FBR_P_ fbr_logutil_func_t log);
  * @see fbr_mutex_unlock
  * @see fbr_mutex_destroy
  */
-struct fbr_mutex *fbr_mutex_create(FBR_P);
+void fbr_mutex_init(FBR_P_ struct fbr_mutex *mutex);
 
 /**
  * Locks a mutex.
- * @param [in] mutex pointer to mutex created by fbr_mutex_create
+ * @param [in] mutex pointer to a mutex
  *
  * Attempts to lock a mutex. If mutex is already locked then the calling fiber
  * is suspended until the mutex is eventually freed.
  *
- * @see fbr_mutex_create
+ * @see fbr_mutex_init
  * @see fbr_mutex_trylock
  * @see fbr_mutex_unlock
  * @see fbr_mutex_destroy
@@ -1075,13 +1115,13 @@ void fbr_mutex_lock(FBR_P_ struct fbr_mutex *mutex);
 
 /**
  * Tries to locks a mutex.
- * @param [in] mutex pointer to mutex created by fbr_mutex_create
+ * @param [in] mutex pointer to a mutex
  * @return 1 if lock was successful, 0 otherwise
  *
  * Attempts to lock a mutex. Returns immediately despite of locking being
  * successful or not.
  *
- * @see fbr_mutex_create
+ * @see fbr_mutex_init
  * @see fbr_mutex_lock
  * @see fbr_mutex_unlock
  * @see fbr_mutex_destroy
@@ -1090,12 +1130,12 @@ int fbr_mutex_trylock(FBR_P_ struct fbr_mutex *mutex);
 
 /**
  * Unlocks a mutex.
- * @param [in] mutex pointer to mutex created by fbr_mutex_create
+ * @param [in] mutex pointer to a mutex
  *
  * Unlocks the given mutex. An other fiber that is waiting for it (if any) will
  * be called upon next libev loop iteration.
  *
- * @see fbr_mutex_create
+ * @see fbr_mutex_init
  * @see fbr_mutex_lock
  * @see fbr_mutex_trylock
  * @see fbr_mutex_destroy
@@ -1103,12 +1143,12 @@ int fbr_mutex_trylock(FBR_P_ struct fbr_mutex *mutex);
 void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex);
 
 /**
- * Frees a mutex.
- * @param [in] mutex pointer to mutex created by fbr_mutex_create
+ * Destroys a mutex.
+ * @param [in] mutex pointer to mutex
  *
  * Frees used resources. It does not unlock the mutex.
  *
- * @see fbr_mutex_create
+ * @see fbr_mutex_init
  * @see fbr_mutex_lock
  * @see fbr_mutex_unlock
  * @see fbr_mutex_trylock
@@ -1116,7 +1156,7 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex);
 void fbr_mutex_destroy(FBR_P_ struct fbr_mutex *mutex);
 
 /**
- * Creates a conditional variable.
+ * Initializes a conditional variable.
  *
  * Conditional variable is useful primitive for fiber synchronisation. A set of
  * fibers may be waiting until certain condition is met. Another fiber can
@@ -1127,14 +1167,14 @@ void fbr_mutex_destroy(FBR_P_ struct fbr_mutex *mutex);
  * @see fbr_cond_broadcast
  * @see fbr_cond_signal
  */
-struct fbr_cond_var *fbr_cond_create(FBR_P);
+void fbr_cond_init(FBR_P_ struct fbr_cond_var *cond);
 
 /**
  * Destroys a conditional variable.
  *
  * This just frees used resources. No signals are sent to waiting fibers.
  *
- * @see fbr_cond_create
+ * @see fbr_cond_init
  * @see fbr_cond_wait
  * @see fbr_cond_broadcast
  * @see fbr_cond_signal
@@ -1151,7 +1191,7 @@ void fbr_cond_destroy(FBR_P_ struct fbr_cond_var *cond);
  * condition. Internally mutex is released and reacquired again before
  * returning. Upon successful return calling fiber will hold the mutex.
  *
- * @see fbr_cond_create
+ * @see fbr_cond_init
  * @see fbr_cond_destroy
  * @see fbr_cond_broadcast
  * @see fbr_cond_signal
@@ -1164,7 +1204,7 @@ int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex);
  * All fibers waiting for a condition will be added to run queue (and will
  * eventually be run, one per event loop iteration).
  *
- * @see fbr_cond_create
+ * @see fbr_cond_init
  * @see fbr_cond_destroy
  * @see fbr_cond_wait
  * @see fbr_cond_signal
@@ -1177,7 +1217,7 @@ void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond);
  * Exactly one fiber (first one) waiting for a condition will be added to run
  * queue (and will eventually be run, one per event loop iteration).
  *
- * @see fbr_cond_create
+ * @see fbr_cond_init
  * @see fbr_cond_destroy
  * @see fbr_cond_wait
  * @see fbr_cond_signal
@@ -1185,25 +1225,26 @@ void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond);
 void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond);
 
 /**
- * Creates a circular buffer with pipe semantics.
+ * Initializes a circular buffer with pipe semantics.
+ * @param [in] buffer fbr_buffer structure to initialize
  * @param [in] size size hint for the buffer
- * @returns fbr_buffer pointer on succes, NULL upon failure with f_errno set.
+ * @returns 0 on succes, -1 upon failure with f_errno set.
  *
  * This allocates a buffer with pipe semantics: you can write into it and later
  * read what you have written. The buffer will occupy size rounded up to page
  * size in physical memory, while occupying twice this size in virtual process
  * memory due to usage of two mirrored adjacent mmaps.
  */
-struct fbr_buffer *fbr_buffer_create(FBR_P_ size_t size);
+int fbr_buffer_init(FBR_P_ struct fbr_buffer *buffer, size_t size);
 
 /**
- * Frees a circular buffer.
+ * Destroys a circular buffer.
  * @param [in] buffer a pointer to fbr_buffer to free
  *
  * This unmaps all mmaped memory for the buffer. It does not do any fancy stuff
  * like waiting until buffer is empty etc., it just frees it.
  */
-void fbr_buffer_free(FBR_P_ struct fbr_buffer *buffer);
+void fbr_buffer_destroy(FBR_P_ struct fbr_buffer *buffer);
 
 /**
  * Prepares a chunk of memory to be committed to buffer.

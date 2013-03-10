@@ -32,7 +32,7 @@
 #include "buffer.h"
 
 struct fiber_arg {
-	struct fbr_buffer *buffer;
+	struct fbr_buffer buffer;
 	size_t write_size;
 	size_t count;
 	uint64_t magic;
@@ -41,7 +41,7 @@ struct fiber_arg {
 static void buffer_reader_fiber(FBR_P_ void *_arg)
 {
 	struct fiber_arg *arg = _arg;
-	struct fbr_buffer *buffer = arg->buffer;
+	struct fbr_buffer *buffer = &arg->buffer;
 	size_t i;
 	uint64_t *ptr;
 
@@ -57,7 +57,7 @@ static void buffer_reader_fiber(FBR_P_ void *_arg)
 static void buffer_writer_fiber(FBR_P_ void *_arg)
 {
 	struct fiber_arg *arg = _arg;
-	struct fbr_buffer *buffer = arg->buffer;
+	struct fbr_buffer *buffer = &arg->buffer;
 	size_t i;
 	uint64_t *ptr;
 
@@ -77,8 +77,9 @@ START_TEST(test_buffer)
 
 	fbr_init(&context, EV_DEFAULT);
 
-	arg.buffer = fbr_buffer_create(&context, 1);
-	arg.write_size = fbr_buffer_free_bytes(&context, arg.buffer) / 3;
+	retval = fbr_buffer_init(&context, &arg.buffer, 0);
+	fail_unless(0 == retval);
+	arg.write_size = fbr_buffer_free_bytes(&context, &arg.buffer) / 3;
 	arg.count = 1e3;
 	arg.magic = 0xdeadbeef;
 
@@ -104,42 +105,44 @@ START_TEST(test_buffer)
 	fail_unless(fbr_is_reclaimed(&context, writer2));
 	fail_unless(fbr_is_reclaimed(&context, reader));
 
-	fbr_buffer_free(&context, arg.buffer);
+	fbr_buffer_destroy(&context, &arg.buffer);
 	fbr_destroy(&context);
 }
 END_TEST
 
 static void buffer_basic_fiber(FBR_P_ _unused_ void *_arg)
 {
-	struct fbr_buffer *buffer;
+	struct fbr_buffer buffer;
 	const uint64_t count = 1e3;
 	uint64_t i;
 	uint64_t *ptr;
+	int retval;
 
-	buffer = fbr_buffer_create(FBR_A_ count * sizeof(uint64_t));
+	retval = fbr_buffer_init(FBR_A_ &buffer, count * sizeof(uint64_t));
+	fail_unless(0 == retval);
 
-	ptr = fbr_buffer_alloc_prepare(FBR_A_ buffer, 10 * sizeof(uint64_t));
+	ptr = fbr_buffer_alloc_prepare(FBR_A_ &buffer, 10 * sizeof(uint64_t));
 	fail_if(NULL == ptr);
-	fbr_buffer_alloc_abort(FBR_A_ buffer);
+	fbr_buffer_alloc_abort(FBR_A_ &buffer);
 
 	for (i = 0; i < count; i++) {
-		ptr = fbr_buffer_alloc_prepare(FBR_A_ buffer, sizeof(uint64_t));
+		ptr = fbr_buffer_alloc_prepare(FBR_A_ &buffer, sizeof(uint64_t));
 		*ptr = i;
-		fbr_buffer_alloc_commit(FBR_A_ buffer);
+		fbr_buffer_alloc_commit(FBR_A_ &buffer);
 	}
 
-	ptr = fbr_buffer_read_address(FBR_A_ buffer, sizeof(uint64_t));
+	ptr = fbr_buffer_read_address(FBR_A_ &buffer, sizeof(uint64_t));
 	fail_if(NULL == ptr);
-	fbr_buffer_read_discard(FBR_A_ buffer);
+	fbr_buffer_read_discard(FBR_A_ &buffer);
 
 	for (i = 0; i < count; i++) {
-		ptr = fbr_buffer_read_address(FBR_A_ buffer, sizeof(uint64_t));
+		ptr = fbr_buffer_read_address(FBR_A_ &buffer, sizeof(uint64_t));
 		fail_if(NULL == ptr);
 		fail_unless(*ptr == i);
-		fbr_buffer_read_advance(FBR_A_ buffer);
+		fbr_buffer_read_advance(FBR_A_ &buffer);
 	}
 
-	fbr_buffer_free(FBR_A_ buffer);
+	fbr_buffer_destroy(FBR_A_ &buffer);
 }
 
 START_TEST(test_buffer_basic)

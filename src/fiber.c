@@ -1066,13 +1066,10 @@ void fbr_ev_mutex_init(FBR_P_ struct fbr_ev_mutex *ev,
 	ev->mutex = mutex;
 }
 
-struct fbr_mutex *fbr_mutex_create(_unused_ FBR_P)
+void fbr_mutex_init(_unused_ FBR_P_ struct fbr_mutex *mutex)
 {
-	struct fbr_mutex *mutex;
-	mutex = malloc(sizeof(struct fbr_mutex));
 	mutex->locked_by = 0;
 	TAILQ_INIT(&mutex->pending);
-	return mutex;
 }
 
 void fbr_mutex_lock(FBR_P_ struct fbr_mutex *mutex)
@@ -1121,9 +1118,11 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 	transfer_later(FBR_A_ item);
 }
 
-void fbr_mutex_destroy(_unused_ FBR_P_ struct fbr_mutex *mutex)
+void fbr_mutex_destroy(_unused_ FBR_P_ _unused_ struct fbr_mutex *mutex)
 {
-	free(mutex);
+	/* Since mutex is stack allocated now, this efffeectively turns into
+	 * NOOP. But we might consider adding some cleanup in the future.
+	 */
 }
 
 void fbr_ev_cond_var_init(FBR_P_ struct fbr_ev_cond_var *ev,
@@ -1134,18 +1133,17 @@ void fbr_ev_cond_var_init(FBR_P_ struct fbr_ev_cond_var *ev,
 	ev->mutex = mutex;
 }
 
-struct fbr_cond_var *fbr_cond_create(_unused_ FBR_P)
+void fbr_cond_init(_unused_ FBR_P_ struct fbr_cond_var *cond)
 {
-	struct fbr_cond_var *cond;
-	cond = malloc(sizeof(struct fbr_cond_var));
 	cond->mutex = NULL;
 	TAILQ_INIT(&cond->waiting);
-	return cond;
 }
 
-void fbr_cond_destroy(_unused_ FBR_P_ struct fbr_cond_var *cond)
+void fbr_cond_destroy(_unused_ FBR_P_ _unused_ struct fbr_cond_var *cond)
 {
-	free(cond);
+	/* Since condvar is stack allocated now, this efffeectively turns into
+	 * NOOP. But we might consider adding some cleanup in the future.
+	 */
 }
 
 int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
@@ -1194,34 +1192,28 @@ void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 	transfer_later(FBR_A_ item);
 }
 
-struct fbr_buffer *fbr_buffer_create(FBR_P_ size_t size)
+int fbr_buffer_init(FBR_P_ struct fbr_buffer *buffer, size_t size)
 {
-	struct fbr_buffer *buffer;
-
-	buffer = malloc(sizeof(struct fbr_buffer));
-	if(NULL == buffer)
-		return_error(NULL, FBR_ESYSTEM);
-
 	buffer->vrb = vrb_new(size, NULL);
+	if (NULL == buffer->vrb)
+		return_error(-1,  FBR_ESYSTEM);
 	buffer->prepared_bytes = 0;
 	buffer->waiting_bytes = 0;
-	buffer->committed_cond = fbr_cond_create(FBR_A);
-	buffer->bytes_freed_cond = fbr_cond_create(FBR_A);
-	buffer->write_mutex = fbr_mutex_create(FBR_A);
-	buffer->read_mutex = fbr_mutex_create(FBR_A);
-	return_success(buffer);
+	fbr_cond_init(FBR_A_ &buffer->committed_cond);
+	fbr_cond_init(FBR_A_ &buffer->bytes_freed_cond);
+	fbr_mutex_init(FBR_A_ &buffer->write_mutex);
+	fbr_mutex_init(FBR_A_ &buffer->read_mutex);
+	return_success(0);
 }
 
-void fbr_buffer_free(FBR_P_ struct fbr_buffer *buffer)
+void fbr_buffer_destroy(FBR_P_ struct fbr_buffer *buffer)
 {
 	vrb_destroy(buffer->vrb);
 
-	fbr_mutex_destroy(FBR_A_ buffer->read_mutex);
-	fbr_mutex_destroy(FBR_A_ buffer->write_mutex);
-	fbr_cond_destroy(FBR_A_ buffer->committed_cond);
-	fbr_cond_destroy(FBR_A_ buffer->bytes_freed_cond);
-
-	free(buffer);
+	fbr_mutex_destroy(FBR_A_ &buffer->read_mutex);
+	fbr_mutex_destroy(FBR_A_ &buffer->write_mutex);
+	fbr_cond_destroy(FBR_A_ &buffer->committed_cond);
+	fbr_cond_destroy(FBR_A_ &buffer->bytes_freed_cond);
 }
 
 void *fbr_buffer_alloc_prepare(FBR_P_ struct fbr_buffer *buffer, size_t size)
@@ -1229,19 +1221,19 @@ void *fbr_buffer_alloc_prepare(FBR_P_ struct fbr_buffer *buffer, size_t size)
 	if (size > vrb_capacity(buffer->vrb))
 		return_error(NULL, FBR_EINVAL);
 
-	fbr_mutex_lock(FBR_A_ buffer->write_mutex);
+	fbr_mutex_lock(FBR_A_ &buffer->write_mutex);
 
 	while (buffer->prepared_bytes > 0)
-		fbr_cond_wait(FBR_A_ buffer->committed_cond,
-				buffer->write_mutex);
+		fbr_cond_wait(FBR_A_ &buffer->committed_cond,
+				&buffer->write_mutex);
 
 	assert(0 == buffer->prepared_bytes);
 
 	buffer->prepared_bytes = size;
 
 	while ((size_t)vrb_space_len(buffer->vrb) < size)
-		fbr_cond_wait(FBR_A_ buffer->bytes_freed_cond,
-				buffer->write_mutex);
+		fbr_cond_wait(FBR_A_ &buffer->bytes_freed_cond,
+				&buffer->write_mutex);
 
 	return vrb_space_ptr(buffer->vrb);
 }
@@ -1250,15 +1242,15 @@ void fbr_buffer_alloc_commit(FBR_P_ struct fbr_buffer *buffer)
 {
 	vrb_give(buffer->vrb, buffer->prepared_bytes);
 	buffer->prepared_bytes = 0;
-	fbr_cond_signal(FBR_A_ buffer->committed_cond);
-	fbr_mutex_unlock(FBR_A_ buffer->write_mutex);
+	fbr_cond_signal(FBR_A_ &buffer->committed_cond);
+	fbr_mutex_unlock(FBR_A_ &buffer->write_mutex);
 }
 
 void fbr_buffer_alloc_abort(FBR_P_ struct fbr_buffer *buffer)
 {
 	buffer->prepared_bytes = 0;
-	fbr_cond_signal(FBR_A_ buffer->committed_cond);
-	fbr_mutex_unlock(FBR_A_ buffer->write_mutex);
+	fbr_cond_signal(FBR_A_ &buffer->committed_cond);
+	fbr_mutex_unlock(FBR_A_ &buffer->write_mutex);
 }
 
 void *fbr_buffer_read_address(FBR_P_ struct fbr_buffer *buffer, size_t size)
@@ -1267,11 +1259,11 @@ void *fbr_buffer_read_address(FBR_P_ struct fbr_buffer *buffer, size_t size)
 	if (size > vrb_capacity(buffer->vrb))
 		return_error(NULL, FBR_EINVAL);
 
-	fbr_mutex_lock(FBR_A_ buffer->read_mutex);
+	fbr_mutex_lock(FBR_A_ &buffer->read_mutex);
 
 	while ((size_t)vrb_data_len(buffer->vrb) < size) {
-		retval = fbr_cond_wait(FBR_A_ buffer->committed_cond,
-				buffer->read_mutex);
+		retval = fbr_cond_wait(FBR_A_ &buffer->committed_cond,
+				&buffer->read_mutex);
 		assert(0 == retval);
 	}
 
@@ -1284,13 +1276,13 @@ void fbr_buffer_read_advance(FBR_P_ struct fbr_buffer *buffer)
 {
 	vrb_take(buffer->vrb, buffer->waiting_bytes);
 
-	fbr_cond_signal(FBR_A_ buffer->bytes_freed_cond);
-	fbr_mutex_unlock(FBR_A_ buffer->read_mutex);
+	fbr_cond_signal(FBR_A_ &buffer->bytes_freed_cond);
+	fbr_mutex_unlock(FBR_A_ &buffer->read_mutex);
 }
 
 void fbr_buffer_read_discard(FBR_P_ struct fbr_buffer *buffer)
 {
-	fbr_mutex_unlock(FBR_A_ buffer->read_mutex);
+	fbr_mutex_unlock(FBR_A_ &buffer->read_mutex);
 }
 
 size_t fbr_buffer_bytes(_unused_ FBR_P_ struct fbr_buffer *buffer)
@@ -1306,13 +1298,13 @@ size_t fbr_buffer_free_bytes(_unused_ FBR_P_ struct fbr_buffer *buffer)
 struct fbr_cond_var *fbr_buffer_cond_read(_unused_ FBR_P_
 		struct fbr_buffer *buffer)
 {
-	return buffer->committed_cond;
+	return &buffer->committed_cond;
 }
 
 struct fbr_cond_var *fbr_buffer_cond_write(_unused_ FBR_P_
 		struct fbr_buffer *buffer)
 {
-	return buffer->bytes_freed_cond;
+	return &buffer->bytes_freed_cond;
 }
 
 void *fbr_get_user_data(FBR_P_ fbr_id_t id)
