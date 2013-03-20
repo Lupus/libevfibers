@@ -11,10 +11,21 @@ include(CheckIncludeFiles)
 aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/src" EVFIBERS_SOURCES)
 aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/coro" CORO_SOURCES)
 
+check_include_files(ev.h HAVE_EV_H)
+if(NOT HAVE_EV_H)
+	message(FATAL_ERROR "ev.h is not found")
+endif(NOT HAVE_EV_H)
+
+check_include_files(vrb.h HAVE_VRB_H)
+if(NOT HAVE_VRB_H)
+	error(FATAL_ERROR "vrb.h is not found")
+endif(NOT HAVE_VRB_H)
+
 check_include_files(ucontext.h HAVE_UCONTEXT_H)
 if(HAVE_UCONTEXT_H)
 	add_definitions("-DHAVE_UCONTEXT_H")
 endif(HAVE_UCONTEXT_H)
+
 
 include_directories(
 	"${CMAKE_CURRENT_SOURCE_DIR}/include"
