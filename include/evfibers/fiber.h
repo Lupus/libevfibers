@@ -149,6 +149,7 @@
 #include <unistd.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/queue.h>
@@ -390,6 +391,13 @@ struct fbr_destructor {
 	fbr_destructor_func_t func; /*!< destructor function */
 	void *arg; /*!< destructor function argument (optional) */
 	TAILQ_ENTRY(fbr_destructor) entries; //Private
+	int active; //Private
+};
+
+#define FBR_DESTRUCTOR_INITIALIZER { \
+	.func   = NULL,              \
+	.arg    = NULL,              \
+	.active = 0,                 \
 };
 
 struct fbr_id_tailq;
@@ -538,6 +546,20 @@ void fbr_destructor_add(FBR_P_ struct fbr_destructor *dtor);
  */
 void fbr_destructor_remove(FBR_P_ struct fbr_destructor *dtor,
 		int call);
+
+/**
+ * Initializes a destructor.
+ * @param [in] dtor destructor to initialize
+ *
+ * This function should be called before a newly allocated destructor is used.
+ * Alternatively you may use FBR_DESTRUCTOR_INITIALIZER macro as a initializing
+ * value upon declaration.
+ * @see fbr_destructor
+ */
+static inline void fbr_destructor_init(struct fbr_destructor *dtor)
+{
+	memset(dtor, 0x00, sizeof(*dtor));
+}
 
 /**
  * Initializer for libev watcher event.

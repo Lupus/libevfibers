@@ -588,6 +588,7 @@ void fbr_yield(FBR_P)
 {
 	struct fbr_fiber *callee = fctx->__p->sp->fiber;
 	struct fbr_fiber *caller = (--fctx->__p->sp)->fiber;
+
 	coro_transfer(&callee->ctx, &caller->ctx);
 }
 
@@ -633,7 +634,7 @@ ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count)
 	ssize_t r;
 	ev_io io;
 	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 
 	ev_io_init(&io, NULL, fd, EV_READ);
 	ev_io_start(fctx->__p->loop, &io);
@@ -660,7 +661,7 @@ ssize_t fbr_read_all(FBR_P_ int fd, void *buf, size_t count)
 	size_t done = 0;
 	ev_io io;
 	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 
 	ev_io_init(&io, NULL, fd, EV_READ);
 	ev_io_start(fctx->__p->loop, &io);
@@ -751,7 +752,7 @@ ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count)
 	ssize_t r;
 	ev_io io;
 	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 
 	ev_io_init(&io, NULL, fd, EV_WRITE);
 	ev_io_start(fctx->__p->loop, &io);
@@ -777,7 +778,7 @@ ssize_t fbr_write_all(FBR_P_ int fd, const void *buf, size_t count)
 	size_t done = 0;
 	ev_io io;
 	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 
 	ev_io_init(&io, NULL, fd, EV_WRITE);
 	ev_io_start(fctx->__p->loop, &io);
@@ -821,7 +822,7 @@ ssize_t fbr_recvfrom(FBR_P_ int sockfd, void *buf, size_t len, int flags,
 {
 	ev_io io;
 	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 
 	ev_io_init(&io, NULL, sockfd, EV_READ);
 	ev_io_start(fctx->__p->loop, &io);
@@ -843,7 +844,7 @@ ssize_t fbr_sendto(FBR_P_ int sockfd, const void *buf, size_t len, int flags, co
 {
 	ev_io io;
 	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 
 	ev_io_init(&io, NULL, sockfd, EV_WRITE);
 	ev_io_start(fctx->__p->loop, &io);
@@ -865,7 +866,7 @@ int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 	int r;
 	ev_io io;
 	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 
 	ev_io_init(&io, NULL, sockfd, EV_READ);
 	ev_io_start(fctx->__p->loop, &io);
@@ -896,7 +897,7 @@ ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds)
 {
 	ev_timer timer;
 	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 	ev_tstamp expected = ev_now(fctx->__p->loop) + seconds;
 
 	ev_timer_init(&timer, NULL, seconds, 0.);
@@ -1326,13 +1327,19 @@ void fbr_destructor_add(FBR_P_ struct fbr_destructor *dtor)
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	TAILQ_INSERT_TAIL(&fiber->destructors, dtor, entries);
+	dtor->active = 1;
 }
 
 void fbr_destructor_remove(FBR_P_ struct fbr_destructor *dtor,
 		int call)
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
+
+	if (0 == dtor->active)
+		return;
+
 	TAILQ_REMOVE(&fiber->destructors, dtor, entries);
 	if (call)
 		dtor->func(FBR_A_ dtor->arg);
+	dtor->active = 0;
 }
