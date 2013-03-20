@@ -950,7 +950,7 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		fiber->id = fctx->__p->last_id++;
 	}
 	coro_create(&fiber->ctx, (coro_func)call_wrapper, FBR_A, fiber->stack,
-			FBR_STACK_SIZE);
+			fiber->stack_size);
 	fiber->call_list = NULL;
 	fiber->call_list_size = 0;
 	LIST_INIT(&fiber->children);
