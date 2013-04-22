@@ -216,6 +216,7 @@ enum fbr_error_code {
 	FBR_ENOFIBER,
 	FBR_ESYSTEM,
 	FBR_EBUFFERMMAP,
+	FBR_ENOKEY,
 };
 
 /**
@@ -530,6 +531,22 @@ struct fbr_buffer {
 };
 
 /**
+ * Fiber-local data key.
+ *
+ * @see fbr_key_create
+ * @see fbr_key_delete
+ * @see fbr_key_get_data
+ * @see fbr_key_set_data
+ */
+typedef unsigned int fbr_key_t;
+
+
+/**
+ * Maximum numbef of fiber-local keys allowed.
+ */
+#define FBR_MAX_KEY 64
+
+/**
  * Adds destructor to fiber list.
  * @param [in] dtor destructor to register
  *
@@ -835,18 +852,29 @@ int fbr_is_reclaimed(FBR_P_ fbr_id_t fiber);
 fbr_id_t fbr_self(FBR_P);
 
 /**
- * Utility function for creating integer fbr_fiber_arg.
- * @param [in] i integer argument
- * @return integer fbr_fiber_arg struct.
+ * Fiber-local key creation.
+ *
+ * This created a new unique key and stores it in key.
  */
-struct fbr_fiber_arg fbr_arg_i(int i);
+int fbr_key_create(FBR_P_ fbr_key_t *key);
 
 /**
- * Utility function for creating void pointer fbr_fiber_arg.
- * @param [in] v void pointer argument
- * @return void pointer fbr_fiber_arg struct
+ * Fiber-local key deletion.
+ * This explicitly destroys a key.
  */
-struct fbr_fiber_arg fbr_arg_v(void *v);
+int fbr_key_delete(FBR_P_ fbr_key_t key);
+
+/**
+ * Sets fiber-local key data.
+ * This stores a value under a key.
+ */
+int fbr_key_set(FBR_P_ fbr_id_t id, fbr_key_t key, void *value);
+
+/**
+ * Gets fiber-local key data.
+ * This retrieves the value under a key.
+ */
+void *fbr_key_get(FBR_P_ fbr_id_t id, fbr_key_t key);
 
 /**
  * Yields execution to other fiber.

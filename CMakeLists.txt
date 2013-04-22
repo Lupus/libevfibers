@@ -1,5 +1,7 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 2.8.7)
 project(libevfibers C)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
 set(VERSION_MAJOR 0)
 set(VERSION_MINOR 2)

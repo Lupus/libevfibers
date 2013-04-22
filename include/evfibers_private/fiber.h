@@ -80,6 +80,7 @@ struct fbr_fiber {
 	} entries;
 	struct fiber_destructor_tailq destructors;
 	void *user_data;
+	void *key_data[FBR_MAX_KEY];
 };
 
 TAILQ_HEAD(mutex_tailq, fbr_mutex);
@@ -98,6 +99,7 @@ struct fbr_context_private {
 	struct fbr_id_tailq pending_fibers;
 	int backtraces_enabled;
 	uint64_t last_id;
+	uint64_t key_free_mask;
 
 	struct ev_loop *loop;
 };

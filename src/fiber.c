@@ -27,6 +27,7 @@
 #include <utlist.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <err.h>
 #include <valgrind/valgrind.h>
 
@@ -214,6 +215,8 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	fctx->__p->loop = loop;
 	fctx->__p->pending_async.data = fctx;
 	fctx->__p->backtraces_enabled = 0;
+	memset(&fctx->__p->key_free_mask, 0x00,
+			sizeof(fctx->__p->key_free_mask));
 	ev_async_init(&fctx->__p->pending_async, pending_async_cb);
 }
 
@@ -230,6 +233,8 @@ const char *fbr_strerror(_unused_ FBR_P_ enum fbr_error_code code)
 			return "System error, consult system errno";
 		case FBR_EBUFFERMMAP:
 			return "Failed to mmap two adjacent regions";
+		case FBR_ENOKEY:
+			return "Fiber-local key does not exist";
 	}
 	return "Unknown error";
 }
@@ -1366,4 +1371,69 @@ void fbr_destructor_remove(FBR_P_ struct fbr_destructor *dtor,
 	if (call)
 		dtor->func(FBR_A_ dtor->arg);
 	dtor->active = 0;
+}
+
+static inline int ffsll(uint64_t val)
+{
+	/* TODO: Add some check for the existance of this builtin */
+	return __builtin_ffsll(val);
+}
+
+static inline int is_key_registered(FBR_P_ fbr_key_t key)
+{
+	return 0 == (fctx->__p->key_free_mask & (1 << key));
+}
+
+static inline void register_key(FBR_P_ fbr_key_t key)
+{
+	fctx->__p->key_free_mask &= ~(1 << key);
+}
+
+static inline void unregister_key(FBR_P_ fbr_key_t key)
+{
+	fctx->__p->key_free_mask |= (1 << key);
+}
+
+int fbr_key_create(FBR_P_ fbr_key_t *key_ptr)
+{
+	fbr_key_t key = ffsll(fctx->__p->key_free_mask);
+	assert(key < FBR_MAX_KEY);
+	register_key(FBR_A_ key);
+	*key_ptr = key;
+	return_success(0);
+}
+
+int fbr_key_delete(FBR_P_ fbr_key_t key)
+{
+	if (!is_key_registered(FBR_A_ key))
+		return_error(-1, FBR_ENOKEY);
+
+	unregister_key(FBR_A_ key);
+
+	return_success(0);
+}
+
+int fbr_key_set(FBR_P_ fbr_id_t id, fbr_key_t key, void *value)
+{
+	struct fbr_fiber *fiber;
+
+	unpack_transfer_errno(-1, &fiber, id);
+
+	if (!is_key_registered(FBR_A_ key))
+		return_error(-1, FBR_ENOKEY);
+
+	fiber->key_data[key] = value;
+	return_success(0);
+}
+
+void *fbr_key_get(FBR_P_ fbr_id_t id, fbr_key_t key)
+{
+	struct fbr_fiber *fiber;
+
+	unpack_transfer_errno(NULL, &fiber, id);
+
+	if (!is_key_registered(FBR_A_ key))
+		return_error(NULL, FBR_ENOKEY);
+
+	return fiber->key_data[key];
 }
