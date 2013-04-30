@@ -58,7 +58,7 @@ LIST_HEAD(fiber_list, fbr_fiber);
 
 struct fbr_fiber {
 	uint64_t id;
-	const char *name;
+	char name[FBR_MAX_FIBER_NAME];
 	fbr_fiber_func_t func;
 	void *func_arg;
 	coro_context ctx;

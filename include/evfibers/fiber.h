@@ -763,6 +763,11 @@ void fbr_log_d(FBR_P_ const char *format, ...)
 	__attribute__ ((format (printf, 2, 3)));
 
 /**
+ * Maximum length of fiber's name.
+ */
+#define FBR_MAX_FIBER_NAME 64
+
+/**
  * Creates a new fiber.
  * @param [in] name fiber name, used for identification it
  * backtraces, etc.
@@ -791,6 +796,33 @@ void fbr_log_d(FBR_P_ const char *format, ...)
 fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		size_t stack_size);
 
+/**
+ * Retrieve a name of the fiber.
+ * @param [in] id identificator of a fiber
+ * @return pointer to charater buffer or NULL on error
+ *
+ * The name is located in the statically allocated buffer of size
+ * FBR_MAX_FIBER_NAME.
+ *
+ * Don't try to free it!
+ *
+ * @see fbr_create
+ * @see fbr_set_name
+ */
+const char *fbr_get_name(FBR_P_ fbr_id_t id);
+
+/**
+ * Sets a name for the fiber.
+ * @param [in] id identificator of a fiber
+ * @param [in] name new name for a fiber
+ * @return 0 on success, -1 on error.
+ *
+ * The name is located in the statically allocated buffer of size
+ * FBR_MAX_FIBER_NAME. If your name does not fit, it will be trimmed.
+ *
+ * @see fbr_get_name
+ */
+int fbr_set_name(FBR_P_ fbr_id_t id, const char *name);
 
 /**
  * Changes parent of current fiber.
