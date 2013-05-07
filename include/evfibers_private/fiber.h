@@ -25,6 +25,7 @@
 
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <sys/queue.h>
 #include <evfibers/fiber.h>
 #include <evfibers_private/trace.h>
@@ -43,6 +44,12 @@
 		})
 
 #define _unused_ __attribute__((unused))
+
+#define CURRENT_FIBER (fctx->__p->sp->fiber)
+#define CURRENT_FIBER_ID (fbr_id_pack(CURRENT_FIBER))
+
+extern struct fbr_context *last_fctx;
+extern FILE *trace_fd;
 
 struct mem_pool {
 	void *ptr;
@@ -64,6 +71,7 @@ struct fbr_fiber {
 	coro_context ctx;
 	char *stack;
 	size_t stack_size;
+	int valgrind_stack_id;
 	struct fbr_call_info *call_list;
 	size_t call_list_size;
 	struct {
@@ -81,6 +89,10 @@ struct fbr_fiber {
 	struct fiber_destructor_tailq destructors;
 	void *user_data;
 	void *key_data[FBR_MAX_KEY];
+	struct {
+		int level;
+		void *last_sp;
+	} instr;
 };
 
 TAILQ_HEAD(mutex_tailq, fbr_mutex);
@@ -100,6 +112,7 @@ struct fbr_context_private {
 	int backtraces_enabled;
 	uint64_t last_id;
 	uint64_t key_free_mask;
+	int last_yield;
 
 	struct ev_loop *loop;
 };

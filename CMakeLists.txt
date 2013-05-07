@@ -34,7 +34,10 @@ include_directories(
 	"${CMAKE_CURRENT_SOURCE_DIR}/coro"
 	)
 
-set(CMAKE_C_FLAGS "-W -Wall -Werror -fno-strict-aliasing ${CMAKE_C_FLAGS}")
+set(CMAKE_C_FLAGS "-W -Wall -Werror -fno-strict-aliasing")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -finstrument-functions")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wstack-protector -fstack-protector -fstack-protector-all")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fmudflap")
 set(SOURCES ${EVFIBERS_SOURCES} ${CORO_SOURCES})
 
 add_library(evfibers SHARED ${SOURCES})
@@ -43,7 +46,9 @@ set_target_properties(evfibers
 	SOVERSION ${VERSION_MAJOR}
 	VERSION ${VERSION_STRING}
 	)
-target_link_libraries(evfibers ev vrb)
+target_link_libraries(evfibers ev vrb bfd
+	#mudflap
+	)
 
 add_library(evfibers_static STATIC ${SOURCES})
 set_target_properties(evfibers_static  PROPERTIES OUTPUT_NAME evfibers)

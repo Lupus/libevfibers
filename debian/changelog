@@ -1,3 +1,16 @@
+libevfibers (0.2.0+nmu2) unstable; urgency=low
+
+  * Fixed deps in control
+
+ -- Konstantin Olkhovskiy <kolkhovskiy@kolkhovskiy-laptop>  Tue, 09 Apr 2013 09:38:06 +0400
+
+libevfibers (0.2.0+nmu1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Upstream changes for upcoming release included
+
+ -- Konstantin Olkhovskiy <kolkhovskiy@kolkhovskiy-laptop>  Tue, 09 Apr 2013 09:26:02 +0400
+
 libevfibers (0.2.0) unstable; urgency=low
 
   * Dropped ``call'' and ``multicall'' interfaces alltogether

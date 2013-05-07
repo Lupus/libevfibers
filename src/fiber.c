@@ -54,8 +54,6 @@
 	assert(fctx->__p->sp->fiber == &fctx->__p->root); \
 } while (0)
 
-#define CURRENT_FIBER (fctx->__p->sp->fiber)
-#define CURRENT_FIBER_ID (fbr_id_pack(CURRENT_FIBER))
 #define CALLED_BY_ROOT ((fctx->__p->sp - 1)->fiber == &fctx->__p->root)
 
 #define unpack_transfer_errno(value, ptr, id)           \
@@ -76,6 +74,7 @@
 		return (value);         \
 	} while (0)
 
+struct fbr_context *last_fctx = NULL;
 
 static fbr_id_t fbr_id_pack(struct fbr_fiber *fiber)
 {
@@ -190,7 +189,7 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	struct fbr_fiber *root;
 	struct fbr_logger *logger;
 
-	fctx->__p = malloc(sizeof(struct fbr_context_private));
+	fctx->__p = calloc(1, sizeof(struct fbr_context_private));
 	LIST_INIT(&fctx->__p->reclaimed);
 	LIST_INIT(&fctx->__p->root.children);
 	LIST_INIT(&fctx->__p->root.pool);
@@ -218,6 +217,14 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	memset(&fctx->__p->key_free_mask, 0x00,
 			sizeof(fctx->__p->key_free_mask));
 	ev_async_init(&fctx->__p->pending_async, pending_async_cb);
+
+	last_fctx = fctx;
+
+	if (trace_fd) {
+		fprintf(trace_fd, "[CONTEXT] fiber context has been"
+				" initialized\n");
+		fflush(trace_fd);
+	}
 }
 
 const char *fbr_strerror(_unused_ FBR_P_ enum fbr_error_code code)
@@ -408,6 +415,12 @@ static void filter_fiber_stack(FBR_P_ struct fbr_fiber *fiber)
 	}
 }
 
+static void sanitize_stack(_unused_ FBR_P_ struct fbr_fiber *fiber)
+{
+	memset(fiber->stack, 'a', fiber->stack_size);
+	VALGRIND_STACK_DEREGISTER(fiber->valgrind_stack_id);
+}
+
 int fbr_reclaim(FBR_P_ fbr_id_t id)
 {
 	struct fbr_fiber *fiber;
@@ -430,8 +443,17 @@ int fbr_reclaim(FBR_P_ fbr_id_t id)
 
 	filter_fiber_stack(FBR_A_ fiber);
 
-	if (CURRENT_FIBER == fiber)
+	if (trace_fd) {
+		fprintf(trace_fd, "[RECLAIM] fiber %s is going to be"
+				" reclaimed\n", fiber->name);
+		fflush(trace_fd);
+	}
+	if (CURRENT_FIBER == fiber) {
+		fctx->__p->last_yield = 1;
 		fbr_yield(FBR_A);
+	} else {
+		sanitize_stack(FBR_A_ fiber);
+	}
 
 	return_success(0);
 }
@@ -608,6 +630,11 @@ int fbr_transfer(FBR_P_ fbr_id_t to)
 	fctx->__p->sp->fiber = callee;
 	fill_trace_info(FBR_A_ &fctx->__p->sp->tinfo);
 
+	if (trace_fd) {
+		fprintf(trace_fd, "[TRANSFER] %s => %s\n", caller->name,
+				callee->name);
+		fflush(trace_fd);
+	}
 	coro_transfer(&caller->ctx, &callee->ctx);
 
 	return_success(0);
@@ -618,7 +645,16 @@ void fbr_yield(FBR_P)
 	struct fbr_fiber *callee = fctx->__p->sp->fiber;
 	struct fbr_fiber *caller = (--fctx->__p->sp)->fiber;
 
+	if (trace_fd) {
+		fprintf(trace_fd, "[YIELD] %s <= %s\n", caller->name,
+				callee->name);
+		fflush(trace_fd);
+	}
 	coro_transfer(&callee->ctx, &caller->ctx);
+	if (1 == fctx->__p->last_yield) {
+		fctx->__p->last_yield = 0;
+		sanitize_stack(FBR_A_ caller);
+	}
 }
 
 int fbr_fd_nonblock(FBR_P_ int fd)
@@ -974,10 +1010,10 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		if (MAP_FAILED == fiber->stack)
 			err(EXIT_FAILURE, "mmap failed");
 		fiber->stack_size = stack_size;
-		(void)VALGRIND_STACK_REGISTER(fiber->stack, fiber->stack +
-				stack_size);
 		fiber->id = fctx->__p->last_id++;
 	}
+	fiber->valgrind_stack_id = VALGRIND_STACK_REGISTER(fiber->stack,
+			fiber->stack + stack_size);
 	coro_create(&fiber->ctx, (coro_func)call_wrapper, FBR_A, fiber->stack,
 			fiber->stack_size);
 	fiber->call_list = NULL;
@@ -990,6 +1026,13 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 	fiber->func_arg = arg;
 	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries.children);
 	fiber->parent = CURRENT_FIBER;
+	fiber->instr.last_sp = NULL;
+	fiber->instr.level = 0;
+	if (trace_fd) {
+		fprintf(trace_fd, "[NEW] fiber ``%s'' has been created,"
+				" ptr: %p, id: %lx\n", name, fiber, fiber->id);
+		fflush(trace_fd);
+	}
 	return fbr_id_pack(fiber);
 }
 
