@@ -1,3 +1,29 @@
+libevfibers (0.3.0) unstable; urgency=low
+
+  * Fiber names are now gettable/settable
+  * Also a name is now an array, embedded into a fiber structure to simplify
+    memory management.
+  * Support for fiber-local storage
+  * fbr_reclaim fixes. Now when a fiber is reclaimed, it's filtered out from
+    the stack to make sure that fbr_yield will not ield to a reclaimed fiber.
+    Also fbr_reclaim of self will now never return.
+  * Switched fbr_need_log and fbr_set_log_level to static inline
+  * Now passing real fiber stack size to coro_create
+  * Added ``active'' flag to destructor. To support this I've also added static
+    and dynamic initializers for a destructor structure.
+  * Moved fbr_mutex, fbr_cond_var, fbr_buffer into public API to allow stack
+    allocation of these structures which should result in some speedup.
+  * Protected libev watchers with desctructors. Now when doing fbr_read a
+    destructor is set before fbr_ev_wait that will stop the watcher in case
+    fiber is reclaimed while we were waiting.
+  * ev_now() timestamp in default logger
+  * Fixed fbr_ev_wait_one behaviour to match documentation
+  * Added missing call of destructors upon fiber reclaim
+  * Added stack-allocatable destructor API
+  * More rethinking and reworking of the event facility (see 701e067)
+
+ -- Konstantin Olkhovskiy <kolkhovskiy@kolkhovskiy-laptop>  Sun, 12 May 2013 12:57:10 +0400
+
 libevfibers (0.2.0) unstable; urgency=low
 
   * Dropped ``call'' and ``multicall'' interfaces alltogether
