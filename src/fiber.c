@@ -1325,18 +1325,6 @@ size_t fbr_buffer_free_bytes(_unused_ FBR_P_ struct fbr_buffer *buffer)
 	return vrb_space_len(buffer->vrb);
 }
 
-struct fbr_cond_var *fbr_buffer_cond_read(_unused_ FBR_P_
-		struct fbr_buffer *buffer)
-{
-	return &buffer->committed_cond;
-}
-
-struct fbr_cond_var *fbr_buffer_cond_write(_unused_ FBR_P_
-		struct fbr_buffer *buffer)
-{
-	return &buffer->bytes_freed_cond;
-}
-
 void *fbr_get_user_data(FBR_P_ fbr_id_t id)
 {
 	struct fbr_fiber *fiber;

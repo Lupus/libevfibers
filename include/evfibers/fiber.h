@@ -239,10 +239,20 @@ struct fbr_context {
 #define FBR_P struct fbr_context *fctx
 
 /**
+ * Same as FBR_P but with unused attribute.
+ */
+#define FBR_PU __attribute__((unused)) FBR_P
+
+/**
  * Same as FBR_P, but with comma afterwards for use in functions that accept
  * more that one parameter (which itself is the context pointer).
  */
 #define FBR_P_ FBR_P,
+
+/**
+ * Same as FBR_P_ but unused attribute.
+ */
+#define FBR_PU_ __attribute__((unused)) FBR_P_
 
 /**
  * Utility macro for context parameter passing when calling fbr_* functions.
@@ -1428,8 +1438,108 @@ size_t fbr_buffer_bytes(FBR_P_ struct fbr_buffer *buffer);
  */
 size_t fbr_buffer_free_bytes(FBR_P_ struct fbr_buffer *buffer);
 
-struct fbr_cond_var *fbr_buffer_cond_read(FBR_P_ struct fbr_buffer *buffer);
-struct fbr_cond_var *fbr_buffer_cond_write(FBR_P_ struct fbr_buffer *buffer);
+/**
+ * Helper function, returning read conditional variable.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @returns read conditional variable
+ */
+static inline struct fbr_cond_var *fbr_buffer_cond_read(FBR_PU_
+		struct fbr_buffer *buffer)
+{
+	return &buffer->committed_cond;
+}
+
+/**
+ * Helper function, returning write conditional variable.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @returns write conditional variable
+ */
+static inline struct fbr_cond_var *fbr_buffer_cond_write(FBR_PU_
+		struct fbr_buffer *buffer)
+{
+	return &buffer->bytes_freed_cond;
+}
+
+/**
+ * Helper function, which waits until read is possible.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @param [in] size required read size
+ * @returns 1 to be while friendly
+ *
+ * This function is useful when you need to wait for data to arrive on a buffer
+ * in a while loop.
+ */
+static inline int fbr_buffer_wait_read(FBR_P_ struct fbr_buffer *buffer,
+		size_t size)
+{
+	struct fbr_mutex mutex;
+	int retval;
+	fbr_mutex_init(FBR_A_ &mutex);
+	fbr_mutex_lock(FBR_A_ &mutex);
+	while (fbr_buffer_bytes(FBR_A_ buffer) < size) {
+		retval = fbr_cond_wait(FBR_A_ &buffer->committed_cond, &mutex);
+		assert(0 == retval);
+	}
+	fbr_mutex_unlock(FBR_A_ &mutex);
+	fbr_mutex_destroy(FBR_A_ &mutex);
+	return 1;
+}
+
+/**
+ * Helper function, which test if read is possible.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @param [in] size required read size
+ * @returns 1 if read is possible, 0 otherwise
+ *
+ * This function is useful when you need to test if you can read some data from
+ * the buffer without blocking.
+ */
+static inline int fbr_buffer_can_read(FBR_P_ struct fbr_buffer *buffer,
+		size_t size)
+{
+	return fbr_buffer_bytes(FBR_A_ buffer) >= size;
+}
+
+/**
+ * Helper function, which waits until write is possible.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @param [in] size required write size
+ * @returns 1 to be while friendly
+ *
+ * This function is useful when you need to wait for free space on a buffer
+ * in a while loop.
+ */
+static inline int fbr_buffer_wait_write(FBR_P_ struct fbr_buffer *buffer,
+		size_t size)
+{
+	struct fbr_mutex mutex;
+	int retval;
+	fbr_mutex_init(FBR_A_ &mutex);
+	fbr_mutex_lock(FBR_A_ &mutex);
+	while (fbr_buffer_free_bytes(FBR_A_ buffer) < size) {
+		retval = fbr_cond_wait(FBR_A_ &buffer->bytes_freed_cond,
+				&mutex);
+		assert(0 == retval);
+	}
+	fbr_mutex_unlock(FBR_A_ &mutex);
+	fbr_mutex_destroy(FBR_A_ &mutex);
+	return 1;
+}
+
+/**
+ * Helper function, which test if write is possible.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @param [in] size required write size
+ * @returns 1 if write is possible, 0 otherwise
+ *
+ * This function is useful when you need to test if you can write some data to
+ * the buffer without blocking.
+ */
+static inline int fbr_buffer_can_write(FBR_P_ struct fbr_buffer *buffer,
+		size_t size)
+{
+	return fbr_buffer_free_bytes(FBR_A_ buffer) >= size;
+}
 
 /**
  * Gets fiber user data pointer.
