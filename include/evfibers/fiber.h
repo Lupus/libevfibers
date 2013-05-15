@@ -217,6 +217,8 @@ enum fbr_error_code {
 	FBR_ESYSTEM,
 	FBR_EBUFFERMMAP,
 	FBR_ENOKEY,
+	FBR_EASYNC,
+	FBR_EPROTOBUF,
 };
 
 /**
@@ -555,6 +557,7 @@ typedef unsigned int fbr_key_t;
  * Maximum numbef of fiber-local keys allowed.
  */
 #define FBR_MAX_KEY 64
+
 
 /**
  * Adds destructor to fiber list.

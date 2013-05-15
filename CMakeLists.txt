@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 2.8.7)
 project(libevfibers C)
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
 set(VERSION_MAJOR 0)
@@ -28,14 +29,28 @@ if(HAVE_UCONTEXT_H)
 	add_definitions("-DHAVE_UCONTEXT_H")
 endif(HAVE_UCONTEXT_H)
 
+find_package(ProtoBufC REQUIRED)
 
 include_directories(
 	"${CMAKE_CURRENT_SOURCE_DIR}/include"
+	"${CMAKE_CURRENT_BINARY_DIR}/include"
 	"${CMAKE_CURRENT_SOURCE_DIR}/coro"
 	)
 
+set(WORKER_PROTO "src/worker.proto")
+add_custom_command(
+	OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/src/worker.pb-c.c"
+	       "${CMAKE_CURRENT_BINARY_DIR}/include/evfibers_private/worker.pb-c.h"
+	COMMAND mkdir -p "${CMAKE_CURRENT_BINARY_DIR}/include/evfibers_private"
+	COMMAND mkdir -p "${CMAKE_CURRENT_BINARY_DIR}/src"
+	COMMAND protoc-c -I "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}/${WORKER_PROTO}" --c_out "${CMAKE_CURRENT_BINARY_DIR}/src"
+	COMMAND cp "${CMAKE_CURRENT_BINARY_DIR}/src/worker.pb-c.h" "${CMAKE_CURRENT_BINARY_DIR}/include/evfibers_private/worker.pb-c.h"
+	DEPENDS ${WORKER_PROTO}
+	COMMENT "Generating Protobuf-C from ${WORKER_PROTO}"
+	)
+
 set(CMAKE_C_FLAGS "-W -Wall -Werror -fno-strict-aliasing ${CMAKE_C_FLAGS}")
-set(SOURCES ${EVFIBERS_SOURCES} ${CORO_SOURCES})
+set(SOURCES ${EVFIBERS_SOURCES} ${CORO_SOURCES} "${CMAKE_CURRENT_BINARY_DIR}/src/worker.pb-c.c")
 
 add_library(evfibers SHARED ${SOURCES})
 set_target_properties(evfibers
@@ -43,7 +58,11 @@ set_target_properties(evfibers
 	SOVERSION ${VERSION_MAJOR}
 	VERSION ${VERSION_STRING}
 	)
-target_link_libraries(evfibers ev vrb)
+target_link_libraries(evfibers ev vrb ${PROTOBUFC_LIBRARIES})
+
+aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/worker_src" WORKER_SOURCES)
+add_executable(fiber_worker "${WORKER_SOURCES}")
+target_link_libraries(fiber_worker evfibers)
 
 add_library(evfibers_static STATIC ${SOURCES})
 set_target_properties(evfibers_static  PROPERTIES OUTPUT_NAME evfibers)

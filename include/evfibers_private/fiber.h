@@ -85,6 +85,17 @@ struct fbr_fiber {
 
 TAILQ_HEAD(mutex_tailq, fbr_mutex);
 
+struct fbr_async {
+	pid_t worker_pid;
+	int read_fd, write_fd;
+	struct fbr_mutex mutex;
+	void *buf;
+	size_t buf_size;
+	SLIST_ENTRY(fbr_async) entries;
+};
+
+SLIST_HEAD(fbr_async_slist, fbr_async);
+
 struct fbr_stack_item {
 	struct fbr_fiber *fiber;
 	struct trace_info tinfo;
@@ -100,8 +111,22 @@ struct fbr_context_private {
 	int backtraces_enabled;
 	uint64_t last_id;
 	uint64_t key_free_mask;
+	struct fbr_async_slist free_workers;
 
 	struct ev_loop *loop;
 };
+
+struct fbr_async *fbr_async_create(FBR_P);
+void fbr_async_destroy(FBR_P_ struct fbr_async *async);
+int fbr_async_fopen(FBR_P_ struct fbr_async *async, const char *filename,
+		const char *mode);
+int fbr_async_fclose(FBR_P_ struct fbr_async *async);
+ssize_t fbr_async_fread(FBR_P_ struct fbr_async *async, void *buf, size_t size);
+ssize_t fbr_async_fwrite(FBR_P_ struct fbr_async *async, void *buf,
+		size_t size);
+int fbr_async_fseek(FBR_P_ struct fbr_async *async, size_t offset, int whence);
+ssize_t fbr_async_ftell(FBR_P_ struct fbr_async *async);
+int fbr_async_ftruncate(FBR_P_ struct fbr_async *async, size_t size);
+int fbr_async_debug(FBR_P_ struct fbr_async *async);
 
 #endif

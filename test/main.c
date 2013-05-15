@@ -30,12 +30,13 @@
 #include "io.h"
 #include "logger.h"
 #include "buffer.h"
+#include "async.h"
 
 Suite *evfibers_suite(void)
 {
 	Suite *s;
 	TCase *tc_init, *tc_mutex, *tc_cond, *tc_reclaim, *tc_io, *tc_logger,
-	      *tc_buffer;
+	      *tc_buffer, *tc_async;
 
 	s = suite_create ("evfibers");
 	tc_init = init_tcase();
@@ -45,6 +46,7 @@ Suite *evfibers_suite(void)
 	tc_io = io_tcase();
 	tc_logger = logger_tcase();
 	tc_buffer = buffer_tcase();
+	tc_async = async_tcase();
 	suite_add_tcase(s, tc_init);
 	suite_add_tcase(s, tc_mutex);
 	suite_add_tcase(s, tc_cond);
@@ -52,6 +54,7 @@ Suite *evfibers_suite(void)
 	suite_add_tcase(s, tc_io);
 	suite_add_tcase(s, tc_logger);
 	suite_add_tcase(s, tc_buffer);
+	suite_add_tcase(s, tc_async);
 
 	return s;
 }

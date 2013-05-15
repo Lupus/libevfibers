@@ -32,6 +32,7 @@
 #include <valgrind/valgrind.h>
 
 #include <evfibers_private/fiber.h>
+#include <evfibers_private/worker.pb-c.h>
 
 #ifndef LIST_FOREACH_SAFE
 #define LIST_FOREACH_SAFE(var, head, field, next_var)              \
@@ -140,8 +141,8 @@ static void *allocate_in_fiber(FBR_P_ size_t size, struct fbr_fiber *in)
 	return pool_entry + 1;
 }
 
-static void stdio_logger(FBR_P_ struct fbr_logger *logger, enum fbr_log_level level,
-		const char *format, va_list ap)
+static void stdio_logger(FBR_P_ struct fbr_logger *logger,
+		enum fbr_log_level level, const char *format, va_list ap)
 {
 	struct fbr_fiber *fiber;
 	FILE* stream;
@@ -196,6 +197,7 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	LIST_INIT(&fctx->__p->root.pool);
 	TAILQ_INIT(&fctx->__p->root.destructors);
 	TAILQ_INIT(&fctx->__p->pending_fibers);
+	SLIST_INIT(&fctx->__p->free_workers);
 
 	root = &fctx->__p->root;
 	strncpy(root->name, "root", FBR_MAX_FIBER_NAME);
@@ -235,6 +237,10 @@ const char *fbr_strerror(_unused_ FBR_P_ enum fbr_error_code code)
 			return "Failed to mmap two adjacent regions";
 		case FBR_ENOKEY:
 			return "Fiber-local key does not exist";
+		case FBR_EASYNC:
+			return "Async call error (see logs)";
+		case FBR_EPROTOBUF:
+			return "Protobuf unpacking error";
 	}
 	return "Unknown error";
 }
@@ -332,7 +338,8 @@ static void cancel_ev(_unused_ FBR_P_ struct fbr_ev_base *ev)
 	fbr_destructor_remove(FBR_A_ &ev->item.dtor, 1 /* call it */);
 }
 
-static void post_ev(_unused_ FBR_P_ struct fbr_fiber *fiber, struct fbr_ev_base *ev)
+static void post_ev(_unused_ FBR_P_ struct fbr_fiber *fiber,
+		struct fbr_ev_base *ev)
 {
 	assert(NULL != fiber->ev.waiting);
 
@@ -868,8 +875,8 @@ ssize_t fbr_recvfrom(FBR_P_ int sockfd, void *buf, size_t len, int flags,
 	return recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
 }
 
-ssize_t fbr_sendto(FBR_P_ int sockfd, const void *buf, size_t len, int flags, const
-		struct sockaddr *dest_addr, socklen_t addrlen)
+ssize_t fbr_sendto(FBR_P_ int sockfd, const void *buf, size_t len, int flags,
+		const struct sockaddr *dest_addr, socklen_t addrlen)
 {
 	ev_io io;
 	struct fbr_ev_watcher watcher;
@@ -1440,3 +1447,298 @@ int fbr_set_name(FBR_P_ fbr_id_t id, const char *name)
 	strncpy(fiber->name, name, FBR_MAX_FIBER_NAME);
 	return_success(0);
 }
+
+static int init_worker(FBR_P_ struct fbr_async *async)
+{
+	int retval;
+	pid_t pid;
+	int pipe_stdin[2], pipe_stdout[2];
+	const char *worker_filename = "./build/fiber_worker";
+
+	retval = pipe(pipe_stdin);
+	if (-1 == retval)
+		return_error(-1, FBR_ESYSTEM);
+	retval = pipe(pipe_stdout);
+	if (-1 == retval)
+		return_error(-1, FBR_ESYSTEM);
+
+	pid = fork();
+	if (-1 == pid)
+		return_error(-1, FBR_ESYSTEM);
+	if (0 == pid) { /* child */
+		retval = close(pipe_stdin[1]);
+		if (-1 == retval)
+			err(EXIT_FAILURE, "close");
+		retval = dup2(pipe_stdin[0], 0);
+		if (-1 == retval)
+			err(EXIT_FAILURE, "close");
+		retval = close(pipe_stdout[0]);
+		if (-1 == retval)
+			err(EXIT_FAILURE, "close");
+		retval = dup2(pipe_stdout[1], 1);
+		if (-1 == retval)
+			err(EXIT_FAILURE, "close");
+		retval = execl(worker_filename, "fiber_worker", NULL);
+		if (-1 == retval)
+			err(EXIT_FAILURE, "execl");
+		__builtin_unreachable();
+	}
+	retval = close(pipe_stdin[0]);
+	if (-1 == retval)
+		return_error(-1, FBR_ESYSTEM);
+	retval = close(pipe_stdout[1]);
+	if (-1 == retval)
+		return_error(-1, FBR_ESYSTEM);
+	async->worker_pid = pid;
+	async->write_fd = pipe_stdin[1];
+	async->read_fd = pipe_stdout[0];
+	return_success(0);
+}
+
+struct fbr_async *fbr_async_create(FBR_P)
+{
+	struct fbr_async *async;
+	int retval;
+	if (!SLIST_EMPTY(&fctx->__p->free_workers)) {
+		async = SLIST_FIRST(&fctx->__p->free_workers);
+		SLIST_REMOVE_HEAD(&fctx->__p->free_workers, entries);
+	} else {
+		async = calloc(1, sizeof(*async));
+		if (NULL == async)
+			return_error(NULL, FBR_ESYSTEM);
+		async->buf_size = BUFSIZ;
+		async->buf = malloc(async->buf_size);
+		if (NULL == async->buf)
+			return_error(NULL, FBR_ESYSTEM);
+		fbr_mutex_init(FBR_A_ &async->mutex);
+		retval = init_worker(FBR_A_ async);
+		if (retval)
+			return NULL;
+	}
+	return async;
+}
+
+void fbr_async_destroy(FBR_P_ struct fbr_async *async)
+{
+	SLIST_INSERT_HEAD(&fctx->__p->free_workers, async, entries);
+}
+
+static int worker_ensure_buf(FBR_PU_ struct fbr_async *async, size_t size)
+{
+	if (async->buf_size >= size)
+		return_success(0);
+	while (async->buf_size < size)
+		async->buf_size *= 2;
+	async->buf = realloc(async->buf, async->buf_size);
+	if (NULL == async->buf)
+		return_error(-1, FBR_ESYSTEM);
+	return_success(0);
+}
+
+static ReqResult *worker_communicate(FBR_P_ struct fbr_async *async, Req* req)
+{
+	size_t size;
+	ssize_t retval;
+	ReqResult *req_result;
+	fbr_mutex_lock(FBR_A_ &async->mutex);
+
+	/* Submit request */
+	size = req__get_packed_size(req);
+	retval = worker_ensure_buf(FBR_A_ async, size);
+	if (retval)
+		return NULL;
+	req__pack(req, async->buf);
+	retval = fbr_write_all(FBR_A_ async->write_fd, &size, sizeof(size));
+	if (retval < (ssize_t)sizeof(size))
+		return_error(NULL, FBR_ESYSTEM);
+	retval = fbr_write_all(FBR_A_ async->write_fd, async->buf, size);
+	if (retval < (ssize_t)size)
+		return_error(NULL, FBR_ESYSTEM);
+
+	/* Read result */
+	retval = fbr_read_all(FBR_A_ async->read_fd, &size, sizeof(size));
+	if (retval < (ssize_t)sizeof(size))
+		return_error(NULL, FBR_ESYSTEM);
+	retval = worker_ensure_buf(FBR_A_ async, size);
+	if (retval)
+		return NULL;
+	retval = fbr_read_all(FBR_A_ async->read_fd, async->buf, size);
+	if (retval < (ssize_t)size)
+		return_error(NULL, FBR_ESYSTEM);
+
+	req_result = req_result__unpack(NULL, size, async->buf);
+	if (NULL == req_result)
+		return_error(NULL, FBR_EPROTOBUF);
+
+	fbr_mutex_unlock(FBR_A_ &async->mutex);
+	return req_result;
+}
+
+#define CHECK_ASYNC_ERROR if (req_result->error) {   \
+	fbr_log_e(FBR_A_ "async request error: %s",  \
+			req_result->error);          \
+	req_result__free_unpacked(req_result, NULL); \
+	return_error(-1, FBR_EASYNC);                \
+}
+
+int fbr_async_fopen(FBR_P_ struct fbr_async *async, const char *filename,
+		const char *mode)
+{
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FileReq file_req = FILE_REQ__INIT;
+	FileReqOpen file_req_open = FILE_REQ_OPEN__INIT;
+	req.type = REQ_TYPE__File;
+	req.file = &file_req;
+	file_req.type = FILE_REQ_TYPE__Open;
+	file_req.open = &file_req_open;
+	file_req_open.name = (char *)filename;
+	file_req_open.mode = (char *)mode;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	CHECK_ASYNC_ERROR
+	req_result__free_unpacked(req_result, NULL);
+	return_success(0);
+}
+
+int fbr_async_fclose(FBR_P_ struct fbr_async *async)
+{
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FileReq file_req = FILE_REQ__INIT;
+	req.type = REQ_TYPE__File;
+	req.file = &file_req;
+	file_req.type = FILE_REQ_TYPE__Close;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	CHECK_ASYNC_ERROR
+	req_result__free_unpacked(req_result, NULL);
+	return_success(0);
+}
+
+ssize_t fbr_async_fread(FBR_P_ struct fbr_async *async, void *buf, size_t size)
+{
+	ssize_t result;
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FileReq file_req = FILE_REQ__INIT;
+	FileReqRead file_req_read = FILE_REQ_READ__INIT;
+	req.type = REQ_TYPE__File;
+	req.file = &file_req;
+	file_req.type = FILE_REQ_TYPE__Read;
+	file_req.read = &file_req_read;
+	file_req_read.size = size;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	assert(req_result->content.len <= size);
+	result = req_result->content.len;
+	memcpy(buf, req_result->content.data, req_result->content.len);
+	if (req_result->error) {
+		fbr_log_e(FBR_A_ "async request error: %s", req_result->error);
+		req_result__free_unpacked(req_result, NULL);
+		return_error(result, FBR_EASYNC);
+	}
+	req_result__free_unpacked(req_result, NULL);
+	return_success(result);
+}
+
+ssize_t fbr_async_fwrite(FBR_P_ struct fbr_async *async, void *buf, size_t size)
+{
+	ssize_t result;
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FileReq file_req = FILE_REQ__INIT;
+	FileReqWrite file_req_write = FILE_REQ_WRITE__INIT;
+	req.type = REQ_TYPE__File;
+	req.file = &file_req;
+	file_req.type = FILE_REQ_TYPE__Write;
+	file_req.write = &file_req_write;
+	file_req_write.content.data = buf;
+	file_req_write.content.len = size;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	result = req_result->retval;
+	if (req_result->error) {
+		fbr_log_e(FBR_A_ "async request error: %s", req_result->error);
+		req_result__free_unpacked(req_result, NULL);
+		return_error(result, FBR_EASYNC);
+	}
+	req_result__free_unpacked(req_result, NULL);
+	return_success(result);
+}
+
+int fbr_async_fseek(FBR_P_ struct fbr_async *async, size_t offset, int whence)
+{
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FileReq file_req = FILE_REQ__INIT;
+	FileReqSeek file_req_seek = FILE_REQ_SEEK__INIT;
+	req.type = REQ_TYPE__File;
+	req.file = &file_req;
+	file_req.type = FILE_REQ_TYPE__Seek;
+	file_req.seek = &file_req_seek;
+	file_req_seek.offset = offset;
+	file_req_seek.whence = whence;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	CHECK_ASYNC_ERROR
+	req_result__free_unpacked(req_result, NULL);
+	return_success(0);
+}
+
+ssize_t fbr_async_ftell(FBR_P_ struct fbr_async *async)
+{
+	ssize_t result;
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FileReq file_req = FILE_REQ__INIT;
+	req.type = REQ_TYPE__File;
+	req.file = &file_req;
+	file_req.type = FILE_REQ_TYPE__Tell;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	CHECK_ASYNC_ERROR
+	result = req_result->retval;
+	req_result__free_unpacked(req_result, NULL);
+	return_success(result);
+}
+
+int fbr_async_ftruncate(FBR_P_ struct fbr_async *async, size_t size)
+{
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FileReq file_req = FILE_REQ__INIT;
+	FileReqTruncate file_req_truncate = FILE_REQ_TRUNCATE__INIT;
+	req.type = REQ_TYPE__File;
+	req.file = &file_req;
+	file_req.type = FILE_REQ_TYPE__Truncate;
+	file_req.truncate = &file_req_truncate;
+	file_req_truncate.size = size;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	CHECK_ASYNC_ERROR
+	req_result__free_unpacked(req_result, NULL);
+	return_success(0);
+}
+
+int fbr_async_debug(FBR_P_ struct fbr_async *async)
+{
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	req.type = REQ_TYPE__Debug;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	CHECK_ASYNC_ERROR
+	req_result__free_unpacked(req_result, NULL);
+	return_success(0);
+}
+
+#undef CHECK_ASYNC_ERROR
