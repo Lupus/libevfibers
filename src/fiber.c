@@ -1633,6 +1633,10 @@ ssize_t fbr_async_fread(FBR_P_ struct fbr_async *async, void *buf, size_t size)
 	req_result = worker_communicate(FBR_A_ async, &req);
 	if (NULL == req_result)
 		return -1;
+	if (!req_result->has_content && req_result->has_eof) {
+		req_result__free_unpacked(req_result, NULL);
+		return_success(0);
+	}
 	assert(req_result->content.len <= size);
 	result = req_result->content.len;
 	memcpy(buf, req_result->content.data, req_result->content.len);
@@ -1707,6 +1711,22 @@ ssize_t fbr_async_ftell(FBR_P_ struct fbr_async *async)
 	result = req_result->retval;
 	req_result__free_unpacked(req_result, NULL);
 	return_success(result);
+}
+
+int fbr_async_fflush(FBR_P_ struct fbr_async *async)
+{
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FileReq file_req = FILE_REQ__INIT;
+	req.type = REQ_TYPE__File;
+	req.file = &file_req;
+	file_req.type = FILE_REQ_TYPE__Flush;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	CHECK_ASYNC_ERROR
+	req_result__free_unpacked(req_result, NULL);
+	return_success(0);
 }
 
 int fbr_async_ftruncate(FBR_P_ struct fbr_async *async, size_t size)

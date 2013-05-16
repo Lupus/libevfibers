@@ -1576,6 +1576,7 @@ ssize_t fbr_async_fwrite(FBR_P_ struct fbr_async *async, void *buf,
 		size_t size);
 int fbr_async_fseek(FBR_P_ struct fbr_async *async, size_t offset, int whence);
 ssize_t fbr_async_ftell(FBR_P_ struct fbr_async *async);
+int fbr_async_fflush(FBR_P_ struct fbr_async *async);
 int fbr_async_ftruncate(FBR_P_ struct fbr_async *async, size_t size);
 int fbr_async_fsync(FBR_P_ struct fbr_async *async);
 int fbr_async_fdatasync(FBR_P_ struct fbr_async *async);
