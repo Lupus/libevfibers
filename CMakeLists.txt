@@ -60,12 +60,22 @@ set_target_properties(evfibers
 	)
 target_link_libraries(evfibers ev vrb ${PROTOBUFC_LIBRARIES})
 
+add_library(evfibers_static STATIC ${SOURCES})
+set_target_properties(evfibers_static  PROPERTIES OUTPUT_NAME evfibers)
+
 aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/worker_src" WORKER_SOURCES)
 add_executable(fiber_worker "${WORKER_SOURCES}")
 target_link_libraries(fiber_worker evfibers)
 
-add_library(evfibers_static STATIC ${SOURCES})
-set_target_properties(evfibers_static  PROPERTIES OUTPUT_NAME evfibers)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+	get_target_property(WORKER_TARGET_PATH fiber_worker LOCATION_Debug)
+	set(WORKER_BIN_PATH "${WORKER_TARGET_PATH}")
+else(CMAKE_BUILD_TYPE STREQUAL "Debug")
+	set(WORKER_BIN_PATH "/usr/bin/fiber_worker")
+endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/include/evfibers_private/config.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/include/evfibers_private/config.h")
 
 subdirs(test)
 

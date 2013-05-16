@@ -98,7 +98,6 @@ static void process_file_req(FileReq *file_req)
 		if (NULL == buf)
 			err(EXIT_FAILURE, "malloc");
 		retval = fread(buf, 1, file_req->read->size, ctx.file);
-		fprintf(stderr, "fread retval: %zd\n", retval);
 		if (retval > 0) {
 			result.has_content = 1;
 			result.content.data = (uint8_t *)buf;
@@ -206,7 +205,6 @@ int main(void)
 	assert(buf);
 	for (;;) {
 		retval = read(STDIN_FILENO, &size, sizeof(size));
-		fprintf(stderr, "read %zd from stdin\n", retval);
 		if (-1 == retval)
 			err(EXIT_FAILURE, "error reading stdin");
 		if (0 == retval)
@@ -218,12 +216,10 @@ int main(void)
 			assert(buf);
 		}
 		retval = read(STDIN_FILENO, buf, size);
-		fprintf(stderr, "read %zd from stdin\n", retval);
 		if (-1 == retval)
 			err(EXIT_FAILURE, "error reading stdin");
 		if (0 == retval)
 			exit(0);
 		process_req(buf, size);
-		fprintf(stderr, "processed a request\n");
 	}
 }

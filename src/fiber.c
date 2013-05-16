@@ -31,6 +31,7 @@
 #include <err.h>
 #include <valgrind/valgrind.h>
 
+#include <evfibers_private/config.h>
 #include <evfibers_private/fiber.h>
 #include <evfibers_private/worker.pb-c.h>
 
@@ -1453,7 +1454,6 @@ static int init_worker(FBR_P_ struct fbr_async *async)
 	int retval;
 	pid_t pid;
 	int pipe_stdin[2], pipe_stdout[2];
-	const char *worker_filename = "./build/fiber_worker";
 
 	retval = pipe(pipe_stdin);
 	if (-1 == retval)
@@ -1478,7 +1478,7 @@ static int init_worker(FBR_P_ struct fbr_async *async)
 		retval = dup2(pipe_stdout[1], 1);
 		if (-1 == retval)
 			err(EXIT_FAILURE, "close");
-		retval = execl(worker_filename, "fiber_worker", NULL);
+		retval = execl(WORKER_BIN_PATH, WORKER_BIN_PATH, NULL);
 		if (-1 == retval)
 			err(EXIT_FAILURE, "execl");
 		__builtin_unreachable();
@@ -1720,6 +1720,38 @@ int fbr_async_ftruncate(FBR_P_ struct fbr_async *async, size_t size)
 	file_req.type = FILE_REQ_TYPE__Truncate;
 	file_req.truncate = &file_req_truncate;
 	file_req_truncate.size = size;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	CHECK_ASYNC_ERROR
+	req_result__free_unpacked(req_result, NULL);
+	return_success(0);
+}
+
+int fbr_async_fsync(FBR_P_ struct fbr_async *async)
+{
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FileReq file_req = FILE_REQ__INIT;
+	req.type = REQ_TYPE__File;
+	req.file = &file_req;
+	file_req.type = FILE_REQ_TYPE__Sync;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	CHECK_ASYNC_ERROR
+	req_result__free_unpacked(req_result, NULL);
+	return_success(0);
+}
+
+int fbr_async_fdatasync(FBR_P_ struct fbr_async *async)
+{
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FileReq file_req = FILE_REQ__INIT;
+	req.type = REQ_TYPE__File;
+	req.file = &file_req;
+	file_req.type = FILE_REQ_TYPE__DataSync;
 	req_result = worker_communicate(FBR_A_ async, &req);
 	if (NULL == req_result)
 		return -1;
