@@ -58,6 +58,14 @@ static void send_reply(ReqResult *result)
 		msg_buf;                                                  \
 		})
 
+#define assert_file do {                            \
+	if (NULL == ctx.file) {                     \
+		result.error = "no file is opened"; \
+		send_reply(&result);                \
+		break;                              \
+	}                                           \
+} while (0)                                         \
+
 static void process_file_req(FileReq *file_req)
 {
 	void *buf;
@@ -80,11 +88,7 @@ static void process_file_req(FileReq *file_req)
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Close:
-		if (NULL == ctx.file) {
-			result.error = "no file is opened";
-			send_reply(&result);
-			break;
-		}
+		assert_file;
 		retval = fclose(ctx.file);
 		if (retval) {
 			result.error = syserror("unable to close the file");
@@ -94,6 +98,7 @@ static void process_file_req(FileReq *file_req)
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Read:
+		assert_file;
 		buf = malloc(file_req->read->size);
 		if (NULL == buf)
 			err(EXIT_FAILURE, "malloc");
@@ -115,6 +120,7 @@ static void process_file_req(FileReq *file_req)
 		free(buf);
 		break;
 	case FILE_REQ_TYPE__Write:
+		assert_file;
 		retval = fwrite(file_req->write->content.data,
 				1, file_req->write->content.len, ctx.file);
 		result.has_retval = 1;
@@ -128,12 +134,14 @@ static void process_file_req(FileReq *file_req)
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Flush:
+		assert_file;
 		retval = fflush(ctx.file);
 		if (retval)
 			result.error = syserror("flush failed");
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Seek:
+		assert_file;
 		retval = fseek(ctx.file, file_req->seek->offset,
 				file_req->seek->whence);
 		if (retval)
@@ -141,24 +149,28 @@ static void process_file_req(FileReq *file_req)
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Sync:
+		assert_file;
 		retval = fsync(fileno(ctx.file));
 		if (-1 == retval)
 			result.error = syserror("sync failed");
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__DataSync:
+		assert_file;
 		retval = fdatasync(fileno(ctx.file));
 		if (-1 == retval)
 			result.error = syserror("datasync failed");
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Truncate:
+		assert_file;
 		retval = ftruncate(fileno(ctx.file), file_req->truncate->size);
 		if (-1 == retval)
 			result.error = syserror("truncate failed");
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Tell:
+		assert_file;
 		retval = ftell(ctx.file);
 		result.has_retval = 1;
 		result.retval = retval;

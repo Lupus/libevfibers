@@ -23,6 +23,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <linux/limits.h>
+#include <libgen.h>
 #include <assert.h>
 #include <errno.h>
 #include <utlist.h>
@@ -1586,6 +1587,7 @@ int fbr_async_fopen(FBR_P_ struct fbr_async *async, const char *filename,
 		const char *mode)
 {
 	char path_buf[PATH_MAX], *path;
+	char *dirc, *basec, *bname, *dname;
 	ReqResult *req_result;
 	Req req = REQ__INIT;
 	FileReq file_req = FILE_REQ__INIT;
@@ -1595,8 +1597,21 @@ int fbr_async_fopen(FBR_P_ struct fbr_async *async, const char *filename,
 	file_req.type = FILE_REQ_TYPE__Open;
 	file_req.open = &file_req_open;
 	path = realpath(filename, path_buf);
-	if (NULL == path)
-		return_error(-1, FBR_ESYSTEM);
+	if (NULL == path) {
+		if (ENOENT != errno)
+			return_error(-1, FBR_ESYSTEM);
+		dirc = strdup(filename);
+		basec = strdup(filename);
+		dname = dirname(dirc);
+		bname = basename(basec);
+		path = realpath(dname, path_buf);
+		if (NULL == path)
+			return_error(-1, FBR_ESYSTEM);
+		strcat(path, "/");
+		strcat(path, bname);
+		free(dirc);
+		free(basec);
+	}
 	file_req_open.name = (char *)path;
 	file_req_open.mode = (char *)mode;
 	req_result = worker_communicate(FBR_A_ async, &req);
