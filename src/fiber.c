@@ -22,6 +22,7 @@
 
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <linux/limits.h>
 #include <assert.h>
 #include <errno.h>
 #include <utlist.h>
@@ -1584,6 +1585,7 @@ static ReqResult *worker_communicate(FBR_P_ struct fbr_async *async, Req* req)
 int fbr_async_fopen(FBR_P_ struct fbr_async *async, const char *filename,
 		const char *mode)
 {
+	char path_buf[PATH_MAX], *path;
 	ReqResult *req_result;
 	Req req = REQ__INIT;
 	FileReq file_req = FILE_REQ__INIT;
@@ -1592,7 +1594,10 @@ int fbr_async_fopen(FBR_P_ struct fbr_async *async, const char *filename,
 	req.file = &file_req;
 	file_req.type = FILE_REQ_TYPE__Open;
 	file_req.open = &file_req_open;
-	file_req_open.name = (char *)filename;
+	path = realpath(filename, path_buf);
+	if (NULL == path)
+		return_error(-1, FBR_ESYSTEM);
+	file_req_open.name = (char *)path;
 	file_req_open.mode = (char *)mode;
 	req_result = worker_communicate(FBR_A_ async, &req);
 	if (NULL == req_result)
