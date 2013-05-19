@@ -64,8 +64,6 @@ struct fbr_fiber {
 	coro_context ctx;
 	char *stack;
 	size_t stack_size;
-	struct fbr_call_info *call_list;
-	size_t call_list_size;
 	struct {
 		struct fbr_ev_base **waiting;
 		int arrived;
@@ -81,6 +79,9 @@ struct fbr_fiber {
 	struct fiber_destructor_tailq destructors;
 	void *user_data;
 	void *key_data[FBR_MAX_KEY];
+	int no_reclaim;
+	int want_reclaim;
+	struct fbr_cond_var reclaim_cond;
 };
 
 TAILQ_HEAD(mutex_tailq, fbr_mutex);

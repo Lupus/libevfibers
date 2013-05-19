@@ -127,6 +127,56 @@ START_TEST(test_reclaim)
 }
 END_TEST
 
+static void no_reclaim_fiber2(FBR_P_ _unused_ void *_arg)
+{
+	fbr_set_noreclaim(FBR_A_ fbr_self(FBR_A));
+	fbr_sleep(FBR_A_ 1.5);
+	fbr_set_reclaim(FBR_A_ fbr_self(FBR_A));
+}
+
+static void no_reclaim_fiber1(FBR_P_ _unused_ void *_arg)
+{
+	fbr_id_t fiber = 0;
+	int retval;
+	ev_tstamp ts1, ts2;
+
+	fbr_sleep(FBR_A_ 0.1);
+
+	fiber = fbr_create(FBR_A_ "no_reclaim_fiber2", no_reclaim_fiber2,
+			NULL, 0);
+	fail_if(0 == fiber);
+
+	retval = fbr_transfer(FBR_A_ fiber);
+	fail_unless(0 == retval);
+
+	ts1 = ev_now(EV_DEFAULT);
+	retval = fbr_reclaim(FBR_A_ fiber);
+	fail_unless(0 == retval);
+	ts2 = ev_now(EV_DEFAULT);
+	fbr_log_e(FBR_A_ "ts2 - ts1 = %f", ts2 - ts1);
+	fail_unless(ts2 - ts1 > 1.5);
+}
+
+START_TEST(test_no_reclaim)
+{
+	struct fbr_context context;
+	fbr_id_t fiber = 0;
+	int retval;
+
+	fbr_init(&context, EV_DEFAULT);
+	fiber = fbr_create(&context, "no_reclaim_fiber", no_reclaim_fiber1,
+			NULL, 0);
+	fail_if(0 == fiber, NULL);
+
+	retval = fbr_transfer(&context, fiber);
+	fail_unless(0 == retval, NULL);
+
+	ev_run(EV_DEFAULT, 0);
+
+	fbr_destroy(&context);
+}
+END_TEST
+
 START_TEST(test_user_data)
 {
 	struct fbr_context context;
@@ -153,6 +203,7 @@ TCase * reclaim_tcase(void)
 {
 	TCase *tc_reclaim = tcase_create ("Reclaim");
 	tcase_add_test(tc_reclaim, test_reclaim);
+	tcase_add_test(tc_reclaim, test_no_reclaim);
 	tcase_add_test(tc_reclaim, test_disown);
 	tcase_add_test(tc_reclaim, test_user_data);
 	return tc_reclaim;

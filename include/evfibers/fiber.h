@@ -884,6 +884,10 @@ fbr_id_t fbr_parent(FBR_P);
  */
 int fbr_reclaim(FBR_P_ fbr_id_t fiber);
 
+int fbr_set_reclaim(FBR_P_ fbr_id_t fiber);
+int fbr_set_noreclaim(FBR_P_ fbr_id_t fiber);
+int fbr_want_reclaim(FBR_P_ fbr_id_t fiber);
+
 /**
  * Tests if given fiber is reclaimed.
  * @param [in] fiber fiber pointer

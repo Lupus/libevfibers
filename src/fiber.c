@@ -421,11 +421,32 @@ static void filter_fiber_stack(FBR_P_ struct fbr_fiber *fiber)
 int fbr_reclaim(FBR_P_ fbr_id_t id)
 {
 	struct fbr_fiber *fiber;
+	struct fbr_mutex mutex;
+	int retval;
 #if 0
 	struct fbr_fiber *f;
 #endif
 
 	unpack_transfer_errno(-1, &fiber, id);
+
+	fbr_mutex_init(FBR_A_ &mutex);
+	fbr_mutex_lock(FBR_A_ &mutex);
+	while (fiber->no_reclaim) {
+		fiber->want_reclaim = 1;
+		assert("Attempt to reclaim self while no_reclaim is set would"
+				" block forever" && fiber != CURRENT_FIBER);
+		if (-1 == fbr_id_unpack(FBR_A_ NULL, id) &&
+				FBR_ENOFIBER == fctx->f_errno)
+			return_success(0);
+		retval = fbr_cond_wait(FBR_A_ &fiber->reclaim_cond, &mutex);
+		assert(0 == retval);
+	}
+	fbr_mutex_unlock(FBR_A_ &mutex);
+	fbr_mutex_destroy(FBR_A_ &mutex);
+
+	if (-1 == fbr_id_unpack(FBR_A_ NULL, id) &&
+			FBR_ENOFIBER == fctx->f_errno)
+		return_success(0);
 
 	fill_trace_info(FBR_A_ &fiber->reclaim_tinfo);
 	reclaim_children(FBR_A_ fiber);
@@ -444,6 +465,33 @@ int fbr_reclaim(FBR_P_ fbr_id_t id)
 		fbr_yield(FBR_A);
 
 	return_success(0);
+}
+
+int fbr_set_reclaim(FBR_P_ fbr_id_t id)
+{
+	struct fbr_fiber *fiber;
+
+	unpack_transfer_errno(-1, &fiber, id);
+	fiber->no_reclaim = 0;
+	fbr_cond_broadcast(FBR_A_ &fiber->reclaim_cond);
+	return_success(0);
+}
+
+int fbr_set_noreclaim(FBR_P_ fbr_id_t id)
+{
+	struct fbr_fiber *fiber;
+
+	unpack_transfer_errno(-1, &fiber, id);
+	fiber->no_reclaim = 1;
+	return_success(0);
+}
+
+int fbr_want_reclaim(FBR_P_ fbr_id_t id)
+{
+	struct fbr_fiber *fiber;
+
+	unpack_transfer_errno(-1, &fiber, id);
+	return_success(fiber->want_reclaim);
 }
 
 int fbr_is_reclaimed(_unused_ FBR_P_ fbr_id_t id)
@@ -986,12 +1034,11 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		fiber->stack_size = stack_size;
 		(void)VALGRIND_STACK_REGISTER(fiber->stack, fiber->stack +
 				stack_size);
+		fbr_cond_init(FBR_A_ &fiber->reclaim_cond);
 		fiber->id = fctx->__p->last_id++;
 	}
 	coro_create(&fiber->ctx, (coro_func)call_wrapper, FBR_A, fiber->stack,
 			fiber->stack_size);
-	fiber->call_list = NULL;
-	fiber->call_list_size = 0;
 	LIST_INIT(&fiber->children);
 	LIST_INIT(&fiber->pool);
 	TAILQ_INIT(&fiber->destructors);
@@ -1000,6 +1047,8 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 	fiber->func_arg = arg;
 	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries.children);
 	fiber->parent = CURRENT_FIBER;
+	fiber->no_reclaim = 0;
+	fiber->want_reclaim = 0;
 	return fbr_id_pack(fiber);
 }
 
