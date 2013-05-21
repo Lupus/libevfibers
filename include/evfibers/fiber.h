@@ -672,6 +672,19 @@ int fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one);
 int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[]);
 
 /**
+ * Event awaiting function with timeout.
+ * @param [in] events array of event base pointers
+ * @param [in] timeout in seconds to wait for the events
+ * @returns the number of events arrived or -1 upon error
+ *
+ * This function is a convenient wrapper around fbr_ev_wait, it just creates a
+ * timer watcher and makes new events array with the timer watcher included.
+ * Timer event is not counted in the number of returned events.
+ * @see fbr_ev_wait
+ */
+int fbr_ev_wait_to(FBR_P_ struct fbr_ev_base *events[], ev_tstamp timeout);
+
+/**
  * Transfer of fiber context to another fiber.
  * @param [in] to callee id
  * @returns 0 on success, -1 on failure with f_errno set.

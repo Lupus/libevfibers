@@ -606,6 +606,45 @@ static void finish_ev(FBR_P_ struct fbr_ev_base *ev)
 	}
 }
 
+static void watcher_timer_dtor(_unused_ FBR_P_ void *_arg)
+{
+	struct ev_timer *w = _arg;
+	ev_timer_stop(fctx->__p->loop, w);
+}
+
+int fbr_ev_wait_to(FBR_P_ struct fbr_ev_base *events[], ev_tstamp timeout)
+{
+	size_t size;
+	ev_timer timer;
+	struct fbr_ev_watcher watcher;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
+	struct fbr_ev_base **new_events;
+	struct fbr_ev_base **ev_pptr;
+	int n_events;
+
+	ev_timer_init(&timer, NULL, timeout, 0.);
+	ev_timer_start(fctx->__p->loop, &timer);
+	fbr_ev_watcher_init(FBR_A_ &watcher,
+			(struct ev_watcher *)&timer);
+	dtor.func = watcher_timer_dtor;
+	dtor.arg = &timer;
+	fbr_destructor_add(FBR_A_ &dtor);
+	size = 0;
+	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++)
+		size++;
+	new_events = alloca((size + 1) * sizeof(void *));
+	memcpy(new_events, events, size * sizeof(void *));
+	new_events[size] = &watcher.ev_base;
+	new_events[size + 1] = NULL;
+	n_events = fbr_ev_wait(FBR_A_ new_events);
+	fbr_destructor_remove(FBR_A_ &dtor, 1 /* Call it? */);
+	if (n_events < 0)
+		return n_events;
+	if (watcher.ev_base.arrived)
+		n_events--;
+	return n_events;
+}
+
 int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
@@ -971,12 +1010,6 @@ int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 	ev_io_stop(fctx->__p->loop, &io);
 
 	return r;
-}
-
-static void watcher_timer_dtor(_unused_ FBR_P_ void *_arg)
-{
-	struct ev_timer *w = _arg;
-	ev_timer_stop(fctx->__p->loop, w);
 }
 
 ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds)

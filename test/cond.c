@@ -178,7 +178,7 @@ static void cond_fiber_waiter(FBR_P_ void *_arg)
 	fbr_mutex_lock(FBR_A_ &arg->mutex1);
 	fbr_mutex_lock(FBR_A_ &arg->mutex2);
 
-	n_events = fbr_ev_wait(FBR_A_ fb_events);
+	n_events = fbr_ev_wait_to(FBR_A_ fb_events, 5.0);
 	fail_unless(n_events > 0);
 	fail_unless(ev_c1.ev_base.arrived);
 	fail_unless(ev_c2.ev_base.arrived);
