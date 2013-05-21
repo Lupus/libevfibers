@@ -71,7 +71,9 @@ static void buffer_writer_fiber(FBR_P_ void *_arg)
 START_TEST(test_buffer)
 {
 	struct fbr_context context;
-	fbr_id_t reader = 0, writer1 = 0, writer2 = 0;
+	fbr_id_t reader = FBR_ID_NULL,
+		 writer1 = FBR_ID_NULL,
+		 writer2 = FBR_ID_NULL;
 	int retval;
 	struct fiber_arg arg;
 
@@ -84,11 +86,11 @@ START_TEST(test_buffer)
 	arg.magic = 0xdeadbeef;
 
 	reader = fbr_create(&context, "reader_buffer", buffer_reader_fiber, &arg, 0);
-	fail_if(0 == reader, NULL);
+	fail_if(fbr_id_isnull(reader), NULL);
 	writer1 = fbr_create(&context, "writer_buffer_1", buffer_writer_fiber, &arg, 0);
-	fail_if(0 == writer1, NULL);
+	fail_if(fbr_id_isnull(writer1), NULL);
 	writer2 = fbr_create(&context, "writer_buffer_2", buffer_writer_fiber, &arg, 0);
-	fail_if(0 == writer2, NULL);
+	fail_if(fbr_id_isnull(writer2), NULL);
 
 
 	retval = fbr_transfer(&context, reader);
@@ -154,7 +156,7 @@ START_TEST(test_buffer_basic)
 	fbr_init(&context, EV_DEFAULT);
 
 	fiber = fbr_create(&context, "basic_buffer", buffer_basic_fiber, NULL, 0);
-	fail_if(0 == fiber, NULL);
+	fail_if(fbr_id_isnull(fiber), NULL);
 
 	retval = fbr_transfer(&context, fiber);
 	fail_unless(0 == retval, NULL);

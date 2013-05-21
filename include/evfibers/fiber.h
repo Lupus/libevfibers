@@ -150,6 +150,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <string.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/queue.h>
@@ -197,12 +198,29 @@
 struct fbr_context_private;
 struct fbr_logger;
 struct fbr_async;
+
+struct fbr_id_s {
+	uint64_t g;
+	void *p;
+} __attribute__((packed));
 /**
  * Fiber ID type.
  *
  * For you it's just an opaque type.
  */
-typedef __uint128_t fbr_id_t;
+typedef struct fbr_id_s fbr_id_t;
+
+extern const fbr_id_t FBR_ID_NULL;
+
+static inline int fbr_id_eq(fbr_id_t a, fbr_id_t b)
+{
+	return a.p == b.p && a.g == b.g;
+}
+
+static inline int fbr_id_isnull(fbr_id_t a)
+{
+	return fbr_id_eq(a, FBR_ID_NULL);
+}
 
 /**
  * Error codes used within the library.

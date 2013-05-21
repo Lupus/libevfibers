@@ -164,12 +164,12 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 START_TEST(test_async)
 {
 	int retval;
-	fbr_id_t fiber = 0;
+	fbr_id_t fiber = FBR_ID_NULL;
 	struct fbr_context context;
 	fbr_init(&context, EV_DEFAULT);
 
 	fiber = fbr_create(&context, "io_fiber", io_fiber, NULL, 0);
-	fail_if(0 == fiber);
+	fail_if(fbr_id_isnull(fiber));
 	retval = fbr_transfer(&context, fiber);
 	fail_unless(0 == retval, NULL);
 

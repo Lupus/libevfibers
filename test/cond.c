@@ -47,7 +47,7 @@ static void cond_fiber1(FBR_P_ void *_arg)
 START_TEST(test_cond_broadcast)
 {
 	struct fbr_context context;
-	fbr_id_t fiber = 0;
+	fbr_id_t fiber = FBR_ID_NULL;
 	struct fbr_mutex mutex;
 	struct fbr_cond_var cond;
 	int flag = 0;
@@ -68,7 +68,7 @@ START_TEST(test_cond_broadcast)
 
 	for(i = 0; i < num_fibers; i++) {
 		fiber = fbr_create(&context, "cond_i", cond_fiber1, &arg, 0);
-		fail_if(0 == fiber);
+		fail_if(fbr_id_isnull(fiber));
 		retval = fbr_transfer(&context, fiber);
 		fail_unless(0 == retval, NULL);
 	}
@@ -91,7 +91,7 @@ END_TEST
 START_TEST(test_cond_signal)
 {
 	struct fbr_context context;
-	fbr_id_t fiber = 0;
+	fbr_id_t fiber = FBR_ID_NULL;
 	struct fbr_mutex mutex;
 	struct fbr_cond_var cond;
 	int flag = 0;
@@ -112,7 +112,7 @@ START_TEST(test_cond_signal)
 
 	for(i = 0; i < num_fibers; i++) {
 		fiber = fbr_create(&context, "cond_i", cond_fiber1, &arg, 0);
-		fail_if(0 == fiber);
+		fail_if(fbr_id_isnull(fiber));
 		retval = fbr_transfer(&context, fiber);
 		fail_unless(0 == retval, NULL);
 	}
@@ -199,7 +199,7 @@ static void cond_fiber_signaller(FBR_P_ void *_arg)
 START_TEST(test_two_conds)
 {
 	struct fbr_context context;
-	fbr_id_t fiber_waiter = 0, fiber_signaller = 0;
+	fbr_id_t fiber_waiter = FBR_ID_NULL, fiber_signaller = FBR_ID_NULL;
 	int retval;
 	struct fiber_arg2 arg;
 
@@ -210,12 +210,12 @@ START_TEST(test_two_conds)
 	fbr_mutex_init(&context, &arg.mutex2);
 
 	fiber_waiter = fbr_create(&context, "cond_waiter", cond_fiber_waiter, &arg, 0);
-	fail_if(0 == fiber_waiter);
+	fail_if(fbr_id_isnull(fiber_waiter));
 	retval = fbr_transfer(&context, fiber_waiter);
 	fail_unless(0 == retval, NULL);
 
 	fiber_signaller = fbr_create(&context, "cond_signaller", cond_fiber_signaller, &arg, 0);
-	fail_if(0 == fiber_signaller);
+	fail_if(fbr_id_isnull(fiber_signaller));
 	retval = fbr_transfer(&context, fiber_signaller);
 	fail_unless(0 == retval, NULL);
 
@@ -285,7 +285,7 @@ START_TEST(test_premature_cond)
 	for(i = 0; i < num_fibers; i++) {
 		fiber = fbr_create(&context, "cond_premature_i",
 				cond_premature_waiter, &arg, 0);
-		fail_if(0 == fiber);
+		fail_if(fbr_id_isnull(fiber));
 		retval = fbr_transfer(&context, fiber);
 		fail_unless(0 == retval, NULL);
 		fibers[i] = fiber;
@@ -296,7 +296,7 @@ START_TEST(test_premature_cond)
 
 	fiber = fbr_create(&context, "cond_premature_reaper",
 			cond_premature_reaper, &arg, 0);
-	fail_if(0 == fiber);
+	fail_if(fbr_id_isnull(fiber));
 	retval = fbr_transfer(&context, fiber);
 	fail_unless(0 == retval, NULL);
 	fibers[i] = fiber;

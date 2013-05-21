@@ -31,15 +31,15 @@ static fbr_id_t test_fiber;
 
 static void reclaim_fiber1(_unused_ FBR_P_ _unused_ void *_arg)
 {
-	fail_unless(0 == fbr_parent(FBR_A), NULL);
+	fail_unless(fbr_id_isnull(fbr_parent(FBR_A)));
 	return;
 }
 
 static void reclaim_fiber2(_unused_ FBR_P_ _unused_ void *_arg)
 {
-	fail_unless(fbr_self(FBR_A) == test_fiber);
+	fail_unless(fbr_id_eq(fbr_self(FBR_A), test_fiber));
 	fbr_disown(FBR_A_ new_parent);
-	fail_unless(new_parent == fbr_parent(FBR_A), NULL);
+	fail_unless(fbr_id_eq(new_parent, fbr_parent(FBR_A)));
 	for (;;)
 		fbr_yield(FBR_A);
 }
@@ -47,7 +47,7 @@ static void reclaim_fiber2(_unused_ FBR_P_ _unused_ void *_arg)
 static void reclaim_fiber3(_unused_ FBR_P_ _unused_ void *_arg)
 {
 	test_fiber = fbr_create(FBR_A_ "test_fiber", reclaim_fiber2, NULL, 0);
-	fail_if(0 == test_fiber, NULL);
+	fail_if(fbr_id_isnull(test_fiber));
 	fbr_yield(FBR_A);
 	return;
 }
@@ -56,21 +56,21 @@ static void reclaim_fiber3(_unused_ FBR_P_ _unused_ void *_arg)
 START_TEST(test_disown)
 {
 	struct fbr_context context;
-	fbr_id_t fiber = 0;
+	fbr_id_t fiber = FBR_ID_NULL;
 	int retval;
 
 	fbr_init(&context, EV_DEFAULT);
 
 	fiber = fbr_create(&context, "reclaim_fiber", reclaim_fiber3, NULL, 0);
-	fail_if(0 == fiber, NULL);
+	fail_if(fbr_id_isnull(fiber), NULL);
 
 	new_parent = fbr_create(&context, "new_fiber", reclaim_fiber1, NULL, 0);
-	fail_if(0 == new_parent, NULL);
+	fail_if(fbr_id_isnull(new_parent), NULL);
 
 	retval = fbr_transfer(&context, fiber);
 	fail_unless(0 == retval, NULL);
 
-	fail_if(0 == test_fiber, NULL);
+	fail_if(fbr_id_isnull(test_fiber), NULL);
 	fail_unless(0 == fbr_is_reclaimed(&context, test_fiber), NULL);
 
 	retval = fbr_transfer(&context, test_fiber);
@@ -95,21 +95,21 @@ END_TEST
 START_TEST(test_reclaim)
 {
 	struct fbr_context context;
-	fbr_id_t fiber = 0;
-	fbr_id_t new_fiber = 0;
+	fbr_id_t fiber = FBR_ID_NULL;
+	fbr_id_t new_fiber = FBR_ID_NULL;
 	int retval;
 
 	fbr_init(&context, EV_DEFAULT);
 	fiber = fbr_create(&context, "reclaim_fiber", reclaim_fiber1, NULL, 0);
-	fail_if(0 == fiber, NULL);
+	fail_if(fbr_id_isnull(fiber), NULL);
 
 	retval = fbr_transfer(&context, fiber);
 	fail_unless(0 == retval, NULL);
 
 	new_fiber = fbr_create(&context, "reclaim_fiber2", reclaim_fiber1, NULL, 0);
-	fail_if(0 == new_fiber, NULL);
+	fail_if(fbr_id_isnull(new_fiber), NULL);
 	/* should be same pointer */
-	fail_unless((uint64_t)fiber == (uint64_t)new_fiber);
+	fail_unless(fiber.p == new_fiber.p);
 	/* old id should be invalid any more to avoid ABA problem */
 	retval = fbr_transfer(&context, fiber);
 	fail_unless(-1 == retval, NULL);
@@ -136,7 +136,7 @@ static void no_reclaim_fiber2(FBR_P_ _unused_ void *_arg)
 
 static void no_reclaim_fiber1(FBR_P_ _unused_ void *_arg)
 {
-	fbr_id_t fiber = 0;
+	fbr_id_t fiber = FBR_ID_NULL;
 	int retval;
 	ev_tstamp ts1, ts2;
 
@@ -144,7 +144,7 @@ static void no_reclaim_fiber1(FBR_P_ _unused_ void *_arg)
 
 	fiber = fbr_create(FBR_A_ "no_reclaim_fiber2", no_reclaim_fiber2,
 			NULL, 0);
-	fail_if(0 == fiber);
+	fail_if(fbr_id_isnull(fiber));
 
 	retval = fbr_transfer(FBR_A_ fiber);
 	fail_unless(0 == retval);
@@ -160,13 +160,13 @@ static void no_reclaim_fiber1(FBR_P_ _unused_ void *_arg)
 START_TEST(test_no_reclaim)
 {
 	struct fbr_context context;
-	fbr_id_t fiber = 0;
+	fbr_id_t fiber = FBR_ID_NULL;
 	int retval;
 
 	fbr_init(&context, EV_DEFAULT);
 	fiber = fbr_create(&context, "no_reclaim_fiber", no_reclaim_fiber1,
 			NULL, 0);
-	fail_if(0 == fiber, NULL);
+	fail_if(fbr_id_isnull(fiber));
 
 	retval = fbr_transfer(&context, fiber);
 	fail_unless(0 == retval, NULL);
@@ -180,14 +180,14 @@ END_TEST
 START_TEST(test_user_data)
 {
 	struct fbr_context context;
-	fbr_id_t fiber = 0;
+	fbr_id_t fiber = FBR_ID_NULL;
 	int retval;
 	void *ptr = (void *)0xdeadbeaf;
 
 	fbr_init(&context, EV_DEFAULT);
 
 	fiber = fbr_create(&context, "null_fiber", NULL, NULL, 0);
-	fail_if(0 == fiber);
+	fail_if(fbr_id_isnull(fiber));
 
 	retval = fbr_set_user_data(&context, fiber, ptr);
 	fail_unless(0 == retval);

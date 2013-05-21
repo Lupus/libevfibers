@@ -68,7 +68,7 @@ static void writer_fiber(FBR_P_ void *_arg)
 START_TEST(test_read_write)
 {
 	struct fbr_context context;
-	fbr_id_t reader = 0, writer = 0;
+	fbr_id_t reader = FBR_ID_NULL, writer = FBR_ID_NULL;
 	int fds[2];
 	int retval;
 
@@ -82,9 +82,9 @@ START_TEST(test_read_write)
 	fbr_init(&context, EV_DEFAULT);
 
 	reader = fbr_create(&context, "reader", reader_fiber, fds + 0, 0);
-	fail_if(0 == reader, NULL);
+	fail_if(fbr_id_isnull(reader), NULL);
 	writer = fbr_create(&context, "writer", writer_fiber, fds + 1, 0);
-	fail_if(0 == reader, NULL);
+	fail_if(fbr_id_isnull(reader), NULL);
 
 	retval = fbr_transfer(&context, reader);
 	fail_unless(0 == retval, NULL);
@@ -103,7 +103,7 @@ END_TEST
 START_TEST(test_read_write_premature)
 {
 	struct fbr_context context;
-	fbr_id_t reader = 0;
+	fbr_id_t reader = FBR_ID_NULL;
 	int fds[2];
 	int retval;
 
@@ -117,7 +117,7 @@ START_TEST(test_read_write_premature)
 	fbr_init(&context, EV_DEFAULT);
 
 	reader = fbr_create(&context, "reader", reader_fiber, fds + 0, 0);
-	fail_if(0 == reader, NULL);
+	fail_if(fbr_id_isnull(reader), NULL);
 
 	retval = fbr_transfer(&context, reader);
 	fail_unless(0 == retval, NULL);
@@ -160,7 +160,7 @@ static void all_writer_fiber(FBR_P_ void *_arg)
 START_TEST(test_read_write_all)
 {
 	struct fbr_context context;
-	fbr_id_t reader = 0, writer = 0;
+	fbr_id_t reader = FBR_ID_NULL, writer = FBR_ID_NULL;
 	int fds[2];
 	int retval;
 
@@ -173,10 +173,12 @@ START_TEST(test_read_write_all)
 
 	fbr_init(&context, EV_DEFAULT);
 
-	reader = fbr_create(&context, "reader_all", all_reader_fiber, fds + 0, 0);
-	fail_if(0 == reader, NULL);
-	writer = fbr_create(&context, "writer_all", all_writer_fiber, fds + 1, 0);
-	fail_if(0 == reader, NULL);
+	reader = fbr_create(&context, "reader_all", all_reader_fiber, fds + 0,
+			0);
+	fail_if(fbr_id_isnull(reader), NULL);
+	writer = fbr_create(&context, "writer_all", all_writer_fiber, fds + 1,
+			0);
+	fail_if(fbr_id_isnull(reader), NULL);
 
 	retval = fbr_transfer(&context, reader);
 	fail_unless(0 == retval, NULL);
@@ -256,7 +258,7 @@ static void line_writer_fiber(FBR_P_ _unused_ void *_arg)
 START_TEST(test_read_line)
 {
 	struct fbr_context context;
-	fbr_id_t reader = 0, writer = 0;
+	fbr_id_t reader = FBR_ID_NULL, writer = FBR_ID_NULL;
 	int fds[2];
 	int retval;
 
@@ -270,9 +272,9 @@ START_TEST(test_read_line)
 	fbr_init(&context, EV_DEFAULT);
 
 	reader = fbr_create(&context, "reader_line", line_reader_fiber, fds + 0, 0);
-	fail_if(0 == reader, NULL);
+	fail_if(fbr_id_isnull(reader), NULL);
 	writer = fbr_create(&context, "writer_line", line_writer_fiber, fds + 1, 0);
-	fail_if(0 == reader, NULL);
+	fail_if(fbr_id_isnull(reader), NULL);
 
 	retval = fbr_transfer(&context, reader);
 	fail_unless(0 == retval, NULL);
@@ -361,15 +363,15 @@ static void udp_writer_fiber(FBR_P_ _unused_ void *_arg)
 START_TEST(test_udp)
 {
 	struct fbr_context context;
-	fbr_id_t reader = 0, writer = 0;
+	fbr_id_t reader = FBR_ID_NULL, writer = FBR_ID_NULL;
 	int retval;
 
 	fbr_init(&context, EV_DEFAULT);
 
 	reader = fbr_create(&context, "reader_udp", udp_reader_fiber, NULL, 0);
-	fail_if(0 == reader, NULL);
+	fail_if(fbr_id_isnull(reader), NULL);
 	writer = fbr_create(&context, "writer_udp", udp_writer_fiber, NULL, 0);
-	fail_if(0 == reader, NULL);
+	fail_if(fbr_id_isnull(reader), NULL);
 
 	retval = fbr_transfer(&context, reader);
 	fail_unless(0 == retval, NULL);

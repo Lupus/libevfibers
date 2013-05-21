@@ -51,7 +51,7 @@ static void test_fiber(FBR_P_ _unused_ void *_arg)
 START_TEST(test_logger)
 {
 	struct fbr_context context;
-	fbr_id_t test = 0;
+	fbr_id_t test = FBR_ID_NULL;
 	int retval;
 
 	fbr_init(&context, EV_DEFAULT);
@@ -60,7 +60,7 @@ START_TEST(test_logger)
 	fbr_enable_backtraces(&context, 1);
 
 	test = fbr_create(&context, "test", test_fiber, NULL, 0);
-	fail_if(0 == test, NULL);
+	fail_if(fbr_id_isnull(test), NULL);
 
 	retval = fbr_transfer(&context, test);
 	fail_unless(0 == retval, NULL);

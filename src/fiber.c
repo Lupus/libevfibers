@@ -81,21 +81,20 @@
 	} while (0)
 
 
+const fbr_id_t FBR_ID_NULL = {0, NULL};
+
 static fbr_id_t fbr_id_pack(struct fbr_fiber *fiber)
 {
-	return ((__uint128_t)fiber->id << 64) | (uint64_t)fiber;
+	return (struct fbr_id_s){.g = fiber->id, .p = fiber};
 }
 
 static int fbr_id_unpack(FBR_P_ struct fbr_fiber **ptr, fbr_id_t id)
 {
-	struct fbr_fiber *fiber;
-	uint64_t f_id;
-	f_id = (uint64_t)(id >> 64);
-	fiber = (struct fbr_fiber *)(uint64_t)id;
-	if (fiber->id != f_id)
+	struct fbr_fiber *fiber = id.p;
+	if (fiber->id != id.g)
 		return_error(-1, FBR_ENOFIBER);
 	if (ptr)
-		*ptr = fiber;
+		*ptr = id.p;
 	return 0;
 }
 
@@ -559,7 +558,7 @@ static enum ev_action_hint prepare_ev(FBR_P_ struct fbr_ev_base *ev)
 		break;
 	case FBR_EV_MUTEX:
 		e_mutex = fbr_ev_upcast(ev, fbr_ev_mutex);
-		if (0 == e_mutex->mutex->locked_by) {
+		if (fbr_id_isnull(e_mutex->mutex->locked_by)) {
 			e_mutex->mutex->locked_by = CURRENT_FIBER_ID;
 			return EV_AH_ARRIVED;
 		}
@@ -571,7 +570,7 @@ static enum ev_action_hint prepare_ev(FBR_P_ struct fbr_ev_base *ev)
 		break;
 	case FBR_EV_COND_VAR:
 		e_cond = fbr_ev_upcast(ev, fbr_ev_cond_var);
-		if (0 == e_cond->mutex->locked_by) {
+		if (fbr_id_isnull(e_cond->mutex->locked_by)) {
 			fbr_destructor_remove(FBR_A_ &ev->item.dtor,
 					0 /* call it */);
 			return EV_AH_EINVAL;
@@ -1055,7 +1054,7 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 int fbr_disown(FBR_P_ fbr_id_t parent_id)
 {
 	struct fbr_fiber *fiber, *parent;
-	if (parent_id > 0)
+	if (!fbr_id_isnull(parent_id))
 		unpack_transfer_errno(-1, &parent, parent_id);
 	else
 		parent = &fctx->__p->root;
@@ -1070,7 +1069,7 @@ fbr_id_t fbr_parent(FBR_P)
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	if (fiber->parent == &fctx->__p->root)
-		return 0;
+		return FBR_ID_NULL;
 	return fbr_id_pack(fiber->parent);
 }
 
@@ -1157,7 +1156,7 @@ void fbr_ev_mutex_init(FBR_P_ struct fbr_ev_mutex *ev,
 
 void fbr_mutex_init(_unused_ FBR_P_ struct fbr_mutex *mutex)
 {
-	mutex->locked_by = 0;
+	mutex->locked_by = FBR_ID_NULL;
 	TAILQ_INIT(&mutex->pending);
 }
 
@@ -1167,12 +1166,12 @@ void fbr_mutex_lock(FBR_P_ struct fbr_mutex *mutex)
 
 	fbr_ev_mutex_init(FBR_A_ &ev, mutex);
 	fbr_ev_wait_one(FBR_A_ &ev.ev_base);
-	assert(mutex->locked_by == CURRENT_FIBER_ID);
+	assert(fbr_id_eq(mutex->locked_by, CURRENT_FIBER_ID));
 }
 
 int fbr_mutex_trylock(FBR_P_ struct fbr_mutex *mutex)
 {
-	if (0 == mutex->locked_by) {
+	if (fbr_id_isnull(mutex->locked_by)) {
 		mutex->locked_by = CURRENT_FIBER_ID;
 		return 1;
 	}
@@ -1185,7 +1184,7 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 	struct fbr_fiber *fiber = NULL;
 
 	if (TAILQ_EMPTY(&mutex->pending)) {
-		mutex->locked_by = 0;
+		mutex->locked_by = FBR_ID_NULL;
 		return;
 	}
 
@@ -1239,7 +1238,7 @@ int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
 {
 	struct fbr_ev_cond_var ev;
 
-	if (0 == mutex->locked_by)
+	if (fbr_id_isnull(mutex->locked_by))
 		return_error(-1, FBR_EINVAL);
 
 	fbr_ev_cond_var_init(FBR_A_ &ev, cond, mutex);
