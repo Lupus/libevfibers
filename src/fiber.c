@@ -1034,6 +1034,32 @@ ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds)
 	return max(0., expected - ev_now(fctx->__p->loop));
 }
 
+static void watcher_async_dtor(_unused_ FBR_P_ void *_arg)
+{
+	struct ev_async *w = _arg;
+	ev_async_stop(fctx->__p->loop, w);
+}
+
+void fbr_cooperate(FBR_P)
+{
+	ev_async async;
+	struct fbr_ev_watcher watcher;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
+
+	ev_async_init(&async, NULL);
+	ev_set_priority(&async, -2);
+	ev_async_start(fctx->__p->loop, &async);
+	dtor.func = watcher_async_dtor;
+	dtor.arg = &async;
+	fbr_destructor_add(FBR_A_ &dtor);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&async);
+	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
+
+	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
+	ev_async_stop(fctx->__p->loop, &async);
+}
+
 static size_t round_up_to_page_size(size_t size)
 {
 	static long sz;

@@ -971,6 +971,17 @@ void *fbr_key_get(FBR_P_ fbr_id_t id, fbr_key_t key);
 void fbr_yield(FBR_P);
 
 /**
+ * Yields execution to other fiber returning the execution at the next event
+ * loop run.
+ *
+ * Useful inside of some busy loop with lots of iterations to play nicely with
+ * other fibers which might start starving on the execution time.
+ * @see fbr_yield
+ * @see fbr_transfer
+ */
+void fbr_cooperate(FBR_P);
+
+/**
  * Allocates memory in current fiber's pool.
  * @param [in] size size of the requested memory block
  * @return allocated memory chunk
