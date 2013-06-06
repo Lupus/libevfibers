@@ -24,5 +24,6 @@
 #define _FBR_CONFIG_PRIVATE_H_
 
 #cmakedefine WORKER_BIN_PATH "${WORKER_BIN_PATH}"
+#cmakedefine WORKER_TARGET_PATH "${WORKER_TARGET_PATH}"
 
 #endif

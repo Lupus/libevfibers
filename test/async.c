@@ -101,6 +101,7 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	size_t offt;
 	struct fbr_async *as;
 	void *buf;
+	signal(SIGPIPE, SIG_IGN);
 	as = fbr_async_create(FBR_A);
 #if 0
 	retval = fbr_async_debug(FBR_A_ as);

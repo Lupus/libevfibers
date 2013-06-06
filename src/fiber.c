@@ -1537,6 +1537,7 @@ static int init_worker(FBR_P_ struct fbr_async *async)
 	int retval;
 	pid_t pid;
 	int pipe_stdin[2], pipe_stdout[2];
+	char *worker_bin;
 
 	retval = pipe(pipe_stdin);
 	if (-1 == retval)
@@ -1561,7 +1562,14 @@ static int init_worker(FBR_P_ struct fbr_async *async)
 		retval = dup2(pipe_stdout[1], 1);
 		if (-1 == retval)
 			err(EXIT_FAILURE, "close");
-		retval = execl(WORKER_BIN_PATH, WORKER_BIN_PATH, NULL);
+		/*
+		retval = execl("/usr/bin/strace", "/usr/bin/strace", "-o",
+				"./worker.strace", WORKER_BIN_PATH, NULL);
+				*/
+		worker_bin = getenv("FBR_WORKER_BIN_PATH");
+		if (NULL == worker_bin)
+			worker_bin = WORKER_BIN_PATH;
+		retval = execl(worker_bin, worker_bin, NULL);
 		if (-1 == retval)
 			err(EXIT_FAILURE, "execl");
 		__builtin_unreachable();
