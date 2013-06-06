@@ -29,6 +29,8 @@
 #include <evfibers_private/fiber.h>
 #include <evfibers_private/worker.pb-c.h>
 
+//#define WORKER_DEBUG
+
 struct {
 	FILE *file;
 } ctx;
@@ -66,6 +68,13 @@ static void send_reply(ReqResult *result)
 	}                                           \
 } while (0)                                         \
 
+#ifdef WORKER_DEBUG
+#define worker_dump(format, ...) \
+	fprintf(stderr, "WORKER DUMP: " format "\n", ##__VA_ARGS__)
+#else
+#define worker_dump(format, ...) ((void)0)
+#endif
+
 static void process_file_req(FileReq *file_req)
 {
 	void *buf;
@@ -85,6 +94,7 @@ static void process_file_req(FileReq *file_req)
 			send_reply(&result);
 			break;
 		}
+		worker_dump("opened file %s", file_req->open->name);
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Close:
@@ -95,6 +105,8 @@ static void process_file_req(FileReq *file_req)
 			send_reply(&result);
 			break;
 		}
+		ctx.file = NULL;
+		worker_dump("closed file");
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Read:
@@ -102,13 +114,12 @@ static void process_file_req(FileReq *file_req)
 		buf = malloc(file_req->read->size);
 		if (NULL == buf)
 			err(EXIT_FAILURE, "malloc");
-		retval = fread(buf, 1, file_req->read->size, ctx.file);
-		if (retval > 0) {
+		retval = fread(buf, file_req->read->size, 1, ctx.file);
+		if (1 == retval) {
 			result.has_content = 1;
 			result.content.data = (uint8_t *)buf;
-			result.content.len = retval;
-		}
-		if (retval < (ssize_t)file_req->read->size) {
+			result.content.len = file_req->read->size;
+		} else if (retval < 1) {
 			if (feof(ctx.file)) {
 				result.has_eof = 1;
 				result.eof = 1;
@@ -116,21 +127,25 @@ static void process_file_req(FileReq *file_req)
 				result.error = strerror(errno);
 			}
 		}
+		worker_dump("read %zd blocks of size %zd, eof: %d,"
+				" error: %s)", retval, file_req->read->size,
+				result.eof, result.error);
 		send_reply(&result);
 		free(buf);
 		break;
 	case FILE_REQ_TYPE__Write:
 		assert_file;
 		retval = fwrite(file_req->write->content.data,
-				1, file_req->write->content.len, ctx.file);
-		result.has_retval = 1;
-		result.retval = retval;
-		if (retval < (ssize_t)file_req->write->content.len) {
+				file_req->write->content.len, 1, ctx.file);
+		if (1 != retval) {
 			if (ferror(ctx.file))
 				result.error = syserror("write failed");
 			else
 				result.error = "write failed";
 		}
+		worker_dump("wrote %zd blocks of size %zd, error: %s",
+				retval, file_req->write->content.len,
+				result.error);
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Flush:
@@ -138,6 +153,7 @@ static void process_file_req(FileReq *file_req)
 		retval = fflush(ctx.file);
 		if (retval)
 			result.error = syserror("flush failed");
+		worker_dump("fflushed the stream");
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Seek:
@@ -146,6 +162,9 @@ static void process_file_req(FileReq *file_req)
 				file_req->seek->whence);
 		if (retval)
 			result.error = syserror("seek failed");
+		worker_dump("seeked offset %zd whence %d",
+				file_req->seek->offset,
+				file_req->seek->whence);
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Sync:
@@ -153,6 +172,7 @@ static void process_file_req(FileReq *file_req)
 		retval = fsync(fileno(ctx.file));
 		if (-1 == retval)
 			result.error = syserror("sync failed");
+		worker_dump("synced the stream");
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__DataSync:
@@ -160,6 +180,7 @@ static void process_file_req(FileReq *file_req)
 		retval = fdatasync(fileno(ctx.file));
 		if (-1 == retval)
 			result.error = syserror("datasync failed");
+		worker_dump("datasynced the stream");
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Truncate:
@@ -167,6 +188,7 @@ static void process_file_req(FileReq *file_req)
 		retval = ftruncate(fileno(ctx.file), file_req->truncate->size);
 		if (-1 == retval)
 			result.error = syserror("truncate failed");
+		worker_dump("truncated to size %zd", file_req->truncate->size);
 		send_reply(&result);
 		break;
 	case FILE_REQ_TYPE__Tell:
@@ -176,6 +198,7 @@ static void process_file_req(FileReq *file_req)
 		result.retval = retval;
 		if (-1 == retval)
 			result.error = syserror("tell failed");
+		worker_dump("ftelled (pos: %zd)", retval);
 		send_reply(&result);
 		break;
 	}
@@ -212,6 +235,9 @@ int main(void)
 	ssize_t retval;
 	void *buf;
 	size_t buf_size;
+	signal(SIGPIPE, SIG_IGN);
+	signal(SIGINT, SIG_IGN);
+	signal(SIGHUP, SIG_IGN);
 	buf_size = BUFSIZ;
 	buf = malloc(buf_size);
 	assert(buf);
@@ -219,8 +245,11 @@ int main(void)
 		retval = read(STDIN_FILENO, &size, sizeof(size));
 		if (-1 == retval)
 			err(EXIT_FAILURE, "error reading stdin");
-		if (0 == retval)
+		if (0 == retval) {
+			if (ctx.file)
+				fclose(ctx.file);
 			exit(0);
+		}
 		if (size > buf_size) {
 			while (size > buf_size)
 				buf_size *= 2;

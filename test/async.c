@@ -115,7 +115,7 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 
 	/* Small message test */
 	retval = fbr_async_fwrite(FBR_A_ as, small_msg, sizeof(small_msg));
-	fail_unless(sizeof(small_msg) == retval);
+	fail_unless(1 == retval);
 
 	retval = fbr_async_fsync(FBR_A_ as);
 	fail_unless(0 == retval);
@@ -127,7 +127,7 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	fail_if(NULL == buf);
 
 	retval = fbr_async_fread(FBR_A_ as, buf, sizeof(small_msg));
-	fail_unless(sizeof(small_msg) == retval);
+	fail_unless(1 == retval);
 	fail_unless(!memcmp(small_msg, buf, sizeof(small_msg)));
 
 	free(buf);
@@ -140,7 +140,7 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	offt = retval;
 
 	retval = fbr_async_fwrite(FBR_A_ as, big_msg, sizeof(big_msg));
-	fail_unless(sizeof(big_msg) == retval);
+	fail_unless(1 == retval);
 
 	retval = fbr_async_fdatasync(FBR_A_ as);
 	fail_unless(0 == retval);
@@ -152,7 +152,7 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	fail_if(NULL == buf);
 
 	retval = fbr_async_fread(FBR_A_ as, buf, sizeof(big_msg));
-	fail_unless(sizeof(big_msg) == retval);
+	fail_unless(1 == retval);
 	fail_unless(!memcmp(big_msg, buf, sizeof(big_msg)));
 
 	free(buf);

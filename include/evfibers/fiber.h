@@ -1488,6 +1488,9 @@ size_t fbr_buffer_bytes(FBR_P_ struct fbr_buffer *buffer);
  */
 size_t fbr_buffer_free_bytes(FBR_P_ struct fbr_buffer *buffer);
 
+size_t fbr_buffer_size(FBR_P_ struct fbr_buffer *buffer);
+int fbr_buffer_resize(FBR_P_ struct fbr_buffer *buffer, size_t size);
+
 /**
  * Helper function, returning read conditional variable.
  * @param [in] buffer a pointer to fbr_buffer
@@ -1617,8 +1620,8 @@ void fbr_async_destroy(FBR_P_ struct fbr_async *async);
 int fbr_async_fopen(FBR_P_ struct fbr_async *async, const char *filename,
 		const char *mode);
 int fbr_async_fclose(FBR_P_ struct fbr_async *async);
-ssize_t fbr_async_fread(FBR_P_ struct fbr_async *async, void *buf, size_t size);
-ssize_t fbr_async_fwrite(FBR_P_ struct fbr_async *async, void *buf,
+int fbr_async_fread(FBR_P_ struct fbr_async *async, void *buf, size_t size);
+int fbr_async_fwrite(FBR_P_ struct fbr_async *async, void *buf,
 		size_t size);
 int fbr_async_fseek(FBR_P_ struct fbr_async *async, size_t offset, int whence);
 ssize_t fbr_async_ftell(FBR_P_ struct fbr_async *async);
