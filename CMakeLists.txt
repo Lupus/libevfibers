@@ -89,6 +89,7 @@ install(TARGETS evfibers_static
 	LIBRARY DESTINATION lib
 	ARCHIVE DESTINATION lib
 	)
+install(TARGETS fiber_worker RUNTIME DESTINATION bin)
 file(GLOB DEV_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/include/evfibers/*.h")
 install(FILES ${DEV_HEADERS}
 	DESTINATION "include/evfibers")
