@@ -1075,6 +1075,23 @@ static size_t round_up_to_page_size(size_t size)
 	return size + sz - remainder;
 }
 
+fbr_id_t fbr_restart(FBR_P_ fbr_id_t id)
+{
+	struct fbr_fiber *fiber;
+	const char *name;
+	fbr_fiber_func_t func;
+	void *arg;
+	size_t stack_size;
+
+	unpack_transfer_errno(FBR_ID_NULL, &fiber, id);
+	name = fiber->name;
+	func = fiber->func;
+	arg = fiber->func_arg;
+	stack_size = fiber->stack_size;
+	fbr_reclaim(FBR_A_ id);
+	return fbr_create(FBR_A_ name, func, arg, stack_size);
+}
+
 fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		size_t stack_size)
 {
