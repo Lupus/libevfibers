@@ -711,9 +711,12 @@ int fbr_transfer(FBR_P_ fbr_id_t to)
 
 void fbr_yield(FBR_P)
 {
-	struct fbr_fiber *callee = fctx->__p->sp->fiber;
-	struct fbr_fiber *caller = (--fctx->__p->sp)->fiber;
-
+	struct fbr_fiber *callee;
+	struct fbr_fiber *caller;
+	assert("Attemp to yield in a root fiber" &&
+			fctx->__p->sp->fiber != &fctx->__p->root);
+	callee = fctx->__p->sp->fiber;
+	caller = (--fctx->__p->sp)->fiber;
 	coro_transfer(&callee->ctx, &caller->ctx);
 }
 
@@ -1612,7 +1615,7 @@ static int init_worker(FBR_P_ struct fbr_async *async)
 		retval = execl(worker_bin, worker_bin, NULL);
 		if (-1 == retval)
 			err(EXIT_FAILURE, "execl");
-		__builtin_unreachable();
+		abort();
 	}
 	retval = close(pipe_stdin[0]);
 	if (-1 == retval)
