@@ -53,7 +53,7 @@
 
 <p>An example is modeled after <a href="http://www.gnu.org/software/pth/pth-manual.html#example">this one</a> and can be found in <a href="https://github.com/Lupus/libevfibers/blob/master/examples/useless_time_server.c">the source tree</a>.</p>
 
-<p>The following example is a useless server which does nothing more than listening on TCP port 12345 and displaying the current time to the socket when a connection was established. It creates an acceptor fiber, which accepts incoming connections and creates connection handler fiber, passing client socket descriptor to it. Additionally, to see more multithreading, a useless ticker thread runs simultaneously which outputs the current time to stderr every 5 seconds.</p>
+<p>The following example is a simple TCP server that listens on the 12345 port for incoming connections and writes the current time to the client socket if a connection was established. There are fibers of two types: acceptors and handlers. The former accept all incoming connections and create connection handler fibers, the latter process all the communication with connected clients. Additionally, to see more concurrency, a useless ticker fiber runs simultaneously and outputs the current time to the stderr every 5 seconds.</p>
 
 <h1>
 <a name="recent-changes" class="anchor" href="#recent-changes"><span class="octicon octicon-link"></span></a>Recent changes</h1>
