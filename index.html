@@ -34,19 +34,19 @@
           <h1>
 <a name="about-libevfibers" class="anchor" href="#about-libevfibers"><span class="octicon octicon-link"></span></a>About libevfibers</h1>
 
-<p>Small C fiber library that uses libev based event loop and libcoro based coroutine context switching. As libcoro alone is barely enough to do something useful, this project aims at building a complete fiber api around it while leveraging libev's high performance and flexibility.</p>
+<p>A small C fiber library that uses libev based event loop and libcoro based coroutine context switching. As libcoro alone is barely enough to do something useful, this project aims at building a complete fiber API around it while leveraging high performance and flexibility of libev.</p>
 
-<p>API documentation for current master along with general description is located <a href="http://lupus.github.io/libevfibers/docs/current/index.html">here</a>.</p>
+<p>The API documentation for current master along with general description is located <a href="http://lupus.github.io/libevfibers/docs/current/index.html">here</a>.</p>
 
 <h1>
 <a name="what-fibers-are-you-speaking-about" class="anchor" href="#what-fibers-are-you-speaking-about"><span class="octicon octicon-link"></span></a>What fibers are you speaking about?</h1>
 
-<p>A fiber is an independent execution context of your program. Unlike classic approach, when you have your `main' being the only execution context, you can have as many of them as you like and switch between them at will. Wait, but that sounds like threads! Well, yes, it really does. Fibers are like threads, but implemented completely within user space without any kernel-level scheduling mechanisms. Main difference between fibers and threads is the scheduling model. Fibers use cooperative multitasking while threads exercise preemptive multitasking. The former requires some cooperation between fibers: if one takes all of the CPU time running in a busy loop (or blocks on e.g. read()) others will not have a chance to run. On the other hand it has some advantages:</p>
+<p>A fiber is an independent execution context of your program. Unlike classic approach, when you have your `main' being the only execution context, you can have as many of them as you like and switch between them at will. Wait, but that sounds like threads! Well, yes, it really does. Fibers are really similar to threads, but are executed completely in the userspace without any kernel-level scheduling and context switching mechanisms. The main difference between fibers and threads is the scheduling model. Fibers use cooperative multitasking while threads exercise preemptive multitasking. The fibers model requires some cooperation between fibers: if one takes all of the CPU time running in a busy loop (or blocks on e.g. read()) others will not have a chance to run. On the other hand it has some advantages:</p>
 
 <ul>
-<li>user space context switching is cheap (just save/restore all registers and adjust couple of variables in the scheduler)</li>
-<li>less synchronization is required --- as you have a guarantee that no other piece of code will be executed concurrently, you don't have to bother with mutex locks around each shared object</li>
-</ul><p>Fibers also may be viewed as an enhancement of event-loop driven applications as they enable you to put all business logic in one function instead of splitting it in several callbacks (without extra processing overhead). For example, if you implement a network protocol, you can just create a fiber per each client tcp connection and use fbr_read_all/fbr_write_all to fully read and write protocol messages. You don't have to bother about low-level details of how much data was read during this syscall and how much is left. Your fiber will proceed when the required amount of data is read (or an error occurred). This greatly simplifies the protocol processing logic.</p>
+<li>user space context switching is cheap (just save/restore all registers and adjust a couple of variables in the scheduler)</li>
+<li>less synchronization is required --- as you have a guarantee that no other fiber is executed concurrently, you don't have to bother about inter-fiber synchronization (except the cases where you want to guard some code block explicitly, i.e. writing to a shared socket).</li>
+</ul><p>Fibers also may be considered as an enhancement of event-loop driven applications as they enable you to put all your business logic in one function instead of splitting it in several callbacks (without an extra processing overhead). For example, if you implement a network protocol, you can just create a fiber per each client connection and use fbr_read_all/fbr_write_all to fully read and write protocol messages. Also you don't have to bother about low-level details of how much data was processed during syscalls and how much left. Your fiber will proceed when the required amount of data is read (or an error occurred). This greatly simplifies the protocol processing logic.</p>
 
 <h1>
 <a name="basic-usage-example" class="anchor" href="#basic-usage-example"><span class="octicon octicon-link"></span></a>Basic usage example</h1>
