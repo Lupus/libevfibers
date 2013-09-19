@@ -778,7 +778,10 @@ int fbr_connect(FBR_P_ int sockfd, const struct sockaddr *addr,
 
 	len = sizeof(r);
 	if (-1 == getsockopt(sockfd, SOL_SOCKET, SO_ERROR, (void *)&r, &len)) {
-	    r = -1;
+		r = -1;
+	} else if ( 0 != r ) {
+		errno = r;
+		r = -1;
 	}
 
 	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
