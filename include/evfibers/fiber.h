@@ -1070,6 +1070,24 @@ void fbr_free_nd(FBR_P_ void *ptr);
 int fbr_fd_nonblock(FBR_P_ int fd);
 
 /**
+ * Fiber friendly connect wrapper.
+ * @param [in] sockfd - socket file descriptor
+ * @param [in] addr - pointer to struct sockaddr, containing connection details
+ * @param [in] length of struct sockaddr
+ * @return zero on success, -1 in case of error and errno set
+ *
+ * Connect wrapper, that connects the socket referred to by the file
+ * descriptor sockfd to the address specified by addr.
+ * starting at buf. Calling fiber will be blocked until sockfd is connected or
+ * error is occured
+ *
+ * Possible errno values are described in connect man page. The only special case
+ * is EINPROGRESS which is handled internally.
+ */
+int fbr_connect(FBR_P_ int sockfd, const struct sockaddr *addr,
+                   socklen_t addrlen);
+
+/**
  * Fiber friendly libc read wrapper.
  * @param [in] fd file descriptor to read from
  * @param [in] buf pointer to some user-allocated buffer

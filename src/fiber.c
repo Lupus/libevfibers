@@ -757,6 +757,35 @@ static void watcher_io_dtor(_unused_ FBR_P_ void *_arg)
 	ev_io_stop(fctx->__p->loop, w);
 }
 
+int fbr_connect(FBR_P_ int sockfd, const struct sockaddr *addr,
+                   socklen_t addrlen) {
+	ev_io io;
+	struct fbr_ev_watcher watcher;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
+	int r;
+	socklen_t len;
+	r = connect(sockfd, addr, addrlen);
+	if ((-1 == r) && (EINPROGRESS != errno))
+	    return -1;
+
+	ev_io_init(&io, NULL, sockfd, EV_WRITE);
+	ev_io_start(fctx->__p->loop, &io);
+	dtor.func = watcher_io_dtor;
+	dtor.arg = &io;
+	fbr_destructor_add(FBR_A_ &dtor);
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
+	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
+
+	len = sizeof(r);
+	if (-1 == getsockopt(sockfd, SOL_SOCKET, SO_ERROR, (void *)&r, &len)) {
+	    r = -1;
+	}
+
+	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
+	ev_io_stop(fctx->__p->loop, &io);
+	return r;
+}
+
 ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count)
 {
 	ssize_t r;
