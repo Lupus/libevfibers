@@ -354,6 +354,76 @@ static void udp_writer_fiber(FBR_P_ _unused_ void *_arg)
 	}
 	close(fd);
 }
+
+static void tcp_reader_fiber(FBR_P_ _unused_ void *_arg)
+{
+	int fd, client_fd;
+	char *buf = fbr_alloc(FBR_A_ buf_size);
+	size_t retval;
+	struct sockaddr_in addr, peer_addr;
+	socklen_t addrlen;
+
+	addr.sin_family = AF_INET;
+	retval = inet_aton(ADDRESS, &addr.sin_addr);
+	fail_if(0 == retval);
+	addr.sin_port = PORT;
+
+	fd = socket(AF_INET, SOCK_STREAM, 0);
+	fail_if(fd < 0);
+
+	retval = fbr_fd_nonblock(FBR_A_ fd);
+	fail_unless(0 == retval);
+
+	retval = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (int[]){1}, sizeof(int));
+	fail_unless(0 == retval);
+
+	retval = bind(fd, (struct sockaddr *) &addr, sizeof(addr));
+	fail_unless(0 == retval);
+
+	retval = listen(fd, 10);
+	fail_unless(0 == retval);
+
+	addrlen = sizeof(peer_addr);
+	client_fd = fbr_accept(FBR_A_ fd, (struct sockaddr *) &peer_addr, &addrlen);
+	fail_if(0 > client_fd);
+
+	retval = fbr_fd_nonblock(FBR_A_ client_fd);
+	fail_unless(0 == retval);
+
+	retval = fbr_read_all(FBR_A_ client_fd, buf, buf_size);
+	fail_unless(retval == buf_size);
+
+	close(client_fd);
+	close(fd);
+}
+
+static void tcp_writer_fiber(FBR_P_ _unused_ void *_arg)
+{
+	int fd;
+	char *buf = fbr_calloc(FBR_A_ buf_size, 1);
+	size_t retval;
+	struct sockaddr_in addr;
+	socklen_t addrlen = sizeof(addr);
+
+	addr.sin_family = AF_INET;
+	retval = inet_aton(ADDRESS, &addr.sin_addr);
+	fail_if(0 == retval);
+	addr.sin_port = PORT;
+
+	fd = socket(AF_INET, SOCK_STREAM, 0);
+	fail_if(fd < 0);
+
+	retval = fbr_fd_nonblock(FBR_A_ fd);
+	fail_unless(0 == retval);
+
+	retval = fbr_connect(FBR_A_ fd, (struct sockaddr *) &addr, addrlen);
+	fail_unless(0 == retval);
+
+	retval = fbr_write_all(FBR_A_ fd, buf, buf_size);
+	fail_unless(retval == buf_size);
+
+	close(fd);
+}
 #undef PORT
 #undef ADDRESS
 #undef buf_size
@@ -387,6 +457,34 @@ START_TEST(test_udp)
 }
 END_TEST
 
+START_TEST(test_tcp)
+{
+	struct fbr_context context;
+	fbr_id_t reader = FBR_ID_NULL, writer = FBR_ID_NULL;
+	int retval;
+
+	fbr_init(&context, EV_DEFAULT);
+
+	reader = fbr_create(&context, "reader_tcp", tcp_reader_fiber, NULL, 0);
+	fail_if(fbr_id_isnull(reader), NULL);
+	writer = fbr_create(&context, "writer_tcp", tcp_writer_fiber, NULL, 0);
+	fail_if(fbr_id_isnull(reader), NULL);
+
+	retval = fbr_transfer(&context, reader);
+	fail_unless(0 == retval, NULL);
+	retval = fbr_transfer(&context, writer);
+	fail_unless(0 == retval, NULL);
+
+	ev_run(EV_DEFAULT, 0);
+
+	fail_unless(fbr_is_reclaimed(&context, reader));
+	fail_unless(fbr_is_reclaimed(&context, writer));
+
+	fbr_destroy(&context);
+}
+END_TEST
+
+
 TCase * io_tcase(void)
 {
 	TCase *tc_io = tcase_create ("IO");
@@ -394,6 +492,7 @@ TCase * io_tcase(void)
 	tcase_add_test(tc_io, test_read_write_all);
 	tcase_add_test(tc_io, test_read_line);
 	tcase_add_test(tc_io, test_udp);
+	tcase_add_test(tc_io, test_tcp);
 	tcase_add_test(tc_io, test_read_write_premature);
 	return tc_io;
 }
