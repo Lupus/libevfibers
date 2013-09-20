@@ -81,22 +81,32 @@
 	} while (0)
 
 
-const fbr_id_t FBR_ID_NULL = {0, NULL};
+const fbr_id_t FBR_ID_NULL = 0;
 static const char default_buffer_pattern[] = "/dev/shm/fbr_buffer.XXXXXXXXX";
 
 static fbr_id_t fbr_id_pack(struct fbr_fiber *fiber)
 {
-	return (struct fbr_id_s){.g = fiber->id, .p = fiber};
+	return ((uint64_t)fiber->id << 32) + fiber->fibers_index;
 }
 
 static int fbr_id_unpack(FBR_P_ struct fbr_fiber **ptr, fbr_id_t id)
 {
-	struct fbr_fiber *fiber = id.p;
-	if (fiber->id != id.g)
+	uint32_t fiber_index = 0xFFFFFFFF & id;
+	uint32_t g = id >> 32;
+	struct fbr_fiber *fiber;
+	if (fiber_index >= fctx->__p->ids.new_id)
+		return_error(-1, FBR_EINVAL);
+	fiber = kv_A(fctx->__p->ids.fibers, fiber_index);
+	if (fiber->id != g)
 		return_error(-1, FBR_ENOFIBER);
 	if (ptr)
-		*ptr = id.p;
+		*ptr = fiber;
 	return 0;
+}
+
+static void noop_cb(_unused_ EV_P_ _unused_ ev_async *w, _unused_ int revents)
+{
+	/* Do nothing here */
 }
 
 static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
@@ -105,6 +115,11 @@ static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 	struct fbr_id_tailq_i *item;
 	fctx = (struct fbr_context *)w->data;
 	int retval;
+
+	if (EV_CUSTOM == revents)
+		/* This is a noop event to wake up the event loop from
+		 * EVRUN_ONCE. Ignore it. */
+		return;
 
 	ENSURE_ROOT_FIBER;
 
@@ -189,6 +204,13 @@ static void stdio_logger(FBR_P_ struct fbr_logger *logger,
 	fprintf(stream, "\n");
 }
 
+static inline void register_fiber(FBR_P_ struct fbr_fiber *fiber)
+{
+	uint32_t idx = fctx->__p->ids.new_id++;
+	fiber->fibers_index = idx;
+	kv_a(struct fbr_fiber *, fctx->__p->ids.fibers, idx) = fiber;
+}
+
 void fbr_init(FBR_P_ struct ev_loop *loop)
 {
 	struct fbr_fiber *root;
@@ -202,12 +224,17 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	TAILQ_INIT(&fctx->__p->root.destructors);
 	TAILQ_INIT(&fctx->__p->pending_fibers);
 	SLIST_INIT(&fctx->__p->free_workers);
+	kv_init(fctx->__p->ids.fibers);
+	kv_resize(struct fbr_fiber *, fctx->__p->ids.fibers, 128);
+	fctx->__p->ids.new_id = 0;
+	kv_init(fctx->__p->foreign.transfer_pending);
 
 	root = &fctx->__p->root;
 	strncpy(root->name, "root", FBR_MAX_FIBER_NAME);
-	fctx->__p->last_id = 0;
+	fctx->__p->last_id = 1;
 	root->id = fctx->__p->last_id++;
 	coro_create(&root->ctx, NULL, NULL, NULL, 0);
+	register_fiber(FBR_A_ root);
 
 	logger = allocate_in_fiber(FBR_A_ sizeof(struct fbr_logger), root);
 	logger->logv = stdio_logger;
@@ -230,6 +257,13 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 		fctx->__p->buffer_file_pattern = buffer_pattern;
 	else
 		fctx->__p->buffer_file_pattern = default_buffer_pattern;
+	/* FIXME: Make these work
+	ev_async_start(fctx->__p->loop, &fctx->__p->pending_async);
+	ev_unref(fctx->__p->loop);
+	*/
+	ev_async_init(&fctx->__p->loop_wakeup_async, noop_cb);
+	ev_async_start(fctx->__p->loop, &fctx->__p->loop_wakeup_async);
+	ev_unref(fctx->__p->loop);
 }
 
 const char *fbr_strerror(_unused_ FBR_P_ enum fbr_error_code code)
@@ -253,6 +287,8 @@ const char *fbr_strerror(_unused_ FBR_P_ enum fbr_error_code code)
 			return "Protobuf unpacking error";
 		case FBR_EBUFFERNOSPACE:
 			return "Not enough space in the buffer";
+		case FBR_ENOTFOREIGN:
+			return "Supplied fiber is not a foreign one";
 	}
 	return "Unknown error";
 }
@@ -321,6 +357,13 @@ void fbr_destroy(FBR_P)
 	struct fbr_fiber *fiber, *x;
 	struct mem_pool *p, *x2;
 
+	ev_ref(fctx->__p->loop);
+	ev_async_start(fctx->__p->loop, &fctx->__p->loop_wakeup_async);
+	/* FIXME: Make this lines work
+	ev_ref(fctx->__p->loop);
+	ev_async_stop(fctx->__p->loop, &fctx->__p->pending_async);
+	*/
+
 	reclaim_children(FBR_A_ &fctx->__p->root);
 
 	LIST_FOREACH_SAFE(p, &fctx->__p->root.pool, entries, x2) {
@@ -333,6 +376,7 @@ void fbr_destroy(FBR_P)
 		free(fiber);
 	}
 
+	kv_destroy(fctx->__p->foreign.transfer_pending);
 	free(fctx->__p);
 }
 
@@ -655,12 +699,11 @@ int fbr_ev_wait_to(FBR_P_ struct fbr_ev_base *events[], ev_tstamp timeout)
 	return n_events;
 }
 
-int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
+int fbr_ev_wait_prepare(FBR_P_ struct fbr_ev_base *events[])
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
 	struct fbr_ev_base **ev_pptr;
 	enum ev_action_hint hint;
-	int num = 0;
 
 	fiber->ev.arrived = 0;
 	fiber->ev.waiting = events;
@@ -678,9 +721,13 @@ int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 			return_error(-1, FBR_EINVAL);
 		}
 	}
+	return_success(0);
+}
 
-	while (0 == fiber->ev.arrived)
-		fbr_yield(FBR_A);
+int fbr_ev_wait_finish(FBR_P_ struct fbr_ev_base *events[])
+{
+	struct fbr_ev_base **ev_pptr;
+	int num = 0;
 
 	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++) {
 		if ((*ev_pptr)->arrived) {
@@ -690,6 +737,19 @@ int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 			cancel_ev(FBR_A_ *ev_pptr);
 	}
 	return_success(num);
+}
+
+int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
+{
+	int retval;
+	struct fbr_fiber *fiber = CURRENT_FIBER;
+
+	retval = fbr_ev_wait_prepare(FBR_A_ events);
+	if (retval)
+		return retval;
+	while (0 == fiber->ev.arrived)
+		fbr_yield(FBR_A);
+	return fbr_ev_wait_finish(FBR_A_ events);
 }
 
 int fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one)
@@ -709,6 +769,21 @@ int fbr_transfer(FBR_P_ fbr_id_t to)
 
 	unpack_transfer_errno(-1, &callee, to);
 
+	if (callee->foreign.enabled) {
+		callee->foreign.flags |= FBR_FF_TRANSFER_PENDING;
+		kv_push(fbr_id_t, fctx->__p->foreign.transfer_pending, to);
+		if (0 == ev_pending_count(fctx->__p->loop)) {
+			/* Wake up the event loop as it's probably ran in
+			 * EVRUN_ONCE mode from scripting language so as to
+			 * make it quickly return as long as event arrived and
+			 * make fbr_transfer do it's job timely.
+			 */
+			ev_async_send(fctx->__p->loop,
+					&fctx->__p->loop_wakeup_async);
+		}
+		return_success(0);
+	}
+
 	fctx->__p->sp++;
 
 	fctx->__p->sp->fiber = callee;
@@ -716,6 +791,60 @@ int fbr_transfer(FBR_P_ fbr_id_t to)
 
 	coro_transfer(&caller->ctx, &callee->ctx);
 
+	return_success(0);
+}
+
+int fbr_foreign_get_flags(FBR_P_ fbr_id_t id, enum fbr_foreign_flag *flags)
+{
+	struct fbr_fiber *fiber;
+
+	unpack_transfer_errno(-1, &fiber, id);
+
+	if (!fiber->foreign.enabled)
+		return_error(-1, FBR_ENOTFOREIGN);
+
+	*flags = fiber->foreign.flags;
+	return_success(0);
+}
+
+int fbr_foreign_set_flags(FBR_P_ fbr_id_t id, enum fbr_foreign_flag flags)
+{
+	struct fbr_fiber *fiber;
+
+	unpack_transfer_errno(-1, &fiber, id);
+
+	if (!fiber->foreign.enabled)
+		return_error(-1, FBR_ENOTFOREIGN);
+
+	fiber->foreign.flags = flags;
+	return_success(0);
+}
+
+int fbr_foreign_enter(FBR_P_ fbr_id_t id)
+{
+	struct fbr_fiber *fiber;
+
+	unpack_transfer_errno(-1, &fiber, id);
+	fctx->__p->sp++;
+	fctx->__p->sp->fiber = fiber;
+	return_success(0);
+}
+
+int fbr_foreign_leave(FBR_P_ fbr_id_t id)
+{
+	struct fbr_fiber *current;
+
+	assert("Attemp to leave from a root fiber" &&
+			fctx->__p->sp->fiber != &fctx->__p->root);
+	unpack_transfer_errno(-1, &current, id);
+	if (current != fctx->__p->sp->fiber) {
+		fbr_log_e(fctx, "libevfibers: current fiber (name: %s) passed"
+				" to leave does not match top of the stack"
+				" (name: %s)", current->name,
+				fctx->__p->sp->fiber->name);
+		return_error(FBR_EINVAL, -1);
+	}
+	fctx->__p->sp--;
 	return_success(0);
 }
 
@@ -1105,7 +1234,7 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		fiber = LIST_FIRST(&fctx->__p->reclaimed);
 		LIST_REMOVE(fiber, entries.reclaimed);
 	} else {
-		fiber = malloc(sizeof(struct fbr_fiber));
+		fiber = malloc(sizeof(*fiber));
 		memset(fiber, 0x00, sizeof(struct fbr_fiber));
 		if (0 == stack_size)
 			stack_size = FBR_STACK_SIZE;
@@ -1119,6 +1248,7 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 				stack_size);
 		fbr_cond_init(FBR_A_ &fiber->reclaim_cond);
 		fiber->id = fctx->__p->last_id++;
+		register_fiber(FBR_A_ fiber);
 	}
 	coro_create(&fiber->ctx, (coro_func)call_wrapper, FBR_A, fiber->stack,
 			fiber->stack_size);
@@ -1133,6 +1263,50 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 	fiber->no_reclaim = 0;
 	fiber->want_reclaim = 0;
 	return fbr_id_pack(fiber);
+}
+
+fbr_id_t fbr_create_foreign(FBR_P_ const char *name)
+{
+	struct fbr_fiber *fiber;
+	fiber = malloc(sizeof(struct fbr_fiber));
+	memset(fiber, 0x00, sizeof(struct fbr_fiber));
+	fiber->id = 0; /* All foreign fibers have generation id of 0 */
+	register_fiber(FBR_A_ fiber);
+	fbr_cond_init(FBR_A_ &fiber->reclaim_cond);
+	LIST_INIT(&fiber->children);
+	LIST_INIT(&fiber->pool);
+	TAILQ_INIT(&fiber->destructors);
+	strncpy(fiber->name, name, FBR_MAX_FIBER_NAME);
+	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries.children);
+	fiber->parent = CURRENT_FIBER;
+	fiber->no_reclaim = 0;
+	fiber->want_reclaim = 0;
+	fiber->foreign.enabled = 1;
+	return fbr_id_pack(fiber);
+}
+
+int fbr_has_pending_events(FBR_P_ fbr_id_t id)
+{
+	struct fbr_fiber *fiber;
+	unpack_transfer_errno(-1, &fiber, id);
+	return fiber->ev.arrived > 0;
+}
+
+fbr_id_t *fbr_foreign_get_transfer_pending(FBR_P_ size_t *size)
+{
+	size_t sz = kv_size(fctx->__p->foreign.transfer_pending);
+	if (0 == sz)
+		return NULL;
+	kv_copy(fbr_id_t, fctx->__p->foreign.transfer_pending_copy,
+			fctx->__p->foreign.transfer_pending);
+	kv_clear(fctx->__p->foreign.transfer_pending);
+	*size = sz;
+	return &kv_A(fctx->__p->foreign.transfer_pending_copy, 0);
+}
+
+struct fbr_ev_base *fbr_ev_watcher_base(struct fbr_ev_watcher *e)
+{
+	return &e->ev_base;
 }
 
 int fbr_disown(FBR_P_ fbr_id_t parent_id)

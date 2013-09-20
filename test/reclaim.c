@@ -109,7 +109,7 @@ START_TEST(test_reclaim)
 	new_fiber = fbr_create(&context, "reclaim_fiber2", reclaim_fiber1, NULL, 0);
 	fail_if(fbr_id_isnull(new_fiber), NULL);
 	/* should be same pointer */
-	fail_unless(fiber.p == new_fiber.p);
+	fail_unless((0xFFFFFFFF & fiber) == (0xFFFFFFFF & new_fiber));
 	/* old id should be invalid any more to avoid ABA problem */
 	retval = fbr_transfer(&context, fiber);
 	fail_unless(-1 == retval, NULL);

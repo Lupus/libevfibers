@@ -194,22 +194,18 @@ struct fbr_context_private;
 struct fbr_logger;
 struct fbr_async;
 
-struct fbr_id_s {
-	uint64_t g;
-	void *p;
-} __attribute__((packed));
 /**
  * Fiber ID type.
  *
  * For you it's just an opaque type.
  */
-typedef struct fbr_id_s fbr_id_t;
+typedef uint64_t fbr_id_t;
 
 extern const fbr_id_t FBR_ID_NULL;
 
 static inline int fbr_id_eq(fbr_id_t a, fbr_id_t b)
 {
-	return a.p == b.p && a.g == b.g;
+	return a == b;
 }
 
 static inline int fbr_id_isnull(fbr_id_t a)
@@ -234,6 +230,7 @@ enum fbr_error_code {
 	FBR_EASYNC,
 	FBR_EPROTOBUF,
 	FBR_EBUFFERNOSPACE,
+	FBR_ENOTFOREIGN,
 };
 
 /**
@@ -857,6 +854,25 @@ void fbr_log_d(FBR_P_ const char *format, ...)
  */
 fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		size_t stack_size);
+fbr_id_t fbr_create_foreign(FBR_P_ const char *name);
+int fbr_has_pending_events(FBR_P_ fbr_id_t id);
+int fbr_ev_wait_prepare(FBR_P_ struct fbr_ev_base *events[]);
+int fbr_ev_wait_finish(FBR_P_ struct fbr_ev_base *events[]);
+enum fbr_foreign_flag {
+	FBR_FF_TRANSFER_PENDING = 1<<1,
+	FBR_FF_RECLAIM_PENDING = 1<<2,
+};
+int fbr_foreign_get_flags(FBR_P_ fbr_id_t id, enum fbr_foreign_flag *flags);
+int fbr_foreign_set_flags(FBR_P_ fbr_id_t id, enum fbr_foreign_flag flags);
+fbr_id_t *fbr_foreign_get_transfer_pending(FBR_P_ size_t *size);
+int fbr_foreign_enter(FBR_P_ fbr_id_t id);
+int fbr_foreign_leave(FBR_P_ fbr_id_t id);
+static inline int fbr_is_foreign(FBR_PU_ fbr_id_t id)
+{
+	/* Zero generation means it's a foreign fiber */
+	return 0 == (id >> 32);
+}
+struct fbr_ev_base *fbr_ev_watcher_base(struct fbr_ev_watcher *e);
 
 /**
  * Retrieve a name of the fiber.
