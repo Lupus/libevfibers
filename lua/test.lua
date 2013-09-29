@@ -1,10 +1,9 @@
 #!/usr/bin/luajit-2.0.2
+package.path = package.path .. ";./?/init.lua;../build/lualib_gen/?.lua"
+
 local ffi = require("ffi")
 local fbr = require("evfibers")
 local ev = ffi.load("ev")
-require("sysdeps_h")
-require("ev_h")
-require("fiber_h")
 require("debugger")
 
 local jd = require("jit.dump")

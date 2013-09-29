@@ -3,8 +3,7 @@ local bit = require("bit")
 local band, bnot, rshift = bit.band, bit.bnot, bit.rshift
 local so = ffi.load("/home/kolkhovskiy/git/libevfibers/build/libevfibers.so")
 local evso = ffi.load("ev")
-require("sysdeps_h")
-require("ev_h")
+require("evfibers.extra_cdefs")
 require("fiber_h")
 
 local fbr = {

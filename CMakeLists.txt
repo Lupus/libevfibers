@@ -10,6 +10,7 @@ set(VERSION_PATCH 0)
 set(VERSION_STRING "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 
 include(CheckIncludeFiles)
+include(FFIWrap)
 
 aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/src" EVFIBERS_SOURCES)
 aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/coro" CORO_SOURCES)
@@ -72,6 +73,12 @@ endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/include/evfibers_private/config.h.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/include/evfibers_private/config.h")
 
+file(GLOB DEV_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/include/evfibers/*.h")
+set(lualib_gen "${CMAKE_CURRENT_BINARY_DIR}/lualib_gen")
+file(MAKE_DIRECTORY ${lualib_gen})
+set(lualib_gen_dest "share/lua/5.1/evfibers")
+ffi_lua_gen(evfibers_ffi_headers "${DEV_HEADERS}" "${lualib_gen}" "" "" "${lualib_gen_dest}")
+
 subdirs(test)
 
 install(TARGETS evfibers
@@ -85,6 +92,5 @@ install(TARGETS evfibers_static
 	ARCHIVE DESTINATION lib
 	)
 install(TARGETS fiber_worker RUNTIME DESTINATION bin)
-file(GLOB DEV_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/include/evfibers/*.h")
 install(FILES ${DEV_HEADERS}
 	DESTINATION "include/evfibers")
