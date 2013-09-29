@@ -2,7 +2,7 @@ local ffi = require("ffi")
 local bit = require("bit")
 local band, bnot, rshift = bit.band, bit.bnot, bit.rshift
 local so = ffi.load("/home/kolkhovskiy/git/libevfibers/build/libevfibers.so")
-local evso = ffi.load("ev")
+local ev = require("evfibers.ev")
 require("evfibers.extra_cdefs")
 require("fiber_h")
 
@@ -96,7 +96,7 @@ function free(ptr)
 end
 
 function sleep_dtor(args)
-	evso.ev_timer_stop(fbr.loop, args.timer)
+	fbr.loop:timer_stop(args.timer)
 	free(args.watcher)
 	free(args.timer)
 end
@@ -104,11 +104,11 @@ end
 function fbr.sleep(seconds)
 	local timer = malloc(ev_timer_t, ev_timer_ptr_t)
 	local watcher = malloc(fbr_ev_watcher_t)
-	local expected = evso.ev_now(fbr.loop) + seconds
+	local expected = fbr.loop:now() + seconds
 
 	ffi.fill(timer, ffi.sizeof(timer))
 	timer.at = seconds
-	evso.ev_timer_start(fbr.loop, timer)
+	fbr.loop:timer_start(timer)
 	local dtor = fbr.add_destructor(sleep_dtor, {
 		watcher = watcher,
 		timer = timer
@@ -116,7 +116,7 @@ function fbr.sleep(seconds)
 	so.fbr_ev_watcher_init(fctx, watcher, ffi.cast("ev_watcher *", timer))
 	fbr.ev_wait_one(so.fbr_ev_watcher_base(watcher))
 	fbr.remove_destructor(dtor, true)
-	return math.max(0, expected - evso.ev_now(fbr.loop))
+	return math.max(0, expected - fbr.loop:now())
 end
 
 function fbr.create(name, func)
@@ -175,21 +175,7 @@ function fbr.yield()
 	fiber_yield()
 end
 
-function check_flag(x, flag)
-	x = tonumber(x)
-	flag = tonumber(flag)
-	return 0 ~= band(x, flag)
-end
-
-function clear_flag(x, flag)
-	x = tonumber(x)
-	flag = tonumber(flag)
-	return band(x, bnot(flag))
-end
-
 function transfer_pending()
-	--local flags = foreign_flags
-	--local retval
 	local size = ffi.new("size_t[1]")
 	local ids = so.fbr_foreign_get_transfer_pending(fctx, size)
 	if 0 == size[0] then
@@ -198,23 +184,13 @@ function transfer_pending()
 	for i = 0, tonumber(size[0] - 1) do
 		local id = tonumber(ids[i])
 		local fiber = fibers[id]
-		--[[
-		retval = so.fbr_foreign_get_flags(fctx, fiber.id, flags)
-		assert(0 == retval, "fbr_foreign_get_flags failed")
-		if not check_flag(flags[0], so.FBR_FF_TRANSFER_PENDING) then
-			return
-		end
-		flags[0] = clear_flag(flags[0], so.FBR_FF_TRANSFER_PENDING)
-		retval = so.fbr_foreign_set_flags(fctx, fiber.id, flags[0])
-		assert(0 == retval, "fbr_foreign_set_flags failed")
-		]]
 		fiber_resume(fiber)
 	end
 end
 
 function fbr.init(ev_loop)
 	if nil == ev_loop then
-		ev_loop = evso.ev_default_loop(0)
+		ev_loop = ev.default_loop()
 	end
 	fbr.loop = ev_loop
 	fctx = ffi.new("struct fbr_context")
@@ -223,23 +199,9 @@ end
 
 function fbr.run()
 	while true do
-		evso.ev_run(fbr.loop, evso.EVRUN_ONCE)
+		fbr.loop:run(ev.EVRUN_ONCE)
 		transfer_pending()
 	end
-end
-
-fbr.ev = {}
-
-function fbr.ev.version()
-	return evso.ev_version_major(), evso.ev_version_minor()
-end
-
-function fbr.ev.now()
-	return evso.ev_now(fbr.loop)
-end
-
-function fbr.ev.now_update()
-	return evso.ev_now_update(fbr.loop)
 end
 
 return fbr

@@ -24,6 +24,18 @@ function main()
 	--pause("Let's debug it")
 	fbr.transfer(id)
 
+	--[[
+	id = fbr.create("test fiber 2", function()
+		while true do
+			fbr.sleep(0.05)
+			print("Ping2!")
+		end
+	end)
+	print("Created id " .. tostring(id))
+	--pause("Let's debug it")
+	fbr.transfer(id)
+	]]
+
 	fbr.run()
 end
 
