@@ -1496,6 +1496,8 @@ void fbr_buffer_read_advance(FBR_P_ struct fbr_buffer *buffer);
  */
 void fbr_buffer_read_discard(FBR_P_ struct fbr_buffer *buffer);
 
+void fbr_buffer_reset(FBR_P_ struct fbr_buffer *buffer);
+
 /**
  * Amount of bytes filled with data.
  * @param [in] buffer a pointer to fbr_buffer

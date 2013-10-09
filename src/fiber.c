@@ -1489,6 +1489,11 @@ size_t fbr_buffer_bytes(FBR_PU_ struct fbr_buffer *buffer)
 	return vrb_data_len(buffer->vrb);
 }
 
+void fbr_buffer_reset(FBR_PU_ struct fbr_buffer *buffer)
+{
+	vrb_take(buffer->vrb, vrb_data_len(buffer->vrb));
+}
+
 size_t fbr_buffer_free_bytes(FBR_PU_ struct fbr_buffer *buffer)
 {
 	return vrb_space_len(buffer->vrb);
