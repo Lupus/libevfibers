@@ -1659,5 +1659,9 @@ int fbr_async_fflush(FBR_P_ struct fbr_async *async);
 int fbr_async_ftruncate(FBR_P_ struct fbr_async *async, size_t size);
 int fbr_async_fsync(FBR_P_ struct fbr_async *async);
 int fbr_async_fdatasync(FBR_P_ struct fbr_async *async);
+int fbr_async_fs_stat(FBR_P_ struct fbr_async *async, const char *path,
+		struct stat *buf);
+int fbr_async_fs_realpath(FBR_P_ struct fbr_async *async, const char *path,
+		char *buf);
 
 #endif

@@ -1778,8 +1778,7 @@ static ReqResult *worker_communicate(FBR_P_ struct fbr_async *async, Req* req)
 int fbr_async_fopen(FBR_P_ struct fbr_async *async, const char *filename,
 		const char *mode)
 {
-	char path_buf[PATH_MAX], *path;
-	char *dirc, *basec, *bname, *dname;
+	char path_buf[PATH_MAX];
 	ReqResult *req_result;
 	Req req = REQ__INIT;
 	FileReq file_req = FILE_REQ__INIT;
@@ -1788,24 +1787,11 @@ int fbr_async_fopen(FBR_P_ struct fbr_async *async, const char *filename,
 	req.file = &file_req;
 	file_req.type = FILE_REQ_TYPE__Open;
 	file_req.open = &file_req_open;
-	path = realpath(filename, path_buf);
-	if (NULL == path) {
-		if (ENOENT != errno)
-			return_error(-1, FBR_ESYSTEM);
-		dirc = strdup(filename);
-		basec = strdup(filename);
-		dname = dirname(dirc);
-		bname = basename(basec);
-		path = realpath(dname, path_buf);
-		if (NULL == path)
-			return_error(-1, FBR_ESYSTEM);
-		strcat(path, "/");
-		strcat(path, bname);
-		free(dirc);
-		free(basec);
-	}
-	file_req_open.name = (char *)path;
+	file_req_open.name = (char *)filename;
 	file_req_open.mode = (char *)mode;
+	if (NULL == getcwd(path_buf, sizeof(path_buf)))
+		return_error(-1, FBR_ESYSTEM);
+	file_req_open.cwd = path_buf;
 	req_result = worker_communicate(FBR_A_ async, &req);
 	if (NULL == req_result)
 		return -1;
@@ -1997,6 +1983,60 @@ int fbr_async_debug(FBR_P_ struct fbr_async *async)
 	if (NULL == req_result)
 		return -1;
 	CHECK_ASYNC_ERROR
+	req_result__free_unpacked(req_result, NULL);
+	return_success(0);
+}
+
+int fbr_async_fs_stat(FBR_P_ struct fbr_async *async, const char *path,
+		struct stat *buf)
+{
+	char path_buf[PATH_MAX];
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FilesystemReq fs_req = FILESYSTEM_REQ__INIT;
+	req.type = REQ_TYPE__FileSystem;
+	req.fs = &fs_req;
+	fs_req.type = FILESYSTEM_REQ_TYPE__Stat;
+	if (NULL == getcwd(path_buf, sizeof(path_buf)))
+		return_error(-1, FBR_ESYSTEM);
+	fs_req.cwd = path_buf;
+	fs_req.path = (char *)path;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	CHECK_ASYNC_ERROR
+	if (!req_result->has_content) {
+		req_result__free_unpacked(req_result, NULL);
+		return_error(-1, FBR_EASYNC);
+	}
+	memcpy(buf, req_result->content.data, req_result->content.len);
+	req_result__free_unpacked(req_result, NULL);
+	return_success(0);
+}
+
+int fbr_async_fs_realpath(FBR_P_ struct fbr_async *async, const char *path,
+		char *buf)
+{
+	char path_buf[PATH_MAX];
+	ReqResult *req_result;
+	Req req = REQ__INIT;
+	FilesystemReq fs_req = FILESYSTEM_REQ__INIT;
+	req.type = REQ_TYPE__FileSystem;
+	req.fs = &fs_req;
+	fs_req.type = FILESYSTEM_REQ_TYPE__RealPath;
+	if (NULL == getcwd(path_buf, sizeof(path_buf)))
+		return_error(-1, FBR_ESYSTEM);
+	fs_req.cwd = path_buf;
+	fs_req.path = (char *)path;
+	req_result = worker_communicate(FBR_A_ async, &req);
+	if (NULL == req_result)
+		return -1;
+	CHECK_ASYNC_ERROR
+	if (!req_result->has_content) {
+		req_result__free_unpacked(req_result, NULL);
+		return_error(-1, FBR_EASYNC);
+	}
+	memcpy(buf, req_result->content.data, req_result->content.len);
 	req_result__free_unpacked(req_result, NULL);
 	return_success(0);
 }

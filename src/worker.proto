@@ -51,6 +51,7 @@ message FileReqSeek {
 message FileReqOpen {
 	required string name = 1;
 	required string mode = 2;
+	required string cwd = 3;
 }
 
 message FileReqTruncate {
@@ -66,20 +67,34 @@ message FileReq {
 	optional FileReqTruncate truncate = 6;
 }
 
+enum FilesystemReqType {
+	Stat = 1;
+	RealPath = 2;
+}
+
+message FilesystemReq {
+	required FilesystemReqType type = 1;
+	required string path = 2;
+	required string cwd = 3;
+}
+
 enum ReqType {
 	Init = 1;
 	File = 2;
+	FileSystem = 3;
 	Debug = 100;
 }
 
 message Req {
 	required ReqType type = 1;
 	optional FileReq file = 2;
+	optional FilesystemReq fs = 3;
 }
 
 message ReqResult {
 	optional int64 retval = 1;
 	optional string error = 2;
-	optional bytes content = 3;
-	optional bool eof = 4;
+	optional int32 sys_errno = 3;
+	optional bytes content = 4;
+	optional bool eof = 5;
 }

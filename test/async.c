@@ -94,6 +94,8 @@ char big_msg[] =
 "Vestibulum eu erat neque. Sed aliquet, eros vel turpis duis.\n";
 
 #include <stdio.h>
+#include <limits.h>
+#include <sys/stat.h>
 
 static void io_fiber(FBR_P_ _unused_ void *_arg)
 {
@@ -101,6 +103,9 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	size_t offt;
 	struct fbr_async *as;
 	void *buf;
+	struct stat stat_buf;
+	struct stat stat_buf2;
+	char path_buf[PATH_MAX] = {0};
 	signal(SIGPIPE, SIG_IGN);
 	as = fbr_async_create(FBR_A);
 #if 0
@@ -159,6 +164,22 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 
 	retval = fbr_async_fclose(FBR_A_ as);
 	fail_unless(0 == retval);
+
+	/* Stat test */
+	memset(&stat_buf, 0x00, sizeof(stat_buf));
+	memset(&stat_buf2, 0x00, sizeof(stat_buf2));
+	retval = fbr_async_fs_stat(FBR_A_ as, "/tmp/async.test", &stat_buf);
+	fail_unless(0 == retval);
+	retval = stat("/tmp/async.test", &stat_buf2);
+	fail_unless(0 == retval);
+	fail_unless(!memcmp(&stat_buf, &stat_buf2, sizeof(stat_buf)));
+
+	/* Real path */
+	retval = fbr_async_fs_realpath(FBR_A_ as, "/tmp/../tmp/./async.test",
+			path_buf);
+	fail_unless(0 == retval);
+	fail_unless(!strcmp(path_buf, "/tmp/async.test"));
+
 	fbr_async_destroy(FBR_A_ as);
 }
 
