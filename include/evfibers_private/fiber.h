@@ -31,18 +31,63 @@
 #include <coro.h>
 #include <vrb.h>
 
-#define obstack_chunk_alloc malloc
-#define obstack_chunk_free free
-
-#define FBR_CALL_LIST_WARN 1000
-
 #define max(a,b) ({						\
 		const typeof(a) __tmp_a = (a);			\
 		const typeof(b) __tmp_b = (b);			\
 		__tmp_a > __tmp_b ? __tmp_a : __tmp_b;		\
 		})
 
+#define min(a,b) ({						\
+		const typeof(a) __tmp_a = (a);			\
+		const typeof(b) __tmp_b = (b);			\
+		__tmp_a < __tmp_b ? __tmp_a : __tmp_b;		\
+		})
+
 #define _unused_ __attribute__((unused))
+
+#ifndef LIST_FOREACH_SAFE
+#define LIST_FOREACH_SAFE(var, head, field, next_var)              \
+	for ((var) = ((head)->lh_first);                           \
+		(var) && ((next_var) = ((var)->field.le_next), 1); \
+		(var) = (next_var))
+
+#endif
+
+#ifndef TAILQ_FOREACH_SAFE
+#define TAILQ_FOREACH_SAFE(var, head, field, next_var)                 \
+	for ((var) = ((head)->tqh_first);                              \
+		(var) ? ({ (next_var) = ((var)->field.tqe_next); 1; }) \
+		: 0;                                                   \
+		(var) = (next_var))
+#endif
+
+
+#define ENSURE_ROOT_FIBER do {                            \
+	assert(fctx->__p->sp->fiber == &fctx->__p->root); \
+} while (0)
+
+#define CURRENT_FIBER (fctx->__p->sp->fiber)
+#define CURRENT_FIBER_ID (fbr_id_pack(CURRENT_FIBER))
+#define CALLED_BY_ROOT ((fctx->__p->sp - 1)->fiber == &fctx->__p->root)
+
+#define unpack_transfer_errno(value, ptr, id)           \
+	do {                                            \
+		if (-1 == fbr_id_unpack(fctx, ptr, id)) \
+			return (value);                 \
+	} while (0)
+
+#define return_success(value)                \
+	do {                                 \
+		fctx->f_errno = FBR_SUCCESS; \
+		return (value);              \
+	} while (0)
+
+#define return_error(value, code)       \
+	do {                            \
+		fctx->f_errno = (code); \
+		return (value);         \
+	} while (0)
+
 
 struct mem_pool {
 	void *ptr;

@@ -1,0 +1,7 @@
+do_job 45.433348 open_trunc: 0.247575 small_msg: 17.278001, big_msg: 27.776948, close: 0.128902
+do_job_eio 57.250496 open_trunc: 0.184991 small_msg: 28.061991, big_msg: 28.921616, close: 0.080152
+do_job_sync 45.454047 open_trunc: 0.052595 small_msg: 17.364090, big_msg: 28.017982, close: 0.017014
+
+do_job_stat 44.955093
+do_job_stat_eio 27.519920
+do_job_stat_sync 0.467883

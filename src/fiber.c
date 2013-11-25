@@ -33,7 +33,10 @@
 #include <err.h>
 #include <valgrind/valgrind.h>
 
-#include <evfibers_private/config.h>
+#include <evfibers/config.h>
+#ifdef FBR_EIO_ENABLED
+#include <evfibers/eio.h>
+#endif
 #include <evfibers_private/fiber.h>
 #include <evfibers_private/worker.pb-c.h>
 
@@ -243,6 +246,8 @@ const char *fbr_strerror(_unused_ FBR_P_ enum fbr_error_code code)
 			return "Async call error (see logs)";
 		case FBR_EPROTOBUF:
 			return "Protobuf unpacking error";
+		case FBR_EEIO:
+			return "libeio request error";
 	}
 	return "Unknown error";
 }
@@ -582,6 +587,14 @@ static enum ev_action_hint prepare_ev(FBR_P_ struct fbr_ev_base *ev)
 		item->head = &e_cond->cond->waiting;
 		fbr_mutex_unlock(FBR_A_ e_cond->mutex);
 		break;
+	case FBR_EV_EIO:
+#ifdef FBR_EIO_ENABLED
+		/* NOP */
+#else
+		fbr_log_e(FBR_A_ "libevfibers: libeio support is not compiled");
+		abort();
+#endif
+		break;
 	}
 	return EV_AH_OK;
 }
@@ -602,6 +615,14 @@ static void finish_ev(FBR_P_ struct fbr_ev_base *ev)
 		break;
 	case FBR_EV_MUTEX:
 		/* NOP */
+		break;
+	case FBR_EV_EIO:
+#ifdef FBR_EIO_ENABLED
+		/* NOP */
+#else
+		fbr_log_e(FBR_A_ "libevfibers: libeio support is not compiled");
+		abort();
+#endif
 		break;
 	}
 }
@@ -1393,7 +1414,8 @@ void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 
 int fbr_buffer_init(FBR_P_ struct fbr_buffer *buffer, size_t size)
 {
-	buffer->vrb = vrb_new(size, NULL);
+	buffer->vrb = vrb_init_opt(NULL, size, "/dev/shm/fbr_buffer.XXXXXXXX",
+			VRB_NOGUARD);
 	if (NULL == buffer->vrb)
 		return_error(-1,  FBR_ESYSTEM);
 	buffer->prepared_bytes = 0;
@@ -1407,7 +1429,10 @@ int fbr_buffer_init(FBR_P_ struct fbr_buffer *buffer, size_t size)
 
 void fbr_buffer_destroy(FBR_P_ struct fbr_buffer *buffer)
 {
-	vrb_destroy(buffer->vrb);
+	if(vrb_destroy(buffer->vrb)) {
+		fprintf(stderr, "vrb_destroy failed: %s\n", strerror(errno));
+		abort();
+	}
 
 	fbr_mutex_destroy(FBR_A_ &buffer->read_mutex);
 	fbr_mutex_destroy(FBR_A_ &buffer->write_mutex);
@@ -1665,7 +1690,7 @@ static int init_worker(FBR_P_ struct fbr_async *async)
 				*/
 		worker_bin = getenv("FBR_WORKER_BIN_PATH");
 		if (NULL == worker_bin)
-			worker_bin = WORKER_BIN_PATH;
+			worker_bin = FBR_WORKER_BIN_PATH;
 		retval = execl(worker_bin, worker_bin, NULL);
 		if (-1 == retval)
 			err(EXIT_FAILURE, "execl");
@@ -2042,3 +2067,417 @@ int fbr_async_fs_realpath(FBR_P_ struct fbr_async *async, const char *path,
 }
 
 #undef CHECK_ASYNC_ERROR
+
+#ifdef FBR_EIO_ENABLED
+
+static struct ev_loop *eio_loop;
+static ev_idle repeat_watcher;
+static ev_async ready_watcher;
+
+/* idle watcher callback, only used when eio_poll */
+/* didn't handle all results in one call */
+static void repeat(EV_P_ ev_idle *w, _unused_ int revents)
+{
+	if (eio_poll () != -1)
+		ev_idle_stop(EV_A_ w);
+}
+
+/* eio has some results, process them */
+static void ready(EV_P_ _unused_ ev_async *w, _unused_ int revents)
+{
+	if (eio_poll() == -1)
+		ev_idle_start(EV_A_ &repeat_watcher);
+}
+
+/* wake up the event loop */
+static void want_poll()
+{
+	ev_async_send(eio_loop, &ready_watcher);
+}
+
+void fbr_eio_init()
+{
+	if (NULL != eio_loop) {
+		fprintf(stderr, "libevfibers: fbr_eio_init called twice");
+		abort();
+	}
+	eio_loop = EV_DEFAULT;
+	ev_idle_init(&repeat_watcher, repeat);
+	ev_async_init(&ready_watcher, ready);
+	ev_async_start(eio_loop, &ready_watcher);
+	ev_unref(eio_loop);
+	eio_init(want_poll, 0);
+}
+
+void fbr_ev_eio_init(FBR_P_ struct fbr_ev_eio *ev, eio_req *req)
+{
+	ev_base_init(FBR_A_ &ev->ev_base, FBR_EV_EIO);
+	ev->req = req;
+}
+
+static void eio_req_dtor(_unused_ FBR_P_ void *_arg)
+{
+	eio_req *req = _arg;
+	eio_cancel(req);
+}
+
+static int fiber_eio_cb(eio_req *req)
+{
+	struct fbr_fiber *fiber;
+	struct fbr_ev_eio *ev = req->data;
+	struct fbr_context *fctx = ev->ev_base.fctx;
+	int retval;
+
+	ENSURE_ROOT_FIBER;
+
+	ev_unref(eio_loop);
+	if (EIO_CANCELLED(req))
+		return 0;
+
+	retval = fbr_id_unpack(FBR_A_ &fiber, ev->ev_base.id);
+	if (-1 == retval) {
+		fbr_log_e(FBR_A_ "libevfibers: fiber is about to be called by"
+			" the eio callback, but it's id is not valid: %s",
+			fbr_strerror(FBR_A_ fctx->f_errno));
+		abort();
+	}
+
+	post_ev(FBR_A_ fiber, &ev->ev_base);
+
+	retval = fbr_transfer(FBR_A_ fbr_id_pack(fiber));
+	assert(0 == retval);
+	return 0;
+}
+
+#define FBR_EIO_PREP \
+	eio_req *req; \
+	struct fbr_ev_eio e_eio; \
+	int retval; \
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER; \
+	ev_ref(eio_loop);
+
+#define FBR_EIO_WAIT \
+	if (NULL == req) { \
+		ev_unref(eio_loop); \
+		return_error(-1, FBR_EEIO); \
+	} \
+	dtor.func = eio_req_dtor; \
+	dtor.arg = req; \
+	fbr_destructor_add(FBR_A_ &dtor); \
+	fbr_ev_eio_init(FBR_A_ &e_eio, req); \
+	retval = fbr_ev_wait_one(FBR_A_ &e_eio.ev_base); \
+	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */); \
+	if (retval) \
+		return retval;
+
+#define FBR_EIO_RESULT_CHECK \
+	if (0 > req->result) { \
+		errno = req->errorno; \
+		return_error(-1, FBR_ESYSTEM); \
+	}
+
+#define FBR_EIO_RESULT_RET \
+	FBR_EIO_RESULT_CHECK \
+	return req->result;
+
+int fbr_eio_open(FBR_P_ const char *path, int flags, mode_t mode, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_open(path, flags, mode, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_truncate(FBR_P_ const char *path, off_t offset, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_truncate(path, offset, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_chown(FBR_P_ const char *path, uid_t uid, gid_t gid, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_chown(path, uid, gid, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_chmod(FBR_P_ const char *path, mode_t mode, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_chmod(path, mode, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_mkdir(FBR_P_ const char *path, mode_t mode, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_mkdir(path, mode, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_rmdir(FBR_P_ const char *path, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_rmdir(path, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_unlink(FBR_P_ const char *path, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_unlink(path, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_utime(FBR_P_ const char *path, eio_tstamp atime, eio_tstamp mtime,
+		int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_utime(path, atime, mtime, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_mknod(FBR_P_ const char *path, mode_t mode, dev_t dev, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_mknod(path, mode, dev, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_link(FBR_P_ const char *path, const char *new_path, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_link(path, new_path, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_symlink(FBR_P_ const char *path, const char *new_path, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_symlink(path, new_path, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_rename(FBR_P_ const char *path, const char *new_path, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_rename(path, new_path, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_mlock(FBR_P_ void *addr, size_t length, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_mlock(addr, length, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_close(FBR_P_ int fd, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_close(fd, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_sync(FBR_P_ int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_sync(pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_fsync(FBR_P_ int fd, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_fsync(fd, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_fdatasync(FBR_P_ int fd, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_fdatasync(fd, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_futime(FBR_P_ int fd, eio_tstamp atime, eio_tstamp mtime, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_futime(fd, atime, mtime, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_ftruncate(FBR_P_ int fd, off_t offset, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_ftruncate(fd, offset, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_fchmod(FBR_P_ int fd, mode_t mode, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_fchmod(fd, mode, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_fchown(FBR_P_ int fd, uid_t uid, gid_t gid, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_fchown(fd, uid, gid, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_dup2(FBR_P_ int fd, int fd2, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_dup2(fd, fd2, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+ssize_t fbr_eio_read(FBR_P_ int fd, void *buf, size_t length, off_t offset,
+		int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_read(fd, buf, length, offset, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+ssize_t fbr_eio_write(FBR_P_ int fd, void *buf, size_t length, off_t offset,
+		int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_write(fd, buf, length, offset, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_mlockall(FBR_P_ int flags, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_mlockall(flags, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_msync(FBR_P_ void *addr, size_t length, int flags, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_msync(addr, length, flags, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_readlink(FBR_P_ const char *path, int pri, char *buf, size_t size)
+{
+	FBR_EIO_PREP;
+	req = eio_readlink(path, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_CHECK;
+	strncpy(buf, req->ptr2, min(size, (size_t)req->result));
+	return req->result;
+}
+
+int fbr_eio_realpath(FBR_P_ const char *path, int pri, char *buf, size_t size)
+{
+	FBR_EIO_PREP;
+	req = eio_realpath(path, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_CHECK;
+	strncpy(buf, req->ptr2, min(size, (size_t)req->result));
+	return req->result;
+}
+
+int fbr_eio_stat(FBR_P_ const char *path, int pri, EIO_STRUCT_STAT *statdata)
+{
+	EIO_STRUCT_STAT *st;
+	FBR_EIO_PREP;
+	req = eio_stat(path, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_CHECK;
+	st = (EIO_STRUCT_STAT *)req->ptr2;
+	memcpy(statdata, st, sizeof(*st));
+	return req->result;
+}
+
+int fbr_eio_lstat(FBR_P_ const char *path, int pri, EIO_STRUCT_STAT *statdata)
+{
+	EIO_STRUCT_STAT *st;
+	FBR_EIO_PREP;
+	req = eio_lstat(path, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_CHECK;
+	st = (EIO_STRUCT_STAT *)req->ptr2;
+	memcpy(statdata, st, sizeof(*st));
+	return req->result;
+}
+
+int fbr_eio_fstat(FBR_P_ int fd, int pri, EIO_STRUCT_STAT *statdata)
+{
+	EIO_STRUCT_STAT *st;
+	FBR_EIO_PREP;
+	req = eio_fstat(fd, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_CHECK;
+	st = (EIO_STRUCT_STAT *)req->ptr2;
+	memcpy(statdata, st, sizeof(*st));
+	return req->result;
+}
+
+int fbr_eio_statvfs(FBR_P_ const char *path, int pri,
+		EIO_STRUCT_STATVFS *statdata)
+{
+	EIO_STRUCT_STATVFS *st;
+	FBR_EIO_PREP;
+	req = eio_statvfs(path, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_CHECK;
+	st = (EIO_STRUCT_STATVFS *)req->ptr2;
+	memcpy(statdata, st, sizeof(*st));
+	return req->result;
+}
+
+int fbr_eio_fstatvfs(FBR_P_ int fd, int pri, EIO_STRUCT_STATVFS *statdata)
+{
+	EIO_STRUCT_STATVFS *st;
+	FBR_EIO_PREP;
+	req = eio_fstatvfs(fd, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_CHECK;
+	st = (EIO_STRUCT_STATVFS *)req->ptr2;
+	memcpy(statdata, st, sizeof(*st));
+	return req->result;
+}
+
+#else
+
+void fbr_eio_init(FBR_PU)
+{
+	fbr_log_e(FBR_A_ "libevfibers: libeio support is not compiled");
+	abort();
+}
+
+#endif
