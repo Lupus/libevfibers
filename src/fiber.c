@@ -2409,6 +2409,15 @@ int fbr_eio_dup2(FBR_P_ int fd, int fd2, int pri)
 	FBR_EIO_RESULT_RET;
 }
 
+ssize_t fbr_eio_seek(FBR_P_ int fd, off_t offset, int whence, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_seek(fd, offset, whence, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_CHECK;
+	return req->offs;
+}
+
 ssize_t fbr_eio_read(FBR_P_ int fd, void *buf, size_t length, off_t offset,
 		int pri)
 {
@@ -2522,6 +2531,50 @@ int fbr_eio_fstatvfs(FBR_P_ int fd, int pri, EIO_STRUCT_STATVFS *statdata)
 	st = (EIO_STRUCT_STATVFS *)req->ptr2;
 	memcpy(statdata, st, sizeof(*st));
 	return req->result;
+}
+
+int fbr_eio_sendfile(FBR_P_ int out_fd, int in_fd, off_t in_offset,
+		size_t length, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_sendfile(out_fd, in_fd, in_offset, length, pri, fiber_eio_cb,
+			&e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_readahead(FBR_P_ int fd, off_t offset, size_t length, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_readahead(fd, offset, length, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_syncfs(FBR_P_ int fd, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_syncfs(fd, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_sync_file_range(FBR_P_ int fd, off_t offset, size_t nbytes,
+			unsigned int flags, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_sync_file_range(fd, offset, nbytes, flags, pri, fiber_eio_cb,
+			&e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
+int fbr_eio_fallocate(FBR_P_ int fd, int mode, off_t offset, off_t len, int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_fallocate(fd, mode, offset, len, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
 }
 
 #else

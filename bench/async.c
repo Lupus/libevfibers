@@ -188,6 +188,7 @@ void do_job_sync()
 	PROF_ADD(job_sync_close);
 }
 
+#ifdef FBR_EIO_ENABLED
 static ev_tstamp job_eio_open_trunc;
 static ev_tstamp job_eio_small_msg;
 static ev_tstamp job_eio_big_msg;
@@ -199,6 +200,7 @@ void do_job_eio(FBR_P)
 	int fd;
 	void *buf;
 	ev_tstamp tm;
+	off_t offt;
 
 	PROF_START;
 	fd = fbr_eio_open(FBR_A_ "/tmp/async.test", O_RDWR, 0, 0);
@@ -207,40 +209,47 @@ void do_job_eio(FBR_P)
 	assert(0 == retval);
 	PROF_ADD(job_eio_open_trunc);
 
-
 	/* Small message test */
 	PROF_START;
-	retval = fbr_eio_write(FBR_A_ fd, small_msg, sizeof(small_msg), 0, 0);
+	retval = fbr_eio_write(FBR_A_ fd, small_msg, sizeof(small_msg), -1, 0);
 	assert(0 < retval);
 
 	retval = fbr_eio_fsync(FBR_A_ fd, 0);
 	assert(0 == retval);
 
+	retval = fbr_eio_seek(FBR_A_ fd, 0, EIO_SEEK_SET, 0);
+	assert(0 == retval);
+
 	buf = malloc(sizeof(small_msg));
 	assert(buf);
 
-	retval = fbr_eio_read(FBR_A_ fd, buf, sizeof(small_msg), 0, 0);
+	retval = fbr_eio_read(FBR_A_ fd, buf, sizeof(small_msg), -1, 0);
 	assert(0 <= retval);
 	assert(!memcmp(small_msg, buf, sizeof(small_msg)));
 
 	free(buf);
 	PROF_ADD(job_eio_small_msg);
 
-
 	/* Big message test */
 	PROF_START;
-	retval = fbr_eio_write(FBR_A_ fd, big_msg, sizeof(big_msg),
-			sizeof(small_msg), 0);
+	retval = fbr_eio_seek(FBR_A_ fd, 0, EIO_SEEK_CUR, 0);
+	assert(0 < retval);
+
+	offt = retval;
+
+	retval = fbr_eio_write(FBR_A_ fd, big_msg, sizeof(big_msg), -1, 0);
 	assert(0 < retval);
 
 	retval = fbr_eio_fdatasync(FBR_A_ fd, 0);
 	assert(0 == retval);
 
+	retval = fbr_eio_seek(FBR_A_ fd, offt, EIO_SEEK_SET, 0);
+	assert(0 < retval);
+
 	buf = malloc(sizeof(big_msg));
 	assert(buf);
 
-	retval = fbr_eio_read(FBR_A_ fd, buf, sizeof(big_msg),
-			sizeof(small_msg), 0);
+	retval = fbr_eio_read(FBR_A_ fd, buf, sizeof(big_msg), -1, 0);
 	assert(0 < retval);
 	assert(!memcmp(big_msg, buf, sizeof(big_msg)));
 
@@ -252,6 +261,7 @@ void do_job_eio(FBR_P)
 	assert(0 == retval);
 	PROF_ADD(job_eio_close);
 }
+#endif
 
 static ev_tstamp job_open_trunc;
 static ev_tstamp job_small_msg;
@@ -392,6 +402,7 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 			ev_now(EV_DEFAULT) - tm, job_open_trunc, job_small_msg,
 			job_big_msg, job_close);
 
+#ifdef FBR_EIO_ENABLED
 	ev_now_update(EV_DEFAULT);
 	tm = ev_now(EV_DEFAULT);
 	for (i = 0; i < repeats; i++)
@@ -400,6 +411,7 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	printf("do_job_eio %f open_trunc: %f small_msg: %f, big_msg: %f, close: %f\n",
 			ev_now(EV_DEFAULT) - tm, job_eio_open_trunc, job_eio_small_msg,
 			job_eio_big_msg, job_eio_close);
+#endif
 
 	ev_now_update(EV_DEFAULT);
 	tm = ev_now(EV_DEFAULT);

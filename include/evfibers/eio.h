@@ -25,6 +25,13 @@
 /**
  * @file evfibers/eio.h
  * This file contains API for libeio fiber wrappers.
+ *
+ * Wrapper functions are not documented as they clone the libeio prototypes and
+ * their documenting would result in useless copy'n'paste here. libeio
+ * documentation can be used as a reference on this functions. The only
+ * difference is that first argument in the wrappers is always fiber context,
+ * and eio_cb and data pointer are passed internally, and so are not present in
+ * the prototypes.
  */
 #include <evfibers/config.h>
 #ifndef FBR_EIO_ENABLED
@@ -59,7 +66,19 @@ struct fbr_ev_eio {
  */
 void fbr_ev_eio_init(FBR_P_ struct fbr_ev_eio *ev, eio_req *req);
 
+/**
+ * Initialization routine for libeio fiber wrapper.
+ *
+ * This functions initializes libeio and sets up the necessary glue code to
+ * interact with libev (and in turn libevfibers).
+ *
+ * Must be called only once, uses EV_DEFAULT event loop internally, but any
+ * fiber scheduler can interact with libeio independently.
+ * @see fbr_ev_eio
+ * @see fbr_ev_wait
+ */
 void fbr_eio_init();
+
 int fbr_eio_open(FBR_P_ const char *path, int flags, mode_t mode, int pri);
 int fbr_eio_truncate(FBR_P_ const char *path, off_t offset, int pri);
 int fbr_eio_chown(FBR_P_ const char *path, uid_t uid, gid_t gid, int pri);
@@ -83,6 +102,7 @@ int fbr_eio_ftruncate(FBR_P_ int fd, off_t offset, int pri);
 int fbr_eio_fchmod(FBR_P_ int fd, mode_t mode, int pri);
 int fbr_eio_fchown(FBR_P_ int fd, uid_t uid, gid_t gid, int pri);
 int fbr_eio_dup2(FBR_P_ int fd, int fd2, int pri);
+ssize_t fbr_eio_seek(FBR_P_ int fd, off_t offset, int whence, int pri);
 ssize_t fbr_eio_read(FBR_P_ int fd, void *buf, size_t length, off_t offset,
 		int pri);
 ssize_t fbr_eio_write(FBR_P_ int fd, void *buf, size_t length, off_t offset,
@@ -97,5 +117,14 @@ int fbr_eio_fstat(FBR_P_ int fd, int pri, EIO_STRUCT_STAT *statdata);
 int fbr_eio_statvfs(FBR_P_ const char *path, int pri,
 		EIO_STRUCT_STATVFS *statdata);
 int fbr_eio_fstatvfs(FBR_P_ int fd, int pri, EIO_STRUCT_STATVFS *statdata);
+int fbr_eio_readahead(FBR_P_ int fd, off_t offset, size_t length, int pri);
+int fbr_eio_sendfile(FBR_P_ int out_fd, int in_fd, off_t in_offset,
+		size_t length, int pri);
+int fbr_eio_readahead(FBR_P_ int fd, off_t offset, size_t length, int pri);
+int fbr_eio_syncfs(FBR_P_ int fd, int pri);
+int fbr_eio_sync_file_range(FBR_P_ int fd, off_t offset, size_t nbytes,
+			unsigned int flags, int pri);
+int fbr_eio_fallocate(FBR_P_ int fd, int mode, off_t offset, off_t len,
+		int pri);
 
 #endif
