@@ -1358,7 +1358,7 @@ void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 
 static int buffer_init_mappings(FBR_P_ struct fbr_buffer *buffer, size_t size)
 {
-	char temp_name[] = "/dev/shm/fbr_buffer.XXXXXXXXX";
+	char temp_name[] = "/tmp/fbr_buffer.XXXXXXXXX";
 	int fd;
 	size_t sz = get_page_size();
 	size = (size ? round_up_to_page_size(size) : sz);
