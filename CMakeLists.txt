@@ -19,11 +19,6 @@ if(NOT HAVE_EV_H)
 	message(FATAL_ERROR "ev.h is not found")
 endif(NOT HAVE_EV_H)
 
-check_include_files(vrb.h HAVE_VRB_H)
-if(NOT HAVE_VRB_H)
-	error(FATAL_ERROR "vrb.h is not found")
-endif(NOT HAVE_VRB_H)
-
 check_include_files(ucontext.h HAVE_UCONTEXT_H)
 if(HAVE_UCONTEXT_H)
 	add_definitions("-DHAVE_UCONTEXT_H")
@@ -58,7 +53,7 @@ set_target_properties(evfibers
 	SOVERSION ${VERSION_MAJOR}
 	VERSION ${VERSION_STRING}
 	)
-target_link_libraries(evfibers ev vrb ${PROTOBUFC_LIBRARIES})
+target_link_libraries(evfibers ev ${PROTOBUFC_LIBRARIES})
 
 add_library(evfibers_static STATIC ${SOURCES})
 set_target_properties(evfibers_static  PROPERTIES OUTPUT_NAME evfibers)
