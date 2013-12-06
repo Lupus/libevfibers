@@ -34,8 +34,8 @@ int main()
 	int retval;
 	struct fbr_context context;
 	fbr_init(&context, EV_DEFAULT);
-	const size_t count = 1;
-	const size_t repeats = 1000000;
+	const size_t count = 10000;
+	const size_t repeats = 100;
 	struct fbr_buffer *buffers;
 	size_t i, j;
 
@@ -43,7 +43,7 @@ int main()
 	buffers = calloc(count, sizeof(struct fbr_buffer));
 
 	for (j = 0; j < repeats; j++) {
-		//printf("Repeat #%zd...", j);
+		printf("Repeat #%zd...", j);
 		for (i = 0; i < count; i++) {
 			retval = fbr_buffer_init(&context, buffers + i, 0);
 			if (retval) {
@@ -59,7 +59,7 @@ int main()
 		for (i = 0; i < count; i++) {
 			fbr_buffer_destroy(&context, buffers + i);
 		}
-		//printf(" Done!\n");
+		printf(" Done!\n");
 	}
 
 	fbr_destroy(&context);
