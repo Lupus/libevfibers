@@ -29,9 +29,12 @@
 
 static void test_fiber(FBR_P_ _unused_ void *_arg)
 {
+	const char fname[] = "logget_test_fiber";
 	fctx->logger->level = FBR_LOG_DEBUG;
 
 	fprintf(stderr, "\n==== BEGIN LOGGER TEST ====\n\n");
+
+	fbr_set_name(FBR_A_ fbr_self(FBR_A), fname);
 
 	fbr_dump_stack(FBR_A_ fbr_log_d);
 	fbr_dump_stack(FBR_A_ fbr_log_i);
@@ -49,6 +52,8 @@ static void test_fiber(FBR_P_ _unused_ void *_arg)
 	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_EPROTOBUF));
 	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_EBUFFERNOSPACE));
 	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ -1));
+
+	fail_unless(!strcmp(fbr_get_name(FBR_A_ fbr_self(FBR_A)), fname));
 
 	printf("\n==== END LOGGER TEST ====\n\n");
 }

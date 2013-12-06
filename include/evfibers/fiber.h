@@ -843,16 +843,6 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		size_t stack_size);
 
 /**
- * Restarts an existing fiber
- * @param [in] id id of an existing fiber
- * @return an id of a new fiber
- *
- * This function clones all fiber parameters (as passed to fbr_create),
- * reclaims the old fiber and starts a new one with same creation parameters.
- */
-fbr_id_t fbr_restart(FBR_P_ fbr_id_t id);
-
-/**
  * Retrieve a name of the fiber.
  * @param [in] id identificator of a fiber
  * @return pointer to charater buffer or NULL on error

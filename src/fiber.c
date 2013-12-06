@@ -1071,32 +1071,6 @@ ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds)
 	return max(0., expected - ev_now(fctx->__p->loop));
 }
 
-static void watcher_async_dtor(_unused_ FBR_P_ void *_arg)
-{
-	struct ev_async *w = _arg;
-	ev_async_stop(fctx->__p->loop, w);
-}
-
-void fbr_cooperate(FBR_P)
-{
-	ev_async async;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	ev_async_init(&async, NULL);
-	ev_set_priority(&async, -2);
-	ev_async_start(fctx->__p->loop, &async);
-	dtor.func = watcher_async_dtor;
-	dtor.arg = &async;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&async);
-	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_async_stop(fctx->__p->loop, &async);
-}
-
 static long get_page_size()
 {
 	static long sz;
@@ -1113,23 +1087,6 @@ static size_t round_up_to_page_size(size_t size)
 	if (remainder == 0)
 		return size;
 	return size + sz - remainder;
-}
-
-fbr_id_t fbr_restart(FBR_P_ fbr_id_t id)
-{
-	struct fbr_fiber *fiber;
-	const char *name;
-	fbr_fiber_func_t func;
-	void *arg;
-	size_t stack_size;
-
-	unpack_transfer_errno(FBR_ID_NULL, &fiber, id);
-	name = fiber->name;
-	func = fiber->func;
-	arg = fiber->func_arg;
-	stack_size = fiber->stack_size;
-	fbr_reclaim(FBR_A_ id);
-	return fbr_create(FBR_A_ name, func, arg, stack_size);
 }
 
 fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
