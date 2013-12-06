@@ -1487,9 +1487,6 @@ static void buffer_destroy_mappings(FBR_PU_ struct fbr_buffer *buffer)
 void fbr_buffer_destroy(FBR_P_ struct fbr_buffer *buffer)
 {
 	buffer_destroy_mappings(FBR_A_ buffer);
-		fprintf(stderr, "vrb_destroy failed: %s\n", strerror(errno));
-		abort();
-	}
 
 	fbr_mutex_destroy(FBR_A_ &buffer->read_mutex);
 	fbr_mutex_destroy(FBR_A_ &buffer->write_mutex);
