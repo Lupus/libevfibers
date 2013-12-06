@@ -75,6 +75,9 @@ int main(void)
 
 	srand(42);
 
+	/* pbuilder workaround: it does not mount tmpfs to /dev/shm */
+	setenv("FBR_BUFFER_FILE_PATTERN", "/tmp/pbuilder_fbr_buffer.XXXXXX", 0);
+
 	s = evfibers_suite();
 	sr = srunner_create(s);
 	srunner_run_all(sr, CK_NORMAL);

@@ -82,6 +82,7 @@
 
 
 const fbr_id_t FBR_ID_NULL = {0, NULL};
+static const char default_buffer_pattern[] = "/dev/shm/fbr_buffer.XXXXXXXXX";
 
 static fbr_id_t fbr_id_pack(struct fbr_fiber *fiber)
 {
@@ -192,6 +193,7 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 {
 	struct fbr_fiber *root;
 	struct fbr_logger *logger;
+	char *buffer_pattern;
 
 	fctx->__p = malloc(sizeof(struct fbr_context_private));
 	LIST_INIT(&fctx->__p->reclaimed);
@@ -222,6 +224,12 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	memset(&fctx->__p->key_free_mask, 0x00,
 			sizeof(fctx->__p->key_free_mask));
 	ev_async_init(&fctx->__p->pending_async, pending_async_cb);
+
+	buffer_pattern = getenv("FBR_BUFFER_FILE_PATTERN");
+	if (buffer_pattern)
+		fctx->__p->buffer_file_pattern = buffer_pattern;
+	else
+		fctx->__p->buffer_file_pattern = default_buffer_pattern;
 }
 
 const char *fbr_strerror(_unused_ FBR_P_ enum fbr_error_code code)
@@ -1358,12 +1366,13 @@ void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 
 static int buffer_init_mappings(FBR_P_ struct fbr_buffer *buffer, size_t size)
 {
-	char temp_name[] = "/dev/shm/fbr_buffer.XXXXXXXXX";
 	int fd;
 	size_t sz = get_page_size();
 	size = (size ? round_up_to_page_size(size) : sz);
 	void *ptr;
+	char *temp_name;
 
+	temp_name = strdup(fctx->__p->buffer_file_pattern);
 	buffer->mem_ptr_size = size * 2 + sz * 2;
 	buffer->mem_ptr = mmap(NULL, buffer->mem_ptr_size, PROT_NONE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
@@ -1378,14 +1387,17 @@ static int buffer_init_mappings(FBR_P_ struct fbr_buffer *buffer, size_t size)
 	fd = mkstemp(temp_name);
 	if (0 >= fd) {
 		munmap(buffer->mem_ptr, buffer->mem_ptr_size);
+		free(temp_name);
 		return_error(-1,  FBR_ESYSTEM);
 	}
 
 	if (0 > unlink(temp_name)) {
 		munmap(buffer->mem_ptr, buffer->mem_ptr_size);
+		free(temp_name);
 		close(fd);
 		return_error(-1,  FBR_ESYSTEM);
 	}
+	free(temp_name);
 
 	if (0 > ftruncate(fd, size)) {
 		munmap(buffer->mem_ptr, buffer->mem_ptr_size);
