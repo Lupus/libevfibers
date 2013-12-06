@@ -114,6 +114,7 @@ struct fbr_context_private {
 	uint64_t last_id;
 	uint64_t key_free_mask;
 	struct fbr_async_slist free_workers;
+	const char *buffer_file_pattern;
 
 	struct ev_loop *loop;
 };
