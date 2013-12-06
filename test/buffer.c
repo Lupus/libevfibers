@@ -133,6 +133,13 @@ static void buffer_basic_fiber(FBR_P_ _unused_ void *_arg)
 		fbr_buffer_alloc_commit(FBR_A_ &buffer);
 	}
 
+	retval = fbr_buffer_resize(FBR_A_ &buffer, 0);
+	fail_unless(0 == retval);
+	retval = fbr_buffer_resize(FBR_A_ &buffer, count * sizeof(uint64_t));
+	fail_unless(0 == retval);
+	retval = fbr_buffer_resize(FBR_A_ &buffer, count * sizeof(uint64_t) * 2);
+	fail_unless(0 == retval);
+
 	ptr = fbr_buffer_read_address(FBR_A_ &buffer, sizeof(uint64_t));
 	fail_if(NULL == ptr);
 	fbr_buffer_read_discard(FBR_A_ &buffer);
@@ -160,6 +167,10 @@ START_TEST(test_buffer_basic)
 
 	retval = fbr_transfer(&context, fiber);
 	fail_unless(0 == retval, NULL);
+
+	ev_run(EV_DEFAULT, 0);
+
+	fail_unless(fbr_is_reclaimed(&context, fiber));
 
 	fbr_destroy(&context);
 

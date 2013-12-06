@@ -24,12 +24,13 @@
 #define _FBR_FIBER_PRIVATE_H_
 
 #include <stdarg.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <stdint.h>
 #include <sys/queue.h>
 #include <evfibers/fiber.h>
 #include <evfibers_private/trace.h>
 #include <coro.h>
-#include <vrb.h>
 
 #define obstack_chunk_alloc malloc
 #define obstack_chunk_free free

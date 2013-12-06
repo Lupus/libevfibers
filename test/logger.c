@@ -43,6 +43,11 @@ static void test_fiber(FBR_P_ _unused_ void *_arg)
 	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_EINVAL));
 	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_ENOFIBER));
 	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_ESYSTEM));
+	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_EBUFFERMMAP));
+	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_ENOKEY));
+	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_EASYNC));
+	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_EPROTOBUF));
+	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ FBR_EBUFFERNOSPACE));
 	fbr_log_d(FBR_A_ "%s", fbr_strerror(FBR_A_ -1));
 
 	printf("\n==== END LOGGER TEST ====\n\n");

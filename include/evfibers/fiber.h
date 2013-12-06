@@ -82,10 +82,6 @@
  * - [libev](http://software.schmorp.de/pkg/libev.html) development files
  *
  *   Well-known and robust event loop.
- * - [VRB](http://vrb.slashusr.org) development files
- *
- *   Virtual ring buffer library, used as underlying data structure in
- *   fbr_buffer.
  * - [valgrind](http://valgrind.org) development files
  *
  *   libevfibers makes use of client requests in valgrind to register stacks.
@@ -99,13 +95,12 @@
  *
  * As far as runtime dependencies concerned, the following is required:
  *  - [libev](http://software.schmorp.de/pkg/libev.html) runtime files
- *  - [VRB](http://vrb.slashusr.org) runtime files
  *
  * For debian-based distributions users (i.e. Ubuntu) you can use the following
  * command to install all the dependencies:
  *
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.sh}
- * sudo apt-get install cmake libev-dev libvrb0-dev valgrind check
+ * sudo apt-get install cmake libev-dev valgrind check
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
  * \subsection building_ssec Building
@@ -238,6 +233,7 @@ enum fbr_error_code {
 	FBR_ENOKEY,
 	FBR_EASYNC,
 	FBR_EPROTOBUF,
+	FBR_EBUFFERNOSPACE,
 };
 
 /**
@@ -543,7 +539,6 @@ struct fbr_cond_var {
 	struct fbr_id_tailq waiting;
 };
 
-struct vrb;
 /**
  * Inter-fiber communication pipe.
  *
@@ -552,7 +547,13 @@ struct vrb;
  * @see fbr_buffer_destroy
  */
 struct fbr_buffer {
-	struct vrb *vrb;
+	void *mem_ptr;
+	size_t mem_ptr_size;
+	void *lower_ptr;
+	void *upper_ptr;
+	size_t ptr_size;
+	void *data_ptr;
+	void *space_ptr;
 	size_t prepared_bytes;
 	size_t waiting_bytes;
 	struct fbr_cond_var committed_cond;
@@ -1413,6 +1414,186 @@ void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond);
 int fbr_buffer_init(FBR_P_ struct fbr_buffer *buffer, size_t size);
 
 /**
+ * Amount of bytes filled with data.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @returns number of bytes written to the buffer
+ *
+ * This function can be used to check if fbr_buffer_read_address will block.
+ * @see fbr_buffer_free_bytes
+ */
+static inline size_t fbr_buffer_bytes(FBR_PU_ struct fbr_buffer *buffer)
+{
+	return buffer->space_ptr - buffer->data_ptr;
+}
+
+/**
+ * Amount of free bytes.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @returns number of free bytes in the buffer
+ *
+ * This function can be used to check if fbr_buffer_alloc_prepare will block.
+ * @see fbr_buffer_bytes
+ */
+static inline size_t fbr_buffer_free_bytes(FBR_PU_ struct fbr_buffer *buffer)
+{
+	return buffer->data_ptr + buffer->ptr_size - buffer->space_ptr;
+}
+
+/**
+ * Total capacity of a buffer.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @returns maximum number of bytes the buffer may contain.
+ *
+ * This function may return total capacity larger that originally requested due
+ * to size being rounded up to be a multiple of page size.
+ * @see fbr_buffer_bytes
+ * @see fbr_buffer_free_bytes
+ */
+static inline size_t fbr_buffer_size(FBR_PU_ struct fbr_buffer *buffer)
+{
+	return buffer->ptr_size;
+}
+
+/**
+ * Pointer to the start of ``space'' memory area.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @returns pointer to space memory region start.
+ *
+ * This function returns a pointer to the start of free memory area inside the
+ * buffer.
+ *
+ * You may use this function in case you have a fbr_buffer, that is not used as
+ * an inter-fiber communication mechanism but only as a local circular data
+ * buffer.
+ *
+ * Mixing space_ptr/data_ptr/give/take API with mutex-protected transactional
+ * API might lead to corruption and is not recommended unless you know what you
+ * are doing.
+ * @see fbr_buffer_data_ptr
+ * @see fbr_buffer_give
+ * @see fbr_buffer_take
+ */
+static inline void *fbr_buffer_space_ptr(FBR_PU_ struct fbr_buffer *buffer)
+{
+	return buffer->space_ptr;
+}
+
+/**
+ * Pointer to the start of ``data'' memory area.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @returns pointer to data memory region start.
+ *
+ * This function returns a pointer to the start of data memory area inside the
+ * buffer.
+ *
+ * You may use this function in case you have a fbr_buffer, that is not used as
+ * an inter-fiber communication mechanism but only as a local circular data
+ * buffer.
+ *
+ * Mixing space_ptr/data_ptr/give/take API with mutex-protected transactional
+ * API might lead to corruption and is not recommended unless you know what you
+ * are doing.
+ * @see fbr_buffer_data_ptr
+ * @see fbr_buffer_give
+ * @see fbr_buffer_take
+ */
+static inline void *fbr_buffer_data_ptr(FBR_PU_ struct fbr_buffer *buffer)
+{
+	return buffer->data_ptr;
+}
+
+/**
+ * Give data to a buffer.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @param [in] size length of the data
+ * @returns 0 on succes, -1 on error.
+ *
+ * This function marks size bytes of space area as data starting from the
+ * beginning of space area. It's your responsibility to fill those area with
+ * the actual data.
+ *
+ * You may use this function in case you have a fbr_buffer, that is not used as
+ * an inter-fiber communication mechanism but only as a local circular data
+ * buffer.
+ *
+ * Mixing space_ptr/data_ptr/give/take API with mutex-protected transactional
+ * API might lead to corruption and is not recommended unless you know what you
+ * are doing.
+ * @see fbr_buffer_data_ptr
+ * @see fbr_buffer_give
+ * @see fbr_buffer_take
+ */
+static inline int fbr_buffer_give(FBR_P_ struct fbr_buffer *buffer,
+		size_t size)
+{
+	if (size > fbr_buffer_free_bytes(FBR_A_ buffer)) {
+		fctx->f_errno = FBR_EBUFFERNOSPACE;
+		return -1;
+	}
+	buffer->space_ptr += size;
+	return 0;
+}
+
+/**
+ * Take data from a buffer.
+ * @param [in] buffer a pointer to fbr_buffer
+ * @param [in] size length of the data
+ * @returns 0 on succes, -1 on error.
+ *
+ * This function marks size bytes of data area as space starting from the
+ * beginning of data area. It's your responsibility to drop any references to
+ * the region as it might be overwritten later.
+ *
+ * You may use this function in case you have a fbr_buffer, that is not used as
+ * an inter-fiber communication mechanism but only as a local circular data
+ * buffer.
+ *
+ * Mixing space_ptr/data_ptr/give/take API with mutex-protected transactional
+ * API might lead to corruption and is not recommended unless you know what you
+ * are doing.
+ * @see fbr_buffer_data_ptr
+ * @see fbr_buffer_give
+ * @see fbr_buffer_take
+ */
+static inline int fbr_buffer_take(FBR_P_ struct fbr_buffer *buffer,
+		size_t size)
+{
+	if (size > fbr_buffer_bytes(FBR_A_ buffer)) {
+		fctx->f_errno = FBR_EBUFFERNOSPACE;
+		return -1;
+	}
+	buffer->data_ptr += size;
+
+	if (buffer->data_ptr >= buffer->upper_ptr) {
+		buffer->data_ptr -= buffer->ptr_size;
+		buffer->space_ptr -= buffer->ptr_size;
+	}
+
+	return 0;
+}
+
+/**
+ * Resets a buffer.
+ * @param [in] buffer a pointer to fbr_buffer
+ *
+ * This function resets space and data pointers of the buffer to it's start,
+ * which results in whole buffer being marked as space.
+ *
+ * This function does not affect the state of mutexes and conditional
+ * variables, so using it while the buffer is in use by multiple fibers in not
+ * safe.
+ *
+ * @see fbr_buffer_init
+ * @see fbr_buffer_destroy
+ */
+static inline void fbr_buffer_reset(FBR_PU_ struct fbr_buffer *buffer)
+{
+	buffer->data_ptr = buffer->lower_ptr;
+	buffer->space_ptr = buffer->lower_ptr;
+}
+
+
+/**
  * Destroys a circular buffer.
  * @param [in] buffer a pointer to fbr_buffer to free
  *
@@ -1496,29 +1677,22 @@ void fbr_buffer_read_advance(FBR_P_ struct fbr_buffer *buffer);
  */
 void fbr_buffer_read_discard(FBR_P_ struct fbr_buffer *buffer);
 
-void fbr_buffer_reset(FBR_P_ struct fbr_buffer *buffer);
-
 /**
- * Amount of bytes filled with data.
+ * Resizes the buffer.
  * @param [in] buffer a pointer to fbr_buffer
- * @returns number of bytes written to the buffer
+ * @param [in] size a new buffer length
+ * @returns 0 on success, -1 on error.
  *
- * This function can be used to check if fbr_buffer_read_address will block.
- * @see fbr_buffer_free_bytes
- */
-size_t fbr_buffer_bytes(FBR_P_ struct fbr_buffer *buffer);
-
-/**
- * Amount of free bytes.
- * @param [in] buffer a pointer to fbr_buffer
- * @returns number of free bytes in the buffer
+ * This function allocates new memory mapping of sufficient size and copies the
+ * content of a buffer into it. Old mapping is destroyed.
  *
- * This function can be used to check if fbr_buffer_alloc_prepare will block.
- * @see fbr_buffer_bytes
+ * This operation is expensive and involves several syscalls, so it is
+ * beneficiary to allocate a buffer of siffucuent size from the start.
+ *
+ * This function acquires both read and write mutex, and may block until read
+ * or write operation has finished.
+ * @see fbr_buffer_reset
  */
-size_t fbr_buffer_free_bytes(FBR_P_ struct fbr_buffer *buffer);
-
-size_t fbr_buffer_size(FBR_P_ struct fbr_buffer *buffer);
 int fbr_buffer_resize(FBR_P_ struct fbr_buffer *buffer, size_t size);
 
 /**
