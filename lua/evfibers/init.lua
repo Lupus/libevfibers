@@ -52,7 +52,7 @@ function fbr.log_d(format, ...)
 end
 
 function fbr.is_foreign(id)
-	return 0 == rshift(tonumber(id), 32)
+	return 0 == rshift(tonumber(id), 48)
 end
 
 function fbr.ev_wait(events)

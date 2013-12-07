@@ -86,17 +86,13 @@ static const char default_buffer_pattern[] = "/dev/shm/fbr_buffer.XXXXXXXXX";
 
 static fbr_id_t fbr_id_pack(struct fbr_fiber *fiber)
 {
-	return ((uint64_t)fiber->id << 32) + fiber->fibers_index;
+	return ((uint64_t)fiber->id << 48) + (uint64_t)fiber;
 }
 
 static int fbr_id_unpack(FBR_P_ struct fbr_fiber **ptr, fbr_id_t id)
 {
-	uint32_t fiber_index = 0xFFFFFFFF & id;
-	uint32_t g = id >> 32;
-	struct fbr_fiber *fiber;
-	if (fiber_index >= fctx->__p->ids.new_id)
-		return_error(-1, FBR_EINVAL);
-	fiber = kv_A(fctx->__p->ids.fibers, fiber_index);
+	struct fbr_fiber *fiber = (void *)(0x0000FFFFFFFFFFFF & id);
+	uint16_t g = id >> 48;
 	if (fiber->id != g)
 		return_error(-1, FBR_ENOFIBER);
 	if (ptr)
@@ -204,13 +200,6 @@ static void stdio_logger(FBR_P_ struct fbr_logger *logger,
 	fprintf(stream, "\n");
 }
 
-static inline void register_fiber(FBR_P_ struct fbr_fiber *fiber)
-{
-	uint32_t idx = fctx->__p->ids.new_id++;
-	fiber->fibers_index = idx;
-	kv_a(struct fbr_fiber *, fctx->__p->ids.fibers, idx) = fiber;
-}
-
 void fbr_init(FBR_P_ struct ev_loop *loop)
 {
 	struct fbr_fiber *root;
@@ -224,17 +213,12 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	TAILQ_INIT(&fctx->__p->root.destructors);
 	TAILQ_INIT(&fctx->__p->pending_fibers);
 	SLIST_INIT(&fctx->__p->free_workers);
-	kv_init(fctx->__p->ids.fibers);
-	kv_resize(struct fbr_fiber *, fctx->__p->ids.fibers, 128);
-	fctx->__p->ids.new_id = 0;
 	kv_init(fctx->__p->foreign.transfer_pending);
 
 	root = &fctx->__p->root;
 	strncpy(root->name, "root", FBR_MAX_FIBER_NAME);
-	fctx->__p->last_id = 1;
-	root->id = fctx->__p->last_id++;
+	root->id = 1;
 	coro_create(&root->ctx, NULL, NULL, NULL, 0);
-	register_fiber(FBR_A_ root);
 
 	logger = allocate_in_fiber(FBR_A_ sizeof(struct fbr_logger), root);
 	logger->logv = stdio_logger;
@@ -504,7 +488,7 @@ int fbr_reclaim(FBR_P_ fbr_id_t id)
 	fill_trace_info(FBR_A_ &fiber->reclaim_tinfo);
 	reclaim_children(FBR_A_ fiber);
 	fiber_cleanup(FBR_A_ fiber);
-	fiber->id = fctx->__p->last_id++;
+	fiber->id = fiber->id + 1;
 #if 0
 	LIST_FOREACH(f, &fctx->__p->reclaimed, entries.reclaimed) {
 		assert(f != fiber);
@@ -1247,8 +1231,7 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		(void)VALGRIND_STACK_REGISTER(fiber->stack, fiber->stack +
 				stack_size);
 		fbr_cond_init(FBR_A_ &fiber->reclaim_cond);
-		fiber->id = fctx->__p->last_id++;
-		register_fiber(FBR_A_ fiber);
+		fiber->id = 1;
 	}
 	coro_create(&fiber->ctx, (coro_func)call_wrapper, FBR_A, fiber->stack,
 			fiber->stack_size);
@@ -1271,7 +1254,6 @@ fbr_id_t fbr_create_foreign(FBR_P_ const char *name)
 	fiber = malloc(sizeof(struct fbr_fiber));
 	memset(fiber, 0x00, sizeof(struct fbr_fiber));
 	fiber->id = 0; /* All foreign fibers have generation id of 0 */
-	register_fiber(FBR_A_ fiber);
 	fbr_cond_init(FBR_A_ &fiber->reclaim_cond);
 	LIST_INIT(&fiber->children);
 	LIST_INIT(&fiber->pool);

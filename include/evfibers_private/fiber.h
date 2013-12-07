@@ -59,8 +59,7 @@ TAILQ_HEAD(fiber_destructor_tailq, fbr_destructor);
 LIST_HEAD(fiber_list, fbr_fiber);
 
 struct fbr_fiber {
-	uint32_t id;
-	uint32_t fibers_index;
+	uint16_t id;
 	char name[FBR_MAX_FIBER_NAME];
 	fbr_fiber_func_t func;
 	void *func_arg;
@@ -119,14 +118,9 @@ struct fbr_context_private {
 	struct ev_async loop_wakeup_async;
 	struct fbr_id_tailq pending_fibers;
 	int backtraces_enabled;
-	uint32_t last_id;
 	uint64_t key_free_mask;
 	struct fbr_async_slist free_workers;
 	const char *buffer_file_pattern;
-	struct {
-		kvec_t(struct fbr_fiber *) fibers;
-		uint32_t new_id;
-	} ids;
 	struct {
 		kvec_t(fbr_id_t) transfer_pending;
 		kvec_t(fbr_id_t) transfer_pending_copy;
