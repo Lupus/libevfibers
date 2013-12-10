@@ -1364,7 +1364,7 @@ void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond)
 	transfer_later(FBR_A_ item);
 }
 
-static int buffer_init_mappings(FBR_P_ struct fbr_buffer *buffer, size_t size)
+int fbr_vrb_init(struct fbr_vrb *vrb, size_t size, const char *file_pattern)
 {
 	int fd;
 	size_t sz = get_page_size();
@@ -1372,80 +1372,81 @@ static int buffer_init_mappings(FBR_P_ struct fbr_buffer *buffer, size_t size)
 	void *ptr;
 	char *temp_name;
 
-	temp_name = strdup(fctx->__p->buffer_file_pattern);
-	buffer->mem_ptr_size = size * 2 + sz * 2;
-	buffer->mem_ptr = mmap(NULL, buffer->mem_ptr_size, PROT_NONE,
+	temp_name = strdup(file_pattern);
+	//fctx->__p->vrb_file_pattern);
+	vrb->mem_ptr_size = size * 2 + sz * 2;
+	vrb->mem_ptr = mmap(NULL, vrb->mem_ptr_size, PROT_NONE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-	if (MAP_FAILED == buffer->mem_ptr)
-		return_error(-1,  FBR_ESYSTEM);
-	buffer->lower_ptr = buffer->mem_ptr + sz;
-	buffer->upper_ptr = buffer->lower_ptr + size;
-	buffer->ptr_size = size;
-	buffer->data_ptr = buffer->lower_ptr;
-	buffer->space_ptr = buffer->lower_ptr;
+	if (MAP_FAILED == vrb->mem_ptr)
+		return -1;
+	vrb->lower_ptr = vrb->mem_ptr + sz;
+	vrb->upper_ptr = vrb->lower_ptr + size;
+	vrb->ptr_size = size;
+	vrb->data_ptr = vrb->lower_ptr;
+	vrb->space_ptr = vrb->lower_ptr;
 
 	fd = mkstemp(temp_name);
 	if (0 >= fd) {
-		munmap(buffer->mem_ptr, buffer->mem_ptr_size);
+		munmap(vrb->mem_ptr, vrb->mem_ptr_size);
 		free(temp_name);
-		return_error(-1,  FBR_ESYSTEM);
+		return -1;
 	}
 
 	if (0 > unlink(temp_name)) {
-		munmap(buffer->mem_ptr, buffer->mem_ptr_size);
+		munmap(vrb->mem_ptr, vrb->mem_ptr_size);
 		free(temp_name);
 		close(fd);
-		return_error(-1,  FBR_ESYSTEM);
+		return -1;
 	}
 	free(temp_name);
 
 	if (0 > ftruncate(fd, size)) {
-		munmap(buffer->mem_ptr, buffer->mem_ptr_size);
+		munmap(vrb->mem_ptr, vrb->mem_ptr_size);
 		close(fd);
-		return_error(-1,  FBR_ESYSTEM);
+		return -1;
 	}
 
-	ptr = mmap(buffer->lower_ptr, size, PROT_READ | PROT_WRITE,
+	ptr = mmap(vrb->lower_ptr, size, PROT_READ | PROT_WRITE,
 			MAP_FIXED | MAP_SHARED, fd, 0);
 	if (MAP_FAILED == ptr) {
-		munmap(buffer->mem_ptr, buffer->mem_ptr_size);
+		munmap(vrb->mem_ptr, vrb->mem_ptr_size);
 		close(fd);
-		return_error(-1, FBR_ESYSTEM);
+		return -1;
 	}
-	if (ptr != buffer->lower_ptr) {
-		munmap(buffer->lower_ptr, buffer->ptr_size);
-		munmap(buffer->mem_ptr, buffer->mem_ptr_size);
+	if (ptr != vrb->lower_ptr) {
+		munmap(vrb->lower_ptr, vrb->ptr_size);
+		munmap(vrb->mem_ptr, vrb->mem_ptr_size);
 		close(fd);
-		return_error(-1, FBR_EBUFFERMMAP);
+		return -1;
 	}
 
-	ptr = mmap(buffer->upper_ptr, size, PROT_READ | PROT_WRITE,
+	ptr = mmap(vrb->upper_ptr, size, PROT_READ | PROT_WRITE,
 			MAP_FIXED | MAP_SHARED, fd, 0);
 	if (MAP_FAILED == ptr) {
-		munmap(buffer->lower_ptr, buffer->ptr_size);
-		munmap(buffer->mem_ptr, buffer->mem_ptr_size);
+		munmap(vrb->lower_ptr, vrb->ptr_size);
+		munmap(vrb->mem_ptr, vrb->mem_ptr_size);
 		close(fd);
-		return_error(-1, FBR_ESYSTEM);
+		return -1;
 	}
 
-	if (ptr != buffer->upper_ptr) {
-		munmap(buffer->upper_ptr, buffer->ptr_size);
-		munmap(buffer->lower_ptr, buffer->ptr_size);
-		munmap(buffer->mem_ptr, buffer->mem_ptr_size);
+	if (ptr != vrb->upper_ptr) {
+		munmap(vrb->upper_ptr, vrb->ptr_size);
+		munmap(vrb->lower_ptr, vrb->ptr_size);
+		munmap(vrb->mem_ptr, vrb->mem_ptr_size);
 		close(fd);
-		return_error(-1, FBR_EBUFFERMMAP);
+		return -1;
 	}
 
 	close(fd);
-	return_success(0);
+	return 0;
 }
 
 int fbr_buffer_init(FBR_P_ struct fbr_buffer *buffer, size_t size)
 {
 	int rv;
-	rv = buffer_init_mappings(FBR_A_ buffer, size);
+	rv = fbr_vrb_init(&buffer->vrb, size, fctx->__p->buffer_file_pattern);
 	if (rv)
-		return rv;
+		return_error(-1, FBR_EBUFFERMMAP);
 
 	buffer->prepared_bytes = 0;
 	buffer->waiting_bytes = 0;
@@ -1456,16 +1457,16 @@ int fbr_buffer_init(FBR_P_ struct fbr_buffer *buffer, size_t size)
 	return_success(0);
 }
 
-static void buffer_destroy_mappings(FBR_PU_ struct fbr_buffer *buffer)
+void fbr_vrb_destroy(struct fbr_vrb *vrb)
 {
-	munmap(buffer->upper_ptr, buffer->ptr_size);
-	munmap(buffer->lower_ptr, buffer->ptr_size);
-	munmap(buffer->mem_ptr, buffer->mem_ptr_size);
+	munmap(vrb->upper_ptr, vrb->ptr_size);
+	munmap(vrb->lower_ptr, vrb->ptr_size);
+	munmap(vrb->mem_ptr, vrb->mem_ptr_size);
 }
 
 void fbr_buffer_destroy(FBR_P_ struct fbr_buffer *buffer)
 {
-	buffer_destroy_mappings(FBR_A_ buffer);
+	fbr_vrb_destroy(&buffer->vrb);
 
 	fbr_mutex_destroy(FBR_A_ &buffer->read_mutex);
 	fbr_mutex_destroy(FBR_A_ &buffer->write_mutex);
@@ -1497,7 +1498,7 @@ void *fbr_buffer_alloc_prepare(FBR_P_ struct fbr_buffer *buffer, size_t size)
 
 void fbr_buffer_alloc_commit(FBR_P_ struct fbr_buffer *buffer)
 {
-	fbr_buffer_give(FBR_A_ buffer, buffer->prepared_bytes);
+	fbr_vrb_give(&buffer->vrb, buffer->prepared_bytes);
 	buffer->prepared_bytes = 0;
 	fbr_cond_signal(FBR_A_ &buffer->committed_cond);
 	fbr_mutex_unlock(FBR_A_ &buffer->write_mutex);
@@ -1531,7 +1532,7 @@ void *fbr_buffer_read_address(FBR_P_ struct fbr_buffer *buffer, size_t size)
 
 void fbr_buffer_read_advance(FBR_P_ struct fbr_buffer *buffer)
 {
-	fbr_buffer_take(FBR_A_ buffer, buffer->waiting_bytes);
+	fbr_vrb_take(&buffer->vrb, buffer->waiting_bytes);
 
 	fbr_cond_signal(FBR_A_ &buffer->bytes_freed_cond);
 	fbr_mutex_unlock(FBR_A_ &buffer->read_mutex);
@@ -1544,25 +1545,14 @@ void fbr_buffer_read_discard(FBR_P_ struct fbr_buffer *buffer)
 
 int fbr_buffer_resize(FBR_P_ struct fbr_buffer *buffer, size_t size)
 {
-	struct fbr_buffer tmp;
 	int rv;
-	if (buffer->ptr_size >= size)
-		return_success(0);
 	fbr_mutex_lock(FBR_A_ &buffer->read_mutex);
 	fbr_mutex_lock(FBR_A_ &buffer->write_mutex);
-	memcpy(&tmp, buffer, sizeof(*buffer));
-	rv = buffer_init_mappings(FBR_A_ buffer, size);
-	if (rv) {
-		memcpy(buffer, &tmp, sizeof(*buffer));
-		return rv;
-	}
-	memcpy(fbr_buffer_space_ptr(FBR_A_ buffer),
-			fbr_buffer_data_ptr(FBR_A_ &tmp),
-			fbr_buffer_bytes(FBR_A_ &tmp));
-	fbr_buffer_give(FBR_A_ buffer, fbr_buffer_bytes(FBR_A_ &tmp));
-	buffer_destroy_mappings(FBR_A_ &tmp);
+	rv = fbr_vrb_resize(&buffer->vrb, size, fctx->__p->buffer_file_pattern);
 	fbr_mutex_unlock(FBR_A_ &buffer->write_mutex);
 	fbr_mutex_unlock(FBR_A_ &buffer->read_mutex);
+	if (rv)
+		return_error(-1, FBR_EBUFFERMMAP);
 	return_success(0);
 }
 

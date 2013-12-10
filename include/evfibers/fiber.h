@@ -540,13 +540,15 @@ struct fbr_cond_var {
 };
 
 /**
- * Inter-fiber communication pipe.
+ * Virtual ring buffer implementation.
  *
- * This structure represent a communication pipe between two (or more) fibers.
- * @see fbr_buffer_init
- * @see fbr_buffer_destroy
+ * Low-level data structure implemented using memory mappings of the same
+ * physical pages to provide no-copy overhead efficient ring buffer
+ * imlementation.
+ * @see fbr_vrb_init
+ * @see fbr_vrb_destroy
  */
-struct fbr_buffer {
+struct fbr_vrb {
 	void *mem_ptr;
 	size_t mem_ptr_size;
 	void *lower_ptr;
@@ -554,6 +556,20 @@ struct fbr_buffer {
 	size_t ptr_size;
 	void *data_ptr;
 	void *space_ptr;
+};
+
+/**
+ * Inter-fiber communication pipe.
+ *
+ * This structure represent a communication pipe between two (or more) fibers.
+ *
+ * Higher level wrapper around fbr_vrb.
+ * @see fbr_buffer_init
+ * @see fbr_buffer_destroy
+ * @see struct fbr_vrb
+ */
+struct fbr_buffer {
+	struct fbr_vrb vrb;
 	size_t prepared_bytes;
 	size_t waiting_bytes;
 	struct fbr_cond_var committed_cond;
@@ -1378,7 +1394,7 @@ int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex);
 void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond);
 
 /**
- * Signals to first fiber waiting for condition.
+ * Signals to first fiber waiting for a condition.
  *
  * Exactly one fiber (first one) waiting for a condition will be added to run
  * queue (and will eventually be run, one per event loop iteration).
@@ -1389,6 +1405,198 @@ void fbr_cond_broadcast(FBR_P_ struct fbr_cond_var *cond);
  * @see fbr_cond_signal
  */
 void fbr_cond_signal(FBR_P_ struct fbr_cond_var *cond);
+
+/**
+ * Initializes memory mappings.
+ * @param [in] vrb a pointer to fbr_vrb
+ * @param [in] size length of the data
+ * @param [in] file_pattern file name patterm for underlying mmap storage
+ * @returns 0 on succes, -1 on error.
+ *
+ * This function mmaps adjacent virtual memory regions of required size which
+ * correspond to the same physical memory region. Also it adds two page-sized
+ * regions on the left and on the right with PROT_NONE access as a guards.
+ *
+ * It does mmaps on the same file, which is unlinked and closed afterwards, so
+ * it will not pollute file descriptor space of a process and the filesystem.
+ *
+ * @see struct fbr_vrb
+ * @see fbr_vrb_destroy
+ */
+int fbr_vrb_init(struct fbr_vrb *vrb, size_t size, const char *file_pattern);
+
+
+/**
+ * Destroys mappings.
+ * @param [in] vrb a pointer to fbr_vrb
+ *
+ * This function unmaps all the mappings done by fbr_vrb_init.
+ *
+ * @see fbr_vrb_init
+ */
+void fbr_vrb_destroy(struct fbr_vrb *vrb);
+
+/**
+ * Retrieves data length.
+ * @param [in] vrb a pointer to fbr_vrb
+ * @returns length of the data area.
+ *
+ * @see struct fbr_vrb
+ */
+static inline size_t fbr_vrb_data_len(struct fbr_vrb *vrb)
+{
+	return vrb->space_ptr - vrb->data_ptr;
+}
+
+/**
+ * Retrieves space length.
+ * @param [in] vrb a pointer to fbr_vrb
+ * @returns length of the space area.
+ *
+ * @see struct fbr_vrb
+ */
+static inline size_t fbr_vrb_space_len(struct fbr_vrb *vrb)
+{
+	return vrb->data_ptr + vrb->ptr_size - vrb->space_ptr;
+}
+
+/**
+ * Retrieves total buffer capacity.
+ * @param [in] vrb a pointer to fbr_vrb
+ * @returns maximum length of data this vrb can hold.
+ *
+ * @see struct fbr_vrb
+ */
+static inline size_t fbr_vrb_capacity(struct fbr_vrb *vrb)
+{
+	return vrb->ptr_size;
+}
+
+/**
+ * Retrieves space area pointer.
+ * @param [in] vrb a pointer to fbr_vrb
+ * @returns pointer to the start of space area.
+ *
+ * @see struct fbr_vrb
+ */
+static inline void *fbr_vrb_space_ptr(struct fbr_vrb *vrb)
+{
+	return vrb->space_ptr;
+}
+
+/**
+ * Retrieves data area pointer.
+ * @param [in] vrb a pointer to fbr_vrb
+ * @returns pointer to the start of data area.
+ *
+ * @see struct fbr_vrb
+ */
+static inline void *fbr_vrb_data_ptr(struct fbr_vrb *vrb)
+{
+	return vrb->data_ptr;
+}
+
+/**
+ * Give data to a vrb.
+ * @param [in] vrb a pointer to fbr_vrb
+ * @param [in] size length of the data
+ * @returns 0 on succes, -1 on error.
+ *
+ * This function marks size bytes of space area as data starting from the
+ * beginning of space area. It's your responsibility to fill those area with
+ * the actual data.
+ *
+ * @see struct fbr_vrb
+ * @see fbr_vrb_take
+ */
+static inline int fbr_vrb_give(struct fbr_vrb *vrb, size_t size)
+{
+	if (size > fbr_vrb_space_len(vrb))
+		return -1;
+	vrb->space_ptr += size;
+	return 0;
+}
+
+/**
+ * Take data from a vrb.
+ * @param [in] vrb a pointer to fbr_vrb
+ * @param [in] size length of the data
+ * @returns 0 on succes, -1 on error.
+ *
+ * This function marks size bytes of data area as space starting from the
+ * beginning of data area. It's your responsibility to drop any references to
+ * the region as it might be overwritten later.
+ *
+ * @see struct fbr_vrb
+ * @see fbr_vrb_give
+ */
+static inline int fbr_vrb_take(struct fbr_vrb *vrb, size_t size)
+{
+	if (size > fbr_vrb_data_len(vrb))
+		return -1;
+	vrb->data_ptr += size;
+
+	if (vrb->data_ptr >= vrb->upper_ptr) {
+		vrb->data_ptr -= vrb->ptr_size;
+		vrb->space_ptr -= vrb->ptr_size;
+	}
+
+	return 0;
+}
+
+/**
+ * Resets a vrb.
+ * @param [in] vrb a pointer to fbr_vrb
+ *
+ * This function resets data and space pointers to their initial value,
+ * efficiently marking vrb as empty.
+ *
+ * @see struct fbr_vrb
+ */
+static inline void fbr_vrb_reset(struct fbr_vrb *vrb)
+{
+	vrb->data_ptr = vrb->lower_ptr;
+	vrb->space_ptr = vrb->lower_ptr;
+}
+
+/* Private function */
+int fbr_vrb_resize_do(struct fbr_vrb *vrb, size_t new_size,
+		const char *file_pattern);
+
+/**
+ * Resizes a vrb.
+ * @param [in] vrb a pointer to fbr_vrb
+ * @param [in] new_size new length of the data
+ * @param [in] file_pattern file name patterm for underlying mmap storage
+ * @returns 0 on succes, -1 on error.
+ *
+ * This function does new mappings and copies the data over. Old mappings will
+ * be destroyed and all pointers to old data will be invalid after this
+ * operation.
+ *
+ * @see struct fbr_vrb
+ * @see fbr_vrb_init
+ */
+static inline int fbr_vrb_resize(struct fbr_vrb *vrb, size_t new_size,
+		const char *file_pattern)
+{
+	struct fbr_vrb tmp;
+	int rv;
+	if (fbr_vrb_capacity(vrb) >= new_size)
+		return 0;
+	memcpy(&tmp, vrb, sizeof(tmp));
+	rv = fbr_vrb_init(vrb, new_size, file_pattern);
+	if (rv) {
+		memcpy(vrb, &tmp, sizeof(tmp));
+		return rv;
+	}
+	memcpy(fbr_vrb_space_ptr(vrb), fbr_vrb_data_ptr(&tmp),
+			fbr_vrb_data_len(&tmp));
+	fbr_vrb_give(vrb, fbr_vrb_data_len(&tmp));
+	fbr_vrb_destroy(&tmp);
+	return 0;
+}
+
 
 /**
  * Initializes a circular buffer with pipe semantics.
@@ -1413,7 +1621,7 @@ int fbr_buffer_init(FBR_P_ struct fbr_buffer *buffer, size_t size);
  */
 static inline size_t fbr_buffer_bytes(FBR_PU_ struct fbr_buffer *buffer)
 {
-	return buffer->space_ptr - buffer->data_ptr;
+	return fbr_vrb_data_len(&buffer->vrb);
 }
 
 /**
@@ -1426,7 +1634,7 @@ static inline size_t fbr_buffer_bytes(FBR_PU_ struct fbr_buffer *buffer)
  */
 static inline size_t fbr_buffer_free_bytes(FBR_PU_ struct fbr_buffer *buffer)
 {
-	return buffer->data_ptr + buffer->ptr_size - buffer->space_ptr;
+	return fbr_vrb_space_len(&buffer->vrb);
 }
 
 /**
@@ -1441,7 +1649,7 @@ static inline size_t fbr_buffer_free_bytes(FBR_PU_ struct fbr_buffer *buffer)
  */
 static inline size_t fbr_buffer_size(FBR_PU_ struct fbr_buffer *buffer)
 {
-	return buffer->ptr_size;
+	return fbr_vrb_capacity(&buffer->vrb);
 }
 
 /**
@@ -1465,7 +1673,7 @@ static inline size_t fbr_buffer_size(FBR_PU_ struct fbr_buffer *buffer)
  */
 static inline void *fbr_buffer_space_ptr(FBR_PU_ struct fbr_buffer *buffer)
 {
-	return buffer->space_ptr;
+	return fbr_vrb_space_ptr(&buffer->vrb);
 }
 
 /**
@@ -1489,77 +1697,7 @@ static inline void *fbr_buffer_space_ptr(FBR_PU_ struct fbr_buffer *buffer)
  */
 static inline void *fbr_buffer_data_ptr(FBR_PU_ struct fbr_buffer *buffer)
 {
-	return buffer->data_ptr;
-}
-
-/**
- * Give data to a buffer.
- * @param [in] buffer a pointer to fbr_buffer
- * @param [in] size length of the data
- * @returns 0 on succes, -1 on error.
- *
- * This function marks size bytes of space area as data starting from the
- * beginning of space area. It's your responsibility to fill those area with
- * the actual data.
- *
- * You may use this function in case you have a fbr_buffer, that is not used as
- * an inter-fiber communication mechanism but only as a local circular data
- * buffer.
- *
- * Mixing space_ptr/data_ptr/give/take API with mutex-protected transactional
- * API might lead to corruption and is not recommended unless you know what you
- * are doing.
- * @see fbr_buffer_data_ptr
- * @see fbr_buffer_give
- * @see fbr_buffer_take
- */
-static inline int fbr_buffer_give(FBR_P_ struct fbr_buffer *buffer,
-		size_t size)
-{
-	if (size > fbr_buffer_free_bytes(FBR_A_ buffer)) {
-		fctx->f_errno = FBR_EBUFFERNOSPACE;
-		return -1;
-	}
-	buffer->space_ptr += size;
-	return 0;
-}
-
-/**
- * Take data from a buffer.
- * @param [in] buffer a pointer to fbr_buffer
- * @param [in] size length of the data
- * @returns 0 on succes, -1 on error.
- *
- * This function marks size bytes of data area as space starting from the
- * beginning of data area. It's your responsibility to drop any references to
- * the region as it might be overwritten later.
- *
- * You may use this function in case you have a fbr_buffer, that is not used as
- * an inter-fiber communication mechanism but only as a local circular data
- * buffer.
- *
- * Mixing space_ptr/data_ptr/give/take API with mutex-protected transactional
- * API might lead to corruption and is not recommended unless you know what you
- * are doing.
- * @see fbr_buffer_data_ptr
- * @see fbr_buffer_give
- * @see fbr_buffer_take
- */
-static inline int fbr_buffer_take(FBR_P_ struct fbr_buffer *buffer,
-		size_t size)
-{
-	if (size > fbr_buffer_bytes(FBR_A_ buffer)) {
-		fctx->f_errno = FBR_EBUFFERNOSPACE;
-		return -1;
-	}
-	buffer->data_ptr += size;
-
-	if (buffer->data_ptr >= buffer->upper_ptr) {
-		buffer->data_ptr -= buffer->ptr_size;
-		buffer->space_ptr -= buffer->ptr_size;
-	}
-
-	return 0;
+	return fbr_vrb_data_ptr(&buffer->vrb);
 }
 
 /**
@@ -1578,8 +1716,7 @@ static inline int fbr_buffer_take(FBR_P_ struct fbr_buffer *buffer,
  */
 static inline void fbr_buffer_reset(FBR_PU_ struct fbr_buffer *buffer)
 {
-	buffer->data_ptr = buffer->lower_ptr;
-	buffer->space_ptr = buffer->lower_ptr;
+	fbr_vrb_reset(&buffer->vrb);
 }
 
 
