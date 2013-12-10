@@ -1,3 +1,9 @@
+libevfibers (0.3.0.rc9) unstable; urgency=low
+
+  * RC version
+
+ -- Konstantin Olkhovskiy <kolkhovskiy@kolkhovskiy-laptop>  Tue, 10 Dec 2013 13:52:57 +0400
+
 libevfibers (0.3.0) unstable; urgency=low
 
   * Fiber names are now gettable/settable
