@@ -903,6 +903,28 @@ const char *fbr_get_name(FBR_P_ fbr_id_t id);
 int fbr_set_name(FBR_P_ fbr_id_t id, const char *name);
 
 /**
+ * Retrieve a function of the fiber.
+ * @param [in] id identificator of a fiber
+ * @return pointer to a function that the fiber is (or was) executing.
+ *
+ * Simply returns the pointer that was passed upon fbr_create.
+ *
+ * @see fbr_create
+ */
+fbr_fiber_func_t fbr_get_func(FBR_P_ fbr_id_t id);
+
+/**
+ * Retrieve an argument of a function of the fiber.
+ * @param [in] id identificator of a fiber
+ * @return argument to a function that the fiber is (or was) executing.
+ *
+ * Simply returns the argument that was passed upon fbr_create.
+ *
+ * @see fbr_create
+ */
+void *fbr_get_func_arg(FBR_P_ fbr_id_t id);
+
+/**
  * Changes parent of current fiber.
  * @param [in] parent new parent fiber
  * @returns -1 on error with f_errno set, 0 upon success

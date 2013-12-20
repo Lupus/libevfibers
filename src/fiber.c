@@ -756,12 +756,14 @@ int fbr_transfer(FBR_P_ fbr_id_t to)
 	if (callee->foreign.enabled) {
 		callee->foreign.flags |= FBR_FF_TRANSFER_PENDING;
 		kv_push(fbr_id_t, fctx->__p->foreign.transfer_pending, to);
+		printf("fbr_transfer called with foreign fiber, size=%zd\n", kv_size(fctx->__p->foreign.transfer_pending));
 		if (0 == ev_pending_count(fctx->__p->loop)) {
 			/* Wake up the event loop as it's probably ran in
 			 * EVRUN_ONCE mode from scripting language so as to
 			 * make it quickly return as long as event arrived and
 			 * make fbr_transfer do it's job timely.
 			 */
+			printf("fbr_transfer sent async to the loop\n");
 			ev_async_send(fctx->__p->loop,
 					&fctx->__p->loop_wakeup_async);
 		}
@@ -1210,10 +1212,36 @@ static size_t round_up_to_page_size(size_t size)
 	return size + sz - remainder;
 }
 
+static struct fbr_fiber *create_foreign_fiber(FBR_P_ const char *name)
+{
+	struct fbr_fiber *fiber;
+	fiber = malloc(sizeof(struct fbr_fiber));
+	memset(fiber, 0x00, sizeof(struct fbr_fiber));
+	fiber->id = 0; /* All foreign fibers have generation id of 0 */
+	fbr_cond_init(FBR_A_ &fiber->reclaim_cond);
+	LIST_INIT(&fiber->children);
+	LIST_INIT(&fiber->pool);
+	TAILQ_INIT(&fiber->destructors);
+	strncpy(fiber->name, name, FBR_MAX_FIBER_NAME);
+	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries.children);
+	fiber->parent = CURRENT_FIBER;
+	fiber->no_reclaim = 0;
+	fiber->want_reclaim = 0;
+	fiber->foreign.enabled = 1;
+	return fiber;
+}
+
 fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		size_t stack_size)
 {
 	struct fbr_fiber *fiber;
+	if ((intptr_t)func & 1) {
+		fiber = create_foreign_fiber(FBR_A_ name);
+		fiber->func = func;
+		fiber->func_arg = arg;
+		printf("fbr_create has created a foreign fiber!\n");
+		return fbr_id_pack(fiber);
+	}
 	if (!LIST_EMPTY(&fctx->__p->reclaimed)) {
 		fiber = LIST_FIRST(&fctx->__p->reclaimed);
 		LIST_REMOVE(fiber, entries.reclaimed);
@@ -1248,23 +1276,23 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 	return fbr_id_pack(fiber);
 }
 
-fbr_id_t fbr_create_foreign(FBR_P_ const char *name)
+fbr_fiber_func_t fbr_get_func(FBR_P_ fbr_id_t id)
 {
 	struct fbr_fiber *fiber;
-	fiber = malloc(sizeof(struct fbr_fiber));
-	memset(fiber, 0x00, sizeof(struct fbr_fiber));
-	fiber->id = 0; /* All foreign fibers have generation id of 0 */
-	fbr_cond_init(FBR_A_ &fiber->reclaim_cond);
-	LIST_INIT(&fiber->children);
-	LIST_INIT(&fiber->pool);
-	TAILQ_INIT(&fiber->destructors);
-	strncpy(fiber->name, name, FBR_MAX_FIBER_NAME);
-	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries.children);
-	fiber->parent = CURRENT_FIBER;
-	fiber->no_reclaim = 0;
-	fiber->want_reclaim = 0;
-	fiber->foreign.enabled = 1;
-	return fbr_id_pack(fiber);
+	unpack_transfer_errno(NULL, &fiber, id);
+	return_success(fiber->func);
+}
+
+void *fbr_get_func_arg(FBR_P_ fbr_id_t id)
+{
+	struct fbr_fiber *fiber;
+	unpack_transfer_errno(NULL, &fiber, id);
+	return_success(fiber->func_arg);
+}
+
+fbr_id_t fbr_create_foreign(FBR_P_ const char *name)
+{
+	return fbr_id_pack(create_foreign_fiber(FBR_A_ name));
 }
 
 int fbr_has_pending_events(FBR_P_ fbr_id_t id)
@@ -1277,6 +1305,7 @@ int fbr_has_pending_events(FBR_P_ fbr_id_t id)
 fbr_id_t *fbr_foreign_get_transfer_pending(FBR_P_ size_t *size)
 {
 	size_t sz = kv_size(fctx->__p->foreign.transfer_pending);
+	printf("fbr_foreign_get_transfer_pending size=%zd\n", sz);
 	if (0 == sz)
 		return NULL;
 	kv_copy(fbr_id_t, fctx->__p->foreign.transfer_pending_copy,
@@ -2241,3 +2270,8 @@ int fbr_async_fs_realpath(FBR_P_ struct fbr_async *async, const char *path,
 }
 
 #undef CHECK_ASYNC_ERROR
+
+ev_tstamp c_wrapped_fiber_sleep(FBR_P_ ev_tstamp duration)
+{
+	return fbr_sleep(FBR_A_ duration);
+}

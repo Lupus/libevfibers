@@ -16,7 +16,8 @@ function main()
 
 	local id = fbr.create("test fiber", function()
 		while true do
-			fbr.sleep(0.01)
+			--fbr.sleep(0.01)
+			fbr.c_wrapped_sleep(0.01)
 			print("Ping!")
 		end
 	end)

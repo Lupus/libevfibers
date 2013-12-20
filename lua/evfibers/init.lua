@@ -1,6 +1,6 @@
 local ffi = require("ffi")
 local bit = require("bit")
-local band, bnot, rshift = bit.band, bit.bnot, bit.rshift
+local band, bnot, rshift, lshift = bit.band, bit.bnot, bit.rshift, bit.lshift
 local so = ffi.load("/home/kolkhovskiy/git/libevfibers/build/libevfibers.so")
 local ev = require("evfibers.ev")
 require("evfibers.extra_cdefs")
@@ -28,6 +28,7 @@ local fctx
 local fibers = {}
 local fibers_ids = {}
 local current_fiber
+local func_pointers = {}
 local foreign_flags = ffi.new("enum fbr_foreign_flag[1]")
 local one_event_arr = ffi.new("struct fbr_ev_base *[2]")
 
@@ -119,6 +120,14 @@ function fbr.sleep(seconds)
 	return math.max(0, expected - fbr.loop:now())
 end
 
+ffi.cdef[[
+ev_tstamp c_wrapped_fiber_sleep(struct fbr_context *fctx, ev_tstamp duration);
+]]
+
+function fbr.c_wrapped_sleep(seconds)
+	return so.c_wrapped_fiber_sleep(fctx, seconds)
+end
+
 function fbr.create(name, func)
 	local coro = coroutine.create(func)
 	local id = so.fbr_create_foreign(fctx, name)
@@ -173,6 +182,21 @@ end
 
 function fbr.yield()
 	fiber_yield()
+end
+
+function fbr.ref_function_pointer(func)
+	local idx = #func_pointers + 1
+	func_pointers[idx] = func
+	local shifted = lshift(idx, 1)
+	local tagged = band(shifted, 1)
+	return ffi.cast("void *", tagged)
+end
+
+function fbr.get_function_from_pointer(ptr)
+	local x = tonumber(ffi.cast("intptr_t", ptr))
+	assert(band(x, 1) > 0, "Not a tagged lua function pointer")
+	local idx = rshift(x, 1)
+	return func_pointers[idx]
 end
 
 function transfer_pending()
