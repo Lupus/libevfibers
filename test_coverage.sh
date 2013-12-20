@@ -4,6 +4,7 @@ set -e
 
 function remove_extra {
 	lcov -q --remove $1 "coro/*" -o $1
+	lcov -q --remove $1 "bench/*" -o $1
 	lcov -q --remove $1 "build/CMakeFiles/*" -o $1
 	lcov -q --remove $1 "/usr/include/*" -o $1
 }
