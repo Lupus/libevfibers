@@ -2574,6 +2574,14 @@ int fbr_eio_fallocate(FBR_P_ int fd, int mode, off_t offset, off_t len, int pri)
 	FBR_EIO_RESULT_RET;
 }
 
+int fbr_eio_custom(FBR_P_ void (*execute)(eio_req *), int pri)
+{
+	FBR_EIO_PREP;
+	req = eio_custom(execute, pri, fiber_eio_cb, &e_eio);
+	FBR_EIO_WAIT;
+	FBR_EIO_RESULT_RET;
+}
+
 #else
 
 void fbr_eio_init(FBR_PU)
