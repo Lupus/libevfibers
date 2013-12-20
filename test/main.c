@@ -32,19 +32,15 @@
 #include "io.h"
 #include "logger.h"
 #include "buffer.h"
-#include "async.h"
 #include "key.h"
 #include "eio.h"
 
 Suite *evfibers_suite(void)
 {
-	int retval;
 	Suite *s;
 	TCase *tc_init, *tc_mutex, *tc_cond, *tc_reclaim, *tc_io, *tc_logger,
-	      *tc_buffer, *tc_async, *tc_key, *tc_eio;
+	      *tc_buffer, *tc_key, *tc_eio;
 
-	retval = setenv("FBR_WORKER_BIN_PATH", FBR_WORKER_TARGET_PATH, 0);
-	assert(0 == retval);
 	s = suite_create ("evfibers");
 	tc_init = init_tcase();
 	tc_mutex = mutex_tcase();
@@ -53,7 +49,6 @@ Suite *evfibers_suite(void)
 	tc_io = io_tcase();
 	tc_logger = logger_tcase();
 	tc_buffer = buffer_tcase();
-	tc_async = async_tcase();
 	tc_key = key_tcase();
 	tc_eio = eio_tcase();
 	suite_add_tcase(s, tc_init);
@@ -63,7 +58,6 @@ Suite *evfibers_suite(void)
 	suite_add_tcase(s, tc_io);
 	suite_add_tcase(s, tc_logger);
 	suite_add_tcase(s, tc_buffer);
-	suite_add_tcase(s, tc_async);
 	suite_add_tcase(s, tc_key);
 	suite_add_tcase(s, tc_eio);
 

@@ -175,17 +175,6 @@ struct fbr_fiber {
 
 TAILQ_HEAD(mutex_tailq, fbr_mutex);
 
-struct fbr_async {
-	pid_t worker_pid;
-	int read_fd, write_fd;
-	struct fbr_mutex mutex;
-	void *buf;
-	size_t buf_size;
-	SLIST_ENTRY(fbr_async) entries;
-};
-
-SLIST_HEAD(fbr_async_slist, fbr_async);
-
 struct fbr_stack_item {
 	struct fbr_fiber *fiber;
 	struct trace_info tinfo;
@@ -201,12 +190,9 @@ struct fbr_context_private {
 	int backtraces_enabled;
 	uint64_t last_id;
 	uint64_t key_free_mask;
-	struct fbr_async_slist free_workers;
 	const char *buffer_file_pattern;
 
 	struct ev_loop *loop;
 };
-
-int fbr_async_debug(FBR_P_ struct fbr_async *async);
 
 #endif

@@ -100,6 +100,9 @@ static char big_msg[] =
 "tempus vitae nunc. Quisque pellentesque leo vel turpis vulputate sodales."
 "Vestibulum eu erat neque. Sed aliquet, eros vel turpis duis.\n";
 
+#include <stdio.h>
+#include <errno.h>
+
 static void io_fiber(FBR_P_ _unused_ void *_arg)
 {
 	ssize_t retval;
@@ -108,7 +111,8 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	off_t offt;
 	EIO_STRUCT_STAT statdata;
 
-	fd = fbr_eio_open(FBR_A_ "/tmp/async.test", O_RDWR, 0, 0);
+	fd = fbr_eio_open(FBR_A_ "/tmp/async.test", O_RDWR | O_CREAT | O_TRUNC,
+			0644, 0);
 	fail_unless(0 <= fd);
 
 	retval = fbr_eio_ftruncate(FBR_A_ fd, 0, 0);

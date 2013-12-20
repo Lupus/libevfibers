@@ -194,7 +194,6 @@
 
 struct fbr_context_private;
 struct fbr_logger;
-struct fbr_async;
 
 struct fbr_id_s {
 	uint64_t g;
@@ -233,7 +232,6 @@ enum fbr_error_code {
 	FBR_ESYSTEM,
 	FBR_EBUFFERMMAP,
 	FBR_ENOKEY,
-	FBR_EASYNC,
 	FBR_EPROTOBUF,
 	FBR_EBUFFERNOSPACE,
 	FBR_EEIO,
@@ -1812,24 +1810,5 @@ void *fbr_get_user_data(FBR_P_ fbr_id_t id);
  * @see fbr_get_user_data
  */
 int fbr_set_user_data(FBR_P_ fbr_id_t id, void *data);
-
-struct fbr_async *fbr_async_create(FBR_P);
-void fbr_async_destroy(FBR_P_ struct fbr_async *async);
-int fbr_async_fopen(FBR_P_ struct fbr_async *async, const char *filename,
-		const char *mode);
-int fbr_async_fclose(FBR_P_ struct fbr_async *async);
-int fbr_async_fread(FBR_P_ struct fbr_async *async, void *buf, size_t size);
-int fbr_async_fwrite(FBR_P_ struct fbr_async *async, void *buf,
-		size_t size);
-int fbr_async_fseek(FBR_P_ struct fbr_async *async, size_t offset, int whence);
-ssize_t fbr_async_ftell(FBR_P_ struct fbr_async *async);
-int fbr_async_fflush(FBR_P_ struct fbr_async *async);
-int fbr_async_ftruncate(FBR_P_ struct fbr_async *async, size_t size);
-int fbr_async_fsync(FBR_P_ struct fbr_async *async);
-int fbr_async_fdatasync(FBR_P_ struct fbr_async *async);
-int fbr_async_fs_stat(FBR_P_ struct fbr_async *async, const char *path,
-		struct stat *buf);
-int fbr_async_fs_realpath(FBR_P_ struct fbr_async *async, const char *path,
-		char *buf);
 
 #endif
