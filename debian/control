@@ -2,7 +2,7 @@ Source: libevfibers
 Priority: extra
 Maintainer: Konstantin Olkhovskiy <lupus@oxnull.net>
 Build-Depends: debhelper (>= 8.0.0), cmake, libev-dev, valgrind, uthash-dev,
- check, protobuf-c-compiler, libprotobuf-c0-dev
+ check, libeio-dev
 Standards-Version: 3.9.2
 Section: libs
 Homepage: http://code.google.com/p/libevfibers
