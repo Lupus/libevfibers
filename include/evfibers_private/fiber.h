@@ -31,19 +31,107 @@
 #include <evfibers/fiber.h>
 #include <evfibers_private/trace.h>
 #include <coro.h>
-
-#define obstack_chunk_alloc malloc
-#define obstack_chunk_free free
-
-#define FBR_CALL_LIST_WARN 1000
-
 #define max(a,b) ({						\
 		const typeof(a) __tmp_a = (a);			\
 		const typeof(b) __tmp_b = (b);			\
 		__tmp_a > __tmp_b ? __tmp_a : __tmp_b;		\
 		})
 
+#define min(a,b) ({						\
+		const typeof(a) __tmp_a = (a);			\
+		const typeof(b) __tmp_b = (b);			\
+		__tmp_a < __tmp_b ? __tmp_a : __tmp_b;		\
+		})
+
 #define _unused_ __attribute__((unused))
+
+#ifndef LIST_FOREACH_SAFE
+#define LIST_FOREACH_SAFE(var, head, field, next_var)              \
+	for ((var) = ((head)->lh_first);                           \
+		(var) && ((next_var) = ((var)->field.le_next), 1); \
+		(var) = (next_var))
+
+#endif
+
+#ifndef TAILQ_FOREACH_SAFE
+#define TAILQ_FOREACH_SAFE(var, head, field, next_var)                 \
+	for ((var) = ((head)->tqh_first);                              \
+		(var) ? ({ (next_var) = ((var)->field.tqe_next); 1; }) \
+		: 0;                                                   \
+		(var) = (next_var))
+#endif
+
+
+#define ENSURE_ROOT_FIBER do {                            \
+	assert(fctx->__p->sp->fiber == &fctx->__p->root); \
+} while (0)
+
+#define CURRENT_FIBER (fctx->__p->sp->fiber)
+#define CURRENT_FIBER_ID (fbr_id_pack(CURRENT_FIBER))
+#define CALLED_BY_ROOT ((fctx->__p->sp - 1)->fiber == &fctx->__p->root)
+
+#define unpack_transfer_errno(value, ptr, id)           \
+	do {                                            \
+		if (-1 == fbr_id_unpack(fctx, ptr, id)) \
+			return (value);                 \
+	} while (0)
+
+#define return_success(value)                \
+	do {                                 \
+		fctx->f_errno = FBR_SUCCESS; \
+		return (value);              \
+	} while (0)
+
+#define return_error(value, code)       \
+	do {                            \
+		fctx->f_errno = (code); \
+		return (value);         \
+	} while (0)
+
+
+#ifndef LIST_FOREACH_SAFE
+#define LIST_FOREACH_SAFE(var, head, field, next_var)              \
+	for ((var) = ((head)->lh_first);                           \
+		(var) && ((next_var) = ((var)->field.le_next), 1); \
+		(var) = (next_var))
+
+#endif
+
+#ifndef TAILQ_FOREACH_SAFE
+#define TAILQ_FOREACH_SAFE(var, head, field, next_var)                 \
+	for ((var) = ((head)->tqh_first);                              \
+		(var) ? ({ (next_var) = ((var)->field.tqe_next); 1; }) \
+		: 0;                                                   \
+		(var) = (next_var))
+#endif
+
+
+#define ENSURE_ROOT_FIBER do {                            \
+	assert(fctx->__p->sp->fiber == &fctx->__p->root); \
+} while (0)
+
+#define CURRENT_FIBER (fctx->__p->sp->fiber)
+#define CURRENT_FIBER_ID (fbr_id_pack(CURRENT_FIBER))
+#define CALLED_BY_ROOT ((fctx->__p->sp - 1)->fiber == &fctx->__p->root)
+
+#define unpack_transfer_errno(value, ptr, id)           \
+	do {                                            \
+		if (-1 == fbr_id_unpack(fctx, ptr, id)) \
+			return (value);                 \
+	} while (0)
+
+#define return_success(value)                \
+	do {                                 \
+		fctx->f_errno = FBR_SUCCESS; \
+		return (value);              \
+	} while (0)
+
+#define return_error(value, code)       \
+	do {                            \
+		fctx->f_errno = (code); \
+		return (value);         \
+	} while (0)
+
 
 struct mem_pool {
 	void *ptr;
@@ -87,17 +175,6 @@ struct fbr_fiber {
 
 TAILQ_HEAD(mutex_tailq, fbr_mutex);
 
-struct fbr_async {
-	pid_t worker_pid;
-	int read_fd, write_fd;
-	struct fbr_mutex mutex;
-	void *buf;
-	size_t buf_size;
-	SLIST_ENTRY(fbr_async) entries;
-};
-
-SLIST_HEAD(fbr_async_slist, fbr_async);
-
 struct fbr_stack_item {
 	struct fbr_fiber *fiber;
 	struct trace_info tinfo;
@@ -113,12 +190,10 @@ struct fbr_context_private {
 	int backtraces_enabled;
 	uint64_t last_id;
 	uint64_t key_free_mask;
-	struct fbr_async_slist free_workers;
+	const char *buffer_file_pattern;
 	const char *buffer_file_pattern;
 
 	struct ev_loop *loop;
 };
-
-int fbr_async_debug(FBR_P_ struct fbr_async *async);
 
 #endif

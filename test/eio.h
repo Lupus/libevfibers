@@ -20,9 +20,9 @@
 
  ********************************************************************/
 
-#ifndef _ASYNC_H_
-#define _ASYNC_H_
+#ifndef _EIO_H_
+#define _EIO_H_
 
-TCase * async_tcase(void);
+TCase * eio_tcase(void);
 
 #endif

@@ -20,10 +20,9 @@
 
  ********************************************************************/
 
-#ifndef _FBR_CONFIG_PRIVATE_H_
-#define _FBR_CONFIG_PRIVATE_H_
+#ifndef _FBR_CONFIG_H_
+#define _FBR_CONFIG_H_
 
-#cmakedefine WORKER_BIN_PATH "${WORKER_BIN_PATH}"
-#cmakedefine WORKER_TARGET_PATH "${WORKER_TARGET_PATH}"
+#cmakedefine FBR_EIO_ENABLED
 
 #endif

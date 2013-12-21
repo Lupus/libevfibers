@@ -20,14 +20,21 @@
 
  ********************************************************************/
 
-#include <ev.h>
 #include <check.h>
+#include <evfibers/config.h>
+#ifdef FBR_EIO_ENABLED
+
+#include <ev.h>
+#include <stdio.h>
+#include <limits.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <evfibers/eio.h>
 #include <evfibers_private/fiber.h>
 
-#include "async.h"
-
-char small_msg[] = "Small test line\n\n";
-char big_msg[] =
+static char small_msg[] = "Small test line\n\n";
+static char big_msg[] =
 "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed mi ante, elementum"
 "ac pharetra id, porttitor eu leo. Phasellus quam tortor, cursus quis accumsan"
 "eget, molestie ac leo. Donec a velit elit. Ut placerat leo arcu. Donec"
@@ -93,102 +100,182 @@ char big_msg[] =
 "tempus vitae nunc. Quisque pellentesque leo vel turpis vulputate sodales."
 "Vestibulum eu erat neque. Sed aliquet, eros vel turpis duis.\n";
 
-#include <stdio.h>
-#include <limits.h>
-#include <sys/stat.h>
-
 static void io_fiber(FBR_P_ _unused_ void *_arg)
 {
 	ssize_t retval;
-	size_t offt;
-	struct fbr_async *as;
+	int fd;
 	void *buf;
-	struct stat stat_buf;
-	struct stat stat_buf2;
-	char path_buf[PATH_MAX] = {0};
-	signal(SIGPIPE, SIG_IGN);
-	as = fbr_async_create(FBR_A);
-#if 0
-	retval = fbr_async_debug(FBR_A_ as);
-	fail_unless(0 == retval);
-#endif
-	retval = fbr_async_fopen(FBR_A_ as, "/tmp/async.test", "w+");
-	fail_unless(0 == retval);
-	retval = fbr_async_ftruncate(FBR_A_ as, 0);
+	off_t offt;
+	char path_buf[PATH_MAX + 1];
+	EIO_STRUCT_STAT statdata;
+	EIO_STRUCT_STATVFS statvdata;
+
+	memset(&statvdata, 0x00, sizeof(statvdata));
+	retval = fbr_eio_statvfs(FBR_A_ "/tmp", 0, &statvdata);
+	assert(0 == retval);
+
+	fd = fbr_eio_open(FBR_A_ "/tmp/async.test", O_RDWR | O_CREAT | O_TRUNC,
+			0644, 0);
+	fail_unless(0 <= fd);
+
+	retval = fbr_eio_ftruncate(FBR_A_ fd, 0, 0);
 	fail_unless(0 == retval);
 
+	retval = fbr_eio_syncfs(FBR_A_ fd, 0);
+	fail_unless(0 == retval);
+
+	retval = fbr_eio_fallocate(FBR_A_ fd, EIO_FALLOC_FL_KEEP_SIZE, 0,
+			sizeof(big_msg), 0);
+	fail_unless(0 == retval);
+
+	memset(&statdata, 0x00, sizeof(statdata));
+	retval = fbr_eio_fstat(FBR_A_ fd, 0, &statdata);
+	assert(0 == retval);
+
+	memset(&statvdata, 0x00, sizeof(statvdata));
+	retval = fbr_eio_fstatvfs(FBR_A_ fd, 0, &statvdata);
+	assert(0 == retval);
+
+	retval = fbr_eio_futime(FBR_A_ fd, ev_now(fctx->__p->loop),
+			ev_now(fctx->__p->loop), 0);
+	fail_unless(0 == retval);
+
+	retval = fbr_eio_fchmod(FBR_A_ fd, 0644, 0);
+	fail_unless(0 == retval);
+
+	retval = fbr_eio_fchown(FBR_A_ fd, getuid(), getgid(), 0);
+	fail_unless(0 == retval);
 
 	/* Small message test */
-	retval = fbr_async_fwrite(FBR_A_ as, small_msg, sizeof(small_msg));
-	fail_unless(1 == retval);
+	retval = fbr_eio_write(FBR_A_ fd, small_msg, sizeof(small_msg), -1, 0);
+	fail_unless(0 < retval);
 
-	retval = fbr_async_fsync(FBR_A_ as);
+	retval = fbr_eio_fsync(FBR_A_ fd, 0);
 	fail_unless(0 == retval);
 
-	retval = fbr_async_fseek(FBR_A_ as, 0, SEEK_SET);
+	retval = fbr_eio_sync_file_range(FBR_A_ fd, 0, sizeof(small_msg),
+			EIO_SYNC_FILE_RANGE_WRITE, 0);
+	fail_unless(0 == retval);
+
+	retval = fbr_eio_seek(FBR_A_ fd, 0, EIO_SEEK_SET, 0);
 	fail_unless(0 == retval);
 
 	buf = malloc(sizeof(small_msg));
-	fail_if(NULL == buf);
+	fail_unless(NULL != buf);
 
-	retval = fbr_async_fread(FBR_A_ as, buf, sizeof(small_msg));
-	fail_unless(1 == retval);
+	retval = fbr_eio_readahead(FBR_A_ fd, 0, sizeof(small_msg), 0);
+	fail_unless(NULL != buf);
+
+	retval = fbr_eio_read(FBR_A_ fd, buf, sizeof(small_msg), -1, 0);
+	fail_unless(0 <= retval);
 	fail_unless(!memcmp(small_msg, buf, sizeof(small_msg)));
 
 	free(buf);
 
-
 	/* Big message test */
-	retval = fbr_async_ftell(FBR_A_ as);
-	fail_if(-1 == retval);
+	retval = fbr_eio_seek(FBR_A_ fd, 0, EIO_SEEK_CUR, 0);
+	fail_unless(0 < retval);
 
 	offt = retval;
 
-	retval = fbr_async_fwrite(FBR_A_ as, big_msg, sizeof(big_msg));
-	fail_unless(1 == retval);
+	retval = fbr_eio_write(FBR_A_ fd, big_msg, sizeof(big_msg), -1, 0);
+	fail_unless(0 < retval);
 
-	retval = fbr_async_fdatasync(FBR_A_ as);
+	retval = fbr_eio_fdatasync(FBR_A_ fd, 0);
 	fail_unless(0 == retval);
 
-	retval = fbr_async_fseek(FBR_A_ as, offt, SEEK_SET);
-	fail_unless(0 == retval);
+	retval = fbr_eio_seek(FBR_A_ fd, offt, EIO_SEEK_SET, 0);
+	fail_unless(0 < retval);
 
 	buf = malloc(sizeof(big_msg));
-	fail_if(NULL == buf);
+	fail_unless(NULL != buf);
 
-	retval = fbr_async_fread(FBR_A_ as, buf, sizeof(big_msg));
-	fail_unless(1 == retval);
+	retval = fbr_eio_read(FBR_A_ fd, buf, sizeof(big_msg), -1, 0);
+	fail_unless(0 < retval);
 	fail_unless(!memcmp(big_msg, buf, sizeof(big_msg)));
 
 	free(buf);
 
-	retval = fbr_async_fclose(FBR_A_ as);
+	retval = fbr_eio_sync(FBR_A_ 0);
 	fail_unless(0 == retval);
 
-	/* Stat test */
-	memset(&stat_buf, 0x00, sizeof(stat_buf));
-	memset(&stat_buf2, 0x00, sizeof(stat_buf2));
-	retval = fbr_async_fs_stat(FBR_A_ as, "/tmp/async.test", &stat_buf);
+	retval = fbr_eio_close(FBR_A_ fd, 0);
 	fail_unless(0 == retval);
-	retval = stat("/tmp/async.test", &stat_buf2);
-	fail_unless(0 == retval);
-	fail_unless(!memcmp(&stat_buf, &stat_buf2, sizeof(stat_buf)));
 
-	/* Real path */
-	retval = fbr_async_fs_realpath(FBR_A_ as, "/tmp/../tmp/./async.test",
-			path_buf);
-	fail_unless(0 == retval);
-	fail_unless(!strcmp(path_buf, "/tmp/async.test"));
 
-	fbr_async_destroy(FBR_A_ as);
+	retval = fbr_eio_chown(FBR_A_ "/tmp/async.test", getuid(), getgid(), 0);
+	assert(0 == retval);
+
+	retval = fbr_eio_chmod(FBR_A_ "/tmp/async.test", 0644, 0);
+	assert(0 == retval);
+
+	retval = fbr_eio_utime(FBR_A_ "/tmp/async.test",
+			ev_now(fctx->__p->loop),
+			ev_now(fctx->__p->loop), 0);
+	assert(0 == retval);
+
+	memset(&statdata, 0x00, sizeof(statdata));
+	retval = fbr_eio_stat(FBR_A_ "/tmp/async.test", 0, &statdata);
+	assert(0 == retval);
+
+	memset(&statdata, 0x00, sizeof(statdata));
+	retval = fbr_eio_lstat(FBR_A_ "/tmp/async.test", 0, &statdata);
+	assert(0 == retval);
+
+	retval = fbr_eio_truncate(FBR_A_ "/tmp/async.test", 0, 0);
+	assert(0 == retval);
+
+	retval = fbr_eio_unlink(FBR_A_ "/tmp/async.test", 0);
+	assert(0 == retval);
+
+	retval = fbr_eio_mkdir(FBR_A_ "/tmp/async.test.dir", 0755, 0);
+	assert(0 == retval);
+
+	retval = fbr_eio_rmdir(FBR_A_ "/tmp/async.test.dir", 0);
+	assert(0 == retval);
+
+	retval = fbr_eio_mknod(FBR_A_ "/tmp/async.node", 0644, S_IFREG, 0);
+	assert(0 == retval);
+
+	retval = fbr_eio_link(FBR_A_ "/tmp/async.node",
+			"/tmp/async.node.link", 0);
+	assert(0 == retval);
+
+	retval = fbr_eio_symlink(FBR_A_ "/tmp/async.node",
+			"/tmp/async.node.symlink", 0);
+	assert(0 == retval);
+
+	memset(path_buf, 0x00, sizeof(path_buf));
+	retval = fbr_eio_readlink(FBR_A_ "/tmp/async.node.symlink", 0, path_buf,
+			sizeof(path_buf) - 1);
+	printf("path_buf: %s\n", path_buf);
+	assert(retval > 0);
+	fail_unless(!strcmp(path_buf, "/tmp/async.node"));
+
+	retval = fbr_eio_realpath(FBR_A_ "/tmp/../tmp/./async.node", 0,
+			path_buf, sizeof(path_buf) - 1);
+	assert(retval > 0);
+	fail_unless(!strcmp(path_buf, "/tmp/async.node"));
+
+	retval = fbr_eio_rename(FBR_A_ "/tmp/async.node.link",
+			"/tmp/async.node.symlink", 0);
+	assert(0 == retval);
+
+	retval = fbr_eio_unlink(FBR_A_ "/tmp/async.node.symlink", 0);
+	assert(0 == retval);
+
+	retval = fbr_eio_unlink(FBR_A_ "/tmp/async.node", 0);
+	assert(0 == retval);
 }
 
-START_TEST(test_async)
+START_TEST(test_eio)
 {
 	int retval;
 	fbr_id_t fiber = FBR_ID_NULL;
 	struct fbr_context context;
 	fbr_init(&context, EV_DEFAULT);
+	fbr_eio_init();
+	signal(SIGPIPE, SIG_IGN);
 
 	fiber = fbr_create(&context, "io_fiber", io_fiber, NULL, 0);
 	fail_if(fbr_id_isnull(fiber));
@@ -200,9 +287,19 @@ START_TEST(test_async)
 }
 END_TEST
 
-TCase * async_tcase(void)
+TCase * eio_tcase(void)
 {
-	TCase *tc_async = tcase_create ("Async");
-	tcase_add_test(tc_async, test_async);
-	return tc_async;
+	TCase *tc_eio = tcase_create("EIO");
+	tcase_add_test(tc_eio, test_eio);
+	return tc_eio;
 }
+
+#else
+
+TCase * eio_tcase(void)
+{
+	TCase *tc_eio = tcase_create("EIO_DISABLED");
+	return tc_eio;
+}
+
+#endif
