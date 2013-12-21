@@ -83,5 +83,6 @@ install(TARGETS evfibers_static
 	ARCHIVE DESTINATION lib
 	)
 file(GLOB DEV_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/include/evfibers/*.h")
-install(FILES ${DEV_HEADERS}
+file(GLOB DEV_HEADERS2 "${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/*.h")
+install(FILES ${DEV_HEADERS} ${DEV_HEADERS2}
 	DESTINATION "include/evfibers")
