@@ -2021,7 +2021,7 @@ int fbr_eio_msync(FBR_P_ void *addr, size_t length, int flags, int pri)
 	FBR_EIO_RESULT_RET;
 }
 
-int fbr_eio_readlink(FBR_P_ const char *path, int pri, char *buf, size_t size)
+int fbr_eio_readlink(FBR_P_ const char *path, char *buf, size_t size, int pri)
 {
 	FBR_EIO_PREP;
 	req = eio_readlink(path, pri, fiber_eio_cb, &e_eio);
@@ -2031,7 +2031,7 @@ int fbr_eio_readlink(FBR_P_ const char *path, int pri, char *buf, size_t size)
 	return req->result;
 }
 
-int fbr_eio_realpath(FBR_P_ const char *path, int pri, char *buf, size_t size)
+int fbr_eio_realpath(FBR_P_ const char *path, char *buf, size_t size, int pri)
 {
 	FBR_EIO_PREP;
 	req = eio_realpath(path, pri, fiber_eio_cb, &e_eio);
@@ -2041,7 +2041,7 @@ int fbr_eio_realpath(FBR_P_ const char *path, int pri, char *buf, size_t size)
 	return req->result;
 }
 
-int fbr_eio_stat(FBR_P_ const char *path, int pri, EIO_STRUCT_STAT *statdata)
+int fbr_eio_stat(FBR_P_ const char *path, EIO_STRUCT_STAT *statdata, int pri)
 {
 	EIO_STRUCT_STAT *st;
 	FBR_EIO_PREP;
@@ -2053,7 +2053,7 @@ int fbr_eio_stat(FBR_P_ const char *path, int pri, EIO_STRUCT_STAT *statdata)
 	return req->result;
 }
 
-int fbr_eio_lstat(FBR_P_ const char *path, int pri, EIO_STRUCT_STAT *statdata)
+int fbr_eio_lstat(FBR_P_ const char *path, EIO_STRUCT_STAT *statdata, int pri)
 {
 	EIO_STRUCT_STAT *st;
 	FBR_EIO_PREP;
@@ -2065,7 +2065,7 @@ int fbr_eio_lstat(FBR_P_ const char *path, int pri, EIO_STRUCT_STAT *statdata)
 	return req->result;
 }
 
-int fbr_eio_fstat(FBR_P_ int fd, int pri, EIO_STRUCT_STAT *statdata)
+int fbr_eio_fstat(FBR_P_ int fd, EIO_STRUCT_STAT *statdata, int pri)
 {
 	EIO_STRUCT_STAT *st;
 	FBR_EIO_PREP;
@@ -2077,8 +2077,8 @@ int fbr_eio_fstat(FBR_P_ int fd, int pri, EIO_STRUCT_STAT *statdata)
 	return req->result;
 }
 
-int fbr_eio_statvfs(FBR_P_ const char *path, int pri,
-		EIO_STRUCT_STATVFS *statdata)
+int fbr_eio_statvfs(FBR_P_ const char *path, EIO_STRUCT_STATVFS *statdata,
+		int pri)
 {
 	EIO_STRUCT_STATVFS *st;
 	FBR_EIO_PREP;
@@ -2090,7 +2090,7 @@ int fbr_eio_statvfs(FBR_P_ const char *path, int pri,
 	return req->result;
 }
 
-int fbr_eio_fstatvfs(FBR_P_ int fd, int pri, EIO_STRUCT_STATVFS *statdata)
+int fbr_eio_fstatvfs(FBR_P_ int fd, EIO_STRUCT_STATVFS *statdata, int pri)
 {
 	EIO_STRUCT_STATVFS *st;
 	FBR_EIO_PREP;

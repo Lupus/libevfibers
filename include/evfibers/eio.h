@@ -109,14 +109,14 @@ ssize_t fbr_eio_write(FBR_P_ int fd, void *buf, size_t length, off_t offset,
 		int pri);
 int fbr_eio_mlockall(FBR_P_ int flags, int pri);
 int fbr_eio_msync(FBR_P_ void *addr, size_t length, int flags, int pri);
-int fbr_eio_readlink(FBR_P_ const char *path, int pri, char *buf, size_t size);
-int fbr_eio_realpath(FBR_P_ const char *path, int pri, char *buf, size_t size);
-int fbr_eio_stat(FBR_P_ const char *path, int pri, EIO_STRUCT_STAT *statdata);
-int fbr_eio_lstat(FBR_P_ const char *path, int pri, EIO_STRUCT_STAT *statdata);
-int fbr_eio_fstat(FBR_P_ int fd, int pri, EIO_STRUCT_STAT *statdata);
-int fbr_eio_statvfs(FBR_P_ const char *path, int pri,
-		EIO_STRUCT_STATVFS *statdata);
-int fbr_eio_fstatvfs(FBR_P_ int fd, int pri, EIO_STRUCT_STATVFS *statdata);
+int fbr_eio_readlink(FBR_P_ const char *path, char *buf, size_t size, int pri);
+int fbr_eio_realpath(FBR_P_ const char *path, char *buf, size_t size, int pri);
+int fbr_eio_stat(FBR_P_ const char *path, EIO_STRUCT_STAT *statdata, int pri);
+int fbr_eio_lstat(FBR_P_ const char *path, EIO_STRUCT_STAT *statdata, int pri);
+int fbr_eio_fstat(FBR_P_ int fd, EIO_STRUCT_STAT *statdata, int pri);
+int fbr_eio_statvfs(FBR_P_ const char *path, EIO_STRUCT_STATVFS *statdata,
+		int pri);
+int fbr_eio_fstatvfs(FBR_P_ int fd, EIO_STRUCT_STATVFS *statdata, int pri);
 int fbr_eio_readahead(FBR_P_ int fd, off_t offset, size_t length, int pri);
 int fbr_eio_sendfile(FBR_P_ int out_fd, int in_fd, off_t in_offset,
 		size_t length, int pri);

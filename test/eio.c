@@ -111,7 +111,7 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	EIO_STRUCT_STATVFS statvdata;
 
 	memset(&statvdata, 0x00, sizeof(statvdata));
-	retval = fbr_eio_statvfs(FBR_A_ "/tmp", 0, &statvdata);
+	retval = fbr_eio_statvfs(FBR_A_ "/tmp", &statvdata, 0);
 	assert(0 == retval);
 
 	fd = fbr_eio_open(FBR_A_ "/tmp/async.test", O_RDWR | O_CREAT | O_TRUNC,
@@ -129,11 +129,11 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	fail_unless(0 == retval);
 
 	memset(&statdata, 0x00, sizeof(statdata));
-	retval = fbr_eio_fstat(FBR_A_ fd, 0, &statdata);
+	retval = fbr_eio_fstat(FBR_A_ fd, &statdata, 0);
 	assert(0 == retval);
 
 	memset(&statvdata, 0x00, sizeof(statvdata));
-	retval = fbr_eio_fstatvfs(FBR_A_ fd, 0, &statvdata);
+	retval = fbr_eio_fstatvfs(FBR_A_ fd, &statvdata, 0);
 	assert(0 == retval);
 
 	retval = fbr_eio_futime(FBR_A_ fd, ev_now(fctx->__p->loop),
@@ -215,11 +215,11 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	assert(0 == retval);
 
 	memset(&statdata, 0x00, sizeof(statdata));
-	retval = fbr_eio_stat(FBR_A_ "/tmp/async.test", 0, &statdata);
+	retval = fbr_eio_stat(FBR_A_ "/tmp/async.test", &statdata, 0);
 	assert(0 == retval);
 
 	memset(&statdata, 0x00, sizeof(statdata));
-	retval = fbr_eio_lstat(FBR_A_ "/tmp/async.test", 0, &statdata);
+	retval = fbr_eio_lstat(FBR_A_ "/tmp/async.test", &statdata, 0);
 	assert(0 == retval);
 
 	retval = fbr_eio_truncate(FBR_A_ "/tmp/async.test", 0, 0);
@@ -246,14 +246,14 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	assert(0 == retval);
 
 	memset(path_buf, 0x00, sizeof(path_buf));
-	retval = fbr_eio_readlink(FBR_A_ "/tmp/async.node.symlink", 0, path_buf,
-			sizeof(path_buf) - 1);
+	retval = fbr_eio_readlink(FBR_A_ "/tmp/async.node.symlink", path_buf,
+			sizeof(path_buf) - 1, 0);
 	printf("path_buf: %s\n", path_buf);
 	assert(retval > 0);
 	fail_unless(!strcmp(path_buf, "/tmp/async.node"));
 
-	retval = fbr_eio_realpath(FBR_A_ "/tmp/../tmp/./async.node", 0,
-			path_buf, sizeof(path_buf) - 1);
+	retval = fbr_eio_realpath(FBR_A_ "/tmp/../tmp/./async.node",
+			path_buf, sizeof(path_buf) - 1, 0);
 	assert(retval > 0);
 	fail_unless(!strcmp(path_buf, "/tmp/async.node"));
 
