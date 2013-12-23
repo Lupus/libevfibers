@@ -20,7 +20,6 @@ aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/src" EVFIBERS_SOURCES)
 aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/coro" CORO_SOURCES)
 
 find_package(LibEv REQUIRED)
-find_package(LibProtobufC REQUIRED)
 if(WANT_EIO)
 	find_package(LibEio)
 	find_package(Threads)
@@ -35,7 +34,6 @@ include_directories(
 	"${CMAKE_CURRENT_BINARY_DIR}/include"
 	"${CMAKE_CURRENT_SOURCE_DIR}/coro"
 	${LIBEV_INCLUDE_DIR}
-	${LIBPROTOBUFC_INCLUDE_DIR}
 	${LIBEIO_INCLUDE_DIR}
 	)
 
@@ -50,7 +48,6 @@ set_target_properties(evfibers
 	)
 target_link_libraries(evfibers
 	${LIBEV_LIBRARY}
-	${LIBPROTOBUFC_LIBRARY}
 	${LIBEIO_LIBRARY}
 	${CMAKE_THREAD_LIBS_INIT})
 
