@@ -11,7 +11,7 @@ Vcs-Browser: http://code.google.com/p/libevfibers/source/browse
 Package: libevfibers-dev
 Section: libdevel
 Architecture: any
-Depends: libevfibers0 (= ${binary:Version})
+Depends: libevfibers0 (= ${binary:Version}), libev-dev, libeio-dev
 Description: Small C fibers library --- development files
  Small c fiber library that uses libev based event loop and libcoro based
  coroutine context switching. as libcoro alone is barely enough to do something
