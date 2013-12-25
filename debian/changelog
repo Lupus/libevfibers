@@ -1,8 +1,8 @@
-libevfibers (0.3.0.rc6) unstable; urgency=low
+libevfibers (0.3.0.rc11) unstable; urgency=low
 
   * New upstream build
 
- -- Konstantin Olkhovskiy <kolkhovskiy@kolkhovskiy-laptop>  Tue, 19 Nov 2013 16:42:40 +0400
+ -- Konstantin Olkhovskiy <kolkhovskiy@kolkhovskiy-laptop>  Mon, 23 Dec 2013 12:33:51 +0400
 
 libevfibers (0.3.0) unstable; urgency=low
 

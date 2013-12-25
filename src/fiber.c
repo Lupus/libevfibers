@@ -2146,10 +2146,18 @@ int fbr_eio_fallocate(FBR_P_ int fd, int mode, off_t offset, off_t len, int pri)
 	FBR_EIO_RESULT_RET;
 }
 
-int fbr_eio_custom(FBR_P_ void (*execute)(eio_req *), int pri)
+static void custom_execute_cb(eio_req *req)
+{
+	struct fbr_ev_eio *ev = req->data;
+	req->result = ev->custom_func(ev->custom_arg);
+}
+
+int fbr_eio_custom(FBR_P_ fbr_eio_custom_func_t func, void *data, int pri)
 {
 	FBR_EIO_PREP;
-	req = eio_custom(execute, pri, fiber_eio_cb, &e_eio);
+	e_eio.custom_func = func;
+	e_eio.custom_arg = data;
+	req = eio_custom(custom_execute_cb, pri, fiber_eio_cb, &e_eio);
 	FBR_EIO_WAIT;
 	FBR_EIO_RESULT_RET;
 }

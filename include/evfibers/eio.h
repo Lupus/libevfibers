@@ -45,6 +45,11 @@
 #include <evfibers/fiber.h>
 
 /**
+ * eio custom callback function type.
+ */
+typedef eio_ssize_t (*fbr_eio_custom_func_t)(void *data);
+
+/**
  * eio event.
  *
  * This event struct can represent an eio event.
@@ -53,6 +58,8 @@
  */
 struct fbr_ev_eio {
 	eio_req *req; /*!< the libeio request itself */
+	fbr_eio_custom_func_t custom_func;
+	void *custom_arg;
 	struct fbr_ev_base ev_base;
 };
 
@@ -126,6 +133,6 @@ int fbr_eio_sync_file_range(FBR_P_ int fd, off_t offset, size_t nbytes,
 			unsigned int flags, int pri);
 int fbr_eio_fallocate(FBR_P_ int fd, int mode, off_t offset, off_t len,
 		int pri);
-int fbr_eio_custom(FBR_P_ void (*execute)(eio_req *), int pri);
+int fbr_eio_custom(FBR_P_ fbr_eio_custom_func_t func, void *data, int pri);
 
 #endif
