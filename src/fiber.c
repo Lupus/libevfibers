@@ -1609,7 +1609,7 @@ void fbr_destructor_remove(FBR_P_ struct fbr_destructor *dtor,
 	dtor->active = 0;
 }
 
-static inline int ffsll(uint64_t val)
+static inline int wrap_ffsll(uint64_t val)
 {
 	/* TODO: Add some check for the existance of this builtin */
 	return __builtin_ffsll(val);
@@ -1632,7 +1632,7 @@ static inline void unregister_key(FBR_P_ fbr_key_t key)
 
 int fbr_key_create(FBR_P_ fbr_key_t *key_ptr)
 {
-	fbr_key_t key = ffsll(fctx->__p->key_free_mask);
+	fbr_key_t key = wrap_ffsll(fctx->__p->key_free_mask);
 	assert(key < FBR_MAX_KEY);
 	register_key(FBR_A_ key);
 	*key_ptr = key;
