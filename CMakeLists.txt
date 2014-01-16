@@ -52,7 +52,15 @@ target_link_libraries(evfibers
 	${CMAKE_THREAD_LIBS_INIT})
 
 add_library(evfibers_static STATIC ${SOURCES})
-set_target_properties(evfibers_static  PROPERTIES OUTPUT_NAME evfibers)
+set_target_properties(evfibers_static  PROPERTIES
+	OUTPUT_NAME evfibers
+	COMPILE_FLAGS "-fPIC")
+
+set(EVFIBERS_EMBED_LIBS evfibers_static
+	${LIBEV_LIBRARY}
+	${LIBEIO_LIBRARY}
+	${CMAKE_THREAD_LIBS_INIT}
+	PARENT_SCOPE)
 
 add_executable(fiber_bench_buffer "${CMAKE_CURRENT_SOURCE_DIR}/bench/buffer.c")
 target_link_libraries(fiber_bench_buffer evfibers ${CMAKE_THREAD_LIBS_INIT})
