@@ -48,7 +48,10 @@ include_directories(
 	${LIBEIO_INCLUDE_DIR}
 	)
 
-set(CMAKE_C_FLAGS "-W -Wall -Werror -fno-strict-aliasing ${CMAKE_C_FLAGS}")
+if(WANT_LTO)
+	set(LTO_FLAGS "-flto")
+endif(WANT_LTO)
+set(CMAKE_C_FLAGS "-W -Wall -Werror -fno-strict-aliasing ${LTO_FLAGS} ${CMAKE_C_FLAGS}")
 set(SOURCES ${EVFIBERS_SOURCES} ${CORO_SOURCES})
 
 add_library(evfibers SHARED ${SOURCES})
