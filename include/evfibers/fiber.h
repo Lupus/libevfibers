@@ -1865,6 +1865,7 @@ static inline int fbr_buffer_wait_read(FBR_P_ struct fbr_buffer *buffer,
 	while (fbr_buffer_bytes(FBR_A_ buffer) < size) {
 		retval = fbr_cond_wait(FBR_A_ &buffer->committed_cond, &mutex);
 		assert(0 == retval);
+		(void)retval;
 	}
 	fbr_mutex_unlock(FBR_A_ &mutex);
 	fbr_mutex_destroy(FBR_A_ &mutex);
@@ -1906,6 +1907,7 @@ static inline int fbr_buffer_wait_write(FBR_P_ struct fbr_buffer *buffer,
 		retval = fbr_cond_wait(FBR_A_ &buffer->bytes_freed_cond,
 				&mutex);
 		assert(0 == retval);
+		(void)retval;
 	}
 	fbr_mutex_unlock(FBR_A_ &mutex);
 	fbr_mutex_destroy(FBR_A_ &mutex);

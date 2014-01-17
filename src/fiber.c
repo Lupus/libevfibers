@@ -450,6 +450,7 @@ int fbr_reclaim(FBR_P_ fbr_id_t id)
 			return_success(0);
 		retval = fbr_cond_wait(FBR_A_ &fiber->reclaim_cond, &mutex);
 		assert(0 == retval);
+		(void)retval;
 	}
 	fbr_mutex_unlock(FBR_A_ &mutex);
 	fbr_mutex_destroy(FBR_A_ &mutex);
@@ -525,6 +526,7 @@ static void call_wrapper(FBR_P)
 
 	retval = fbr_reclaim(FBR_A_ fbr_id_pack(fiber));
 	assert(0 == retval);
+	(void)retval;
 	fbr_yield(FBR_A);
 	assert(NULL);
 }
@@ -1540,6 +1542,7 @@ void *fbr_buffer_read_address(FBR_P_ struct fbr_buffer *buffer, size_t size)
 		retval = fbr_cond_wait(FBR_A_ &buffer->committed_cond,
 				&buffer->read_mutex);
 		assert(0 == retval);
+		(void)retval;
 	}
 
 	buffer->waiting_bytes = size;
