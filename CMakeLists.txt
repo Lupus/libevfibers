@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 2.8.7)
-project(libevfibers C)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+	# We are building as stand-alone project
+	project(libevfibers C)
+else()
+	# We are building as part of other project
+	set(EVFIBERS_EMBED TRUE)
+endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
@@ -77,17 +83,19 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/include/evfibers/config.h.in"
 
 subdirs(test)
 
-install(TARGETS evfibers
-	RUNTIME DESTINATION bin
-	LIBRARY DESTINATION lib
-	ARCHIVE DESTINATION lib
-	)
-install(TARGETS evfibers_static
-	RUNTIME DESTINATION bin
-	LIBRARY DESTINATION lib
-	ARCHIVE DESTINATION lib
-	)
-file(GLOB DEV_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/include/evfibers/*.h")
-file(GLOB DEV_HEADERS2 "${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/*.h")
-install(FILES ${DEV_HEADERS} ${DEV_HEADERS2}
-	DESTINATION "include/evfibers")
+if(NOT EVFIBERS_EMBED)
+	install(TARGETS evfibers
+		RUNTIME DESTINATION bin
+		LIBRARY DESTINATION lib
+		ARCHIVE DESTINATION lib
+		)
+	install(TARGETS evfibers_static
+		RUNTIME DESTINATION bin
+		LIBRARY DESTINATION lib
+		ARCHIVE DESTINATION lib
+		)
+	file(GLOB DEV_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/include/evfibers/*.h")
+	file(GLOB DEV_HEADERS2 "${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/*.h")
+	install(FILES ${DEV_HEADERS} ${DEV_HEADERS2}
+		DESTINATION "include/evfibers")
+endif(NOT EVFIBERS_EMBED)
