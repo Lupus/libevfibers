@@ -10,6 +10,11 @@ endif()
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
+if(NOT CMAKE_BUILD_TYPE)
+	message(STATUS "No build type selected, defaulting to RelWithDebInfo")
+	set(CMAKE_BUILD_TYPE "RelWithDebInfo")
+endif(NOT CMAKE_BUILD_TYPE)
+
 set(VERSION_MAJOR 0)
 set(VERSION_MINOR 2)
 set(VERSION_PATCH 0)
