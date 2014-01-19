@@ -26,7 +26,6 @@
 #include <libgen.h>
 #include <assert.h>
 #include <errno.h>
-#include <utlist.h>
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
