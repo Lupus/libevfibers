@@ -1950,4 +1950,28 @@ void *fbr_get_user_data(FBR_P_ fbr_id_t id);
  */
 int fbr_set_user_data(FBR_P_ fbr_id_t id, void *data);
 
+pid_t fbr_popen3(FBR_P_ const char *filename, char *const argv[],
+		char *const envp[], const char *working_dir,
+		int *stdin_w_ptr, int *stdout_r_ptr, int *stderr_r_ptr);
+
+static inline pid_t fbr_popen2(FBR_P_ const char *filename, char *const argv[],
+		char *const envp[], const char *working_dir, int *stdin_w_ptr,
+		int *stdout_r_ptr)
+{
+	return fbr_popen3(FBR_A_ filename, argv, envp, working_dir, stdin_w_ptr,
+			stdout_r_ptr, NULL);
+}
+
+static inline pid_t fbr_popen0(FBR_P_ const char *filename, char *const argv[],
+		char *const envp[], const char *working_dir)
+{
+	return fbr_popen3(FBR_A_ filename, argv, envp, working_dir, NULL, NULL,
+			NULL);
+}
+
+int fbr_waitpid(FBR_P_ pid_t pid);
+
+int fbr_system(FBR_P_ const char *filename, char *const argv[],
+		char *const envp[], const char *working_dir);
+
 #endif

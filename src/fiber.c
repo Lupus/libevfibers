@@ -1692,6 +1692,195 @@ int fbr_set_name(FBR_P_ fbr_id_t id, const char *name)
 	return_success(0);
 }
 
+static int make_pipe(FBR_P_ int *r, int*w)
+{
+	int fds[2];
+	int retval;
+	retval = pipe(fds);
+	if (-1 == retval)
+		return_error(-1, FBR_ESYSTEM);
+	*r = fds[0];
+	*w = fds[1];
+	return_success(0);
+}
+
+pid_t fbr_popen3(FBR_P_ const char *filename, char *const argv[],
+		char *const envp[], const char *working_dir,
+		int *stdin_w_ptr, int *stdout_r_ptr, int *stderr_r_ptr)
+{
+	pid_t pid;
+	int stdin_r, stdin_w;
+	int stdout_r, stdout_w;
+	int stderr_r, stderr_w;
+	int devnull;
+	int retval;
+
+	if (!stdin_w_ptr || !stdout_r_ptr || !stderr_r_ptr)
+		devnull = open("/dev/null", O_WRONLY);
+
+	retval = (stdin_w_ptr ? make_pipe(FBR_A_ &stdin_r, &stdin_w) : 0);
+	if (retval)
+		return retval;
+	retval = (stdout_r_ptr ? make_pipe(FBR_A_ &stdout_r, &stdout_w) : 0);
+	if (retval)
+		return retval;
+	retval = (stderr_r_ptr ? make_pipe(FBR_A_ &stderr_r, &stderr_w) : 0);
+	if (retval)
+		return retval;
+
+	pid = fork();
+	if (-1 == pid)
+		return_error(-1, FBR_ESYSTEM);
+	if (0 == pid) {
+		/* Child */
+		ev_break(EV_DEFAULT, EVBREAK_ALL);
+		if (stdin_w_ptr) {
+			retval = close(stdin_w);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "close");
+			retval = dup2(stdin_r, STDIN_FILENO);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "dup2");
+		} else {
+			devnull = open("/dev/null", O_RDONLY);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "open");
+			retval = dup2(devnull, STDIN_FILENO);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "dup2");
+		}
+		if (stdout_r_ptr) {
+			retval = close(stdout_r);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "close");
+			retval = dup2(stdout_w, STDOUT_FILENO);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "dup2");
+		} else {
+			devnull = open("/dev/null", O_WRONLY);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "open");
+			retval = dup2(devnull, STDOUT_FILENO);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "dup2");
+		}
+		if (stderr_r_ptr) {
+			retval = close(stderr_r);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "close");
+			retval = dup2(stderr_w, STDERR_FILENO);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "dup2");
+		} else {
+			devnull = open("/dev/null", O_WRONLY);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "open");
+			retval = dup2(stderr_w, STDERR_FILENO);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "dup2");
+		}
+
+		if (working_dir) {
+			retval = chdir(working_dir);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "chdir");
+		}
+
+		retval = execve(filename, argv, envp);
+		if (-1 == retval)
+			err(EXIT_FAILURE, "execve");
+
+		errx(EXIT_FAILURE, "execve failed without error code");
+	}
+	/* Parent */
+	if (stdin_w_ptr) {
+		retval = close(stdin_r);
+		if (-1 == retval)
+			return_error(-1, FBR_ESYSTEM);
+		retval = fbr_fd_nonblock(FBR_A_ stdin_w);
+		if (retval)
+			return retval;
+	}
+	if (stdout_r_ptr) {
+		retval = close(stdout_w);
+		if (-1 == retval)
+			return_error(-1, FBR_ESYSTEM);
+		retval = fbr_fd_nonblock(FBR_A_ stdout_r);
+		if (retval)
+			return retval;
+	}
+	if (stderr_r_ptr) {
+		retval = close(stderr_w);
+		if (-1 == retval)
+			return_error(-1, FBR_ESYSTEM);
+		retval = fbr_fd_nonblock(FBR_A_ stderr_r);
+		if (retval)
+			return retval;
+	}
+
+	fbr_log_d(FBR_A_ "child pid %d has been launched", pid);
+	*stdin_w_ptr = stdin_w;
+	*stdout_r_ptr = stdout_r;
+	*stderr_r_ptr = stderr_r;
+	return pid;
+}
+
+static void watcher_child_dtor(_unused_ FBR_P_ void *_arg)
+{
+	struct ev_child *w = _arg;
+	ev_child_stop(fctx->__p->loop, w);
+}
+
+int fbr_waitpid(FBR_P_ pid_t pid)
+{
+	struct ev_child child;
+	struct fbr_ev_watcher watcher;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
+	ev_child_init(&child, NULL, pid, 0.);
+	ev_child_start(fctx->__p->loop, &child);
+	dtor.func = watcher_child_dtor;
+	dtor.arg = &child;
+	fbr_destructor_add(FBR_A_ &dtor);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&child);
+	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
+
+	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
+	ev_child_stop(fctx->__p->loop, &child);
+	return_success(child.rstatus);
+}
+
+int fbr_system(FBR_P_ const char *filename, char *const argv[],
+		char *const envp[], const char *working_dir)
+{
+	pid_t pid;
+	int retval;
+
+	pid = fork();
+	if (-1 == pid)
+		return_error(-1, FBR_ESYSTEM);
+	if (0 == pid) {
+		/* Child */
+		ev_break(EV_DEFAULT, EVBREAK_ALL);
+
+		if (working_dir) {
+			retval = chdir(working_dir);
+			if (-1 == retval)
+				err(EXIT_FAILURE, "chdir");
+		}
+
+		retval = execve(filename, argv, envp);
+		if (-1 == retval)
+			err(EXIT_FAILURE, "execve");
+
+		errx(EXIT_FAILURE, "execve failed without error code");
+	}
+	/* Parent */
+
+	fbr_log_d(FBR_A_ "child pid %d has been launched", pid);
+	return fbr_waitpid(FBR_A_ pid);
+}
+
 #ifdef FBR_EIO_ENABLED
 
 static struct ev_loop *eio_loop;
