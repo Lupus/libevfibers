@@ -1709,9 +1709,9 @@ pid_t fbr_popen3(FBR_P_ const char *filename, char *const argv[],
 		int *stdin_w_ptr, int *stdout_r_ptr, int *stderr_r_ptr)
 {
 	pid_t pid;
-	int stdin_r, stdin_w;
-	int stdout_r, stdout_w;
-	int stderr_r, stderr_w;
+	int stdin_r = 0, stdin_w = 0;
+	int stdout_r = 0, stdout_w = 0;
+	int stderr_r = 0, stderr_w = 0;
 	int devnull;
 	int retval;
 
