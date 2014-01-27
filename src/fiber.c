@@ -1049,6 +1049,27 @@ ssize_t fbr_sendto(FBR_P_ int sockfd, const void *buf, size_t len, int flags,
 	return sendto(sockfd, buf, len, flags, dest_addr, addrlen);
 }
 
+ssize_t fbr_send(FBR_P_ int sockfd, const void *buf, size_t len, int flags)
+{
+	ev_io io;
+	struct fbr_ev_watcher watcher;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
+
+	ev_io_init(&io, NULL, sockfd, EV_WRITE);
+	ev_io_start(fctx->__p->loop, &io);
+	dtor.func = watcher_io_dtor;
+	dtor.arg = &io;
+	fbr_destructor_add(FBR_A_ &dtor);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
+	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
+
+	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
+	ev_io_stop(fctx->__p->loop, &io);
+
+	return send(sockfd, buf, len, flags);
+}
+
 int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
 	int r;

@@ -1236,6 +1236,19 @@ ssize_t fbr_sendto(FBR_P_ int sockfd, const void *buf, size_t len, int flags, co
 		struct sockaddr *dest_addr, socklen_t addrlen);
 
 /**
+ *
+ * Fiber friendly libc send wrapper.
+ * @param [in] sockfd file descriptor to write to
+ * @param [in] buf pointer to some user-allocated buffer
+ * @param [in] len maximum number of bytes to write
+ * @param [in] flags just flags, see man sendto for details
+ * @return number of bytes written on success, -1 in case of error and errno set
+ *
+ * This function is used to send messages to a socket.
+ */
+ssize_t fbr_send(FBR_P_ int sockfd, const void *buf, size_t len, int flags);
+
+/**
  * Fiber friendly libc accept wrapper.
  * @param [in] sockfd file descriptor to accept on
  * @param [in] addr client address
