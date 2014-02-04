@@ -2343,7 +2343,8 @@ static void custom_execute_cb(eio_req *req)
 	req->result = ev->custom_func(ev->custom_arg);
 }
 
-int fbr_eio_custom(FBR_P_ fbr_eio_custom_func_t func, void *data, int pri)
+eio_ssize_t fbr_eio_custom(FBR_P_ fbr_eio_custom_func_t func, void *data,
+		int pri)
 {
 	FBR_EIO_PREP;
 	e_eio.custom_func = func;
