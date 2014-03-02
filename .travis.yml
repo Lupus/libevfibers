@@ -1,4 +1,4 @@
-install: cmake libev-dev check libeio-dev
+install: sudo apt-get install cmake libev-dev check libeio-dev
 language: c
 script: cmake
 compiler:
