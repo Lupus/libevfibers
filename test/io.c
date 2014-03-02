@@ -139,20 +139,22 @@ END_TEST
 static void all_reader_fiber(FBR_P_ void *_arg)
 {
 	int fd = *(int *)_arg;
-	char *buf = fbr_alloc(FBR_A_ buf_size);
+	char *buf = malloc(buf_size);
 	size_t retval;
 	retval = fbr_read_all(FBR_A_ fd, buf, buf_size);
 	fail_unless(buf_size == retval, NULL);
+	free(buf);
 }
 
 static void all_writer_fiber(FBR_P_ void *_arg)
 {
 	int fd = *(int *)_arg;
 	size_t retval;
-	char *buf = fbr_calloc(FBR_A_ buf_size, 1);
+	char *buf = calloc(buf_size, 1);
 	retval = fbr_write_all(FBR_A_ fd, buf, buf_size);
 	fail_if(retval != buf_size, NULL);
 	close(fd);
+	free(buf);
 }
 #undef buf_size
 
@@ -298,7 +300,7 @@ static void udp_reader_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd;
 	int i;
-	char *buf = fbr_alloc(FBR_A_ buf_size);
+	char *buf = malloc(buf_size);
 	size_t retval;
 	struct sockaddr_in addr;
 	socklen_t addrlen;
@@ -325,13 +327,14 @@ static void udp_reader_fiber(FBR_P_ _unused_ void *_arg)
 				(struct	sockaddr *)&addr, &addrlen);
 		fail_unless(retval == buf_size);
 	}
+	free(buf);
 }
 
 static void udp_writer_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd;
 	int i;
-	char *buf = fbr_calloc(FBR_A_ buf_size, 1);
+	char *buf = calloc(buf_size, 1);
 	size_t retval;
 	struct sockaddr_in addr;
 	socklen_t addrlen = sizeof(addr);
@@ -353,12 +356,13 @@ static void udp_writer_fiber(FBR_P_ _unused_ void *_arg)
 		fail_unless(retval == buf_size);
 	}
 	close(fd);
+	free(buf);
 }
 
 static void tcp_reader_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd, client_fd;
-	char *buf = fbr_alloc(FBR_A_ buf_size);
+	char *buf = malloc(buf_size);
 	size_t retval;
 	struct sockaddr_in addr, peer_addr;
 	socklen_t addrlen;
@@ -395,12 +399,13 @@ static void tcp_reader_fiber(FBR_P_ _unused_ void *_arg)
 
 	close(client_fd);
 	close(fd);
+	free(buf);
 }
 
 static void tcp_writer_fiber(FBR_P_ _unused_ void *_arg)
 {
 	int fd;
-	char *buf = fbr_calloc(FBR_A_ buf_size, 1);
+	char *buf = calloc(buf_size, 1);
 	size_t retval;
 	struct sockaddr_in addr;
 	socklen_t addrlen = sizeof(addr);
@@ -423,6 +428,7 @@ static void tcp_writer_fiber(FBR_P_ _unused_ void *_arg)
 	fail_unless(retval == buf_size);
 
 	close(fd);
+	free(buf);
 }
 #undef PORT
 #undef ADDRESS
