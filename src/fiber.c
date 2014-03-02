@@ -20,6 +20,8 @@
 
  ********************************************************************/
 
+#include <evfibers/config.h>
+
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <linux/limits.h>
@@ -30,9 +32,13 @@
 #include <string.h>
 #include <strings.h>
 #include <err.h>
+#ifdef HAVE_VALGRIND_H
 #include <valgrind/valgrind.h>
+#else
+#define RUNNING_ON_VALGRIND (0)
+#define VALGRIND_STACK_REGISTER(a,b) (void)0
+#endif
 
-#include <evfibers/config.h>
 #ifdef FBR_EIO_ENABLED
 #include <evfibers/eio.h>
 #endif

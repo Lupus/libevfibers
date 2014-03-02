@@ -40,6 +40,13 @@ if(HAVE_UCONTEXT_H)
 	add_definitions("-DHAVE_UCONTEXT_H")
 endif(HAVE_UCONTEXT_H)
 
+if(WANT_VALGRIND)
+	check_include_files(valgrind/valgrind.h HAVE_VALGRIND_H)
+	if (NOT HAVE_VALGRIND_H)
+		message(FATAL_ERROR "cannot find valgrind.h")
+	endif(NOT HAVE_VALGRIND_H)
+endif(WANT_VALGRIND)
+
 include_directories(
 	"${CMAKE_CURRENT_SOURCE_DIR}/include"
 	"${CMAKE_CURRENT_BINARY_DIR}/include"

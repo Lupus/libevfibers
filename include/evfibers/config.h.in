@@ -23,6 +23,7 @@
 #ifndef _FBR_CONFIG_H_
 #define _FBR_CONFIG_H_
 
+#cmakedefine HAVE_VALGRIND_H
 #cmakedefine FBR_EIO_ENABLED
 
 #endif
