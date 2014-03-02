@@ -295,7 +295,7 @@ struct fbr_context {
 typedef void (*fbr_fiber_func_t)(FBR_P_ void *_arg);
 
 /**
- * Destructor function type for the memory allocated in a fiber.
+ * (DEPRECATED) Destructor function type for the memory allocated in a fiber.
  * @param [in] ptr memory pointer for memory to be destroyed
  * @param [in] context user data pointer passed via fbr_alloc_set_destructor
  *
@@ -1001,7 +1001,7 @@ void fbr_yield(FBR_P);
 void fbr_cooperate(FBR_P);
 
 /**
- * Allocates memory in current fiber's pool.
+ * (DEPRECATED) Allocates memory in current fiber's pool.
  * @param [in] size size of the requested memory block
  * @return allocated memory chunk
  *
@@ -1015,7 +1015,7 @@ void fbr_cooperate(FBR_P);
 void *fbr_alloc(FBR_P_ size_t size);
 
 /**
- * Sets destructor for a memory chunk.
+ * (DEPRECATED) Sets destructor for a memory chunk.
  * @param [in] ptr address of a memory chunk
  * @param [in] func destructor function
  * @param [in] context user supplied context pointer
@@ -1034,7 +1034,7 @@ void fbr_alloc_set_destructor(FBR_P_ void *ptr, fbr_alloc_destructor_func_t func
 		void *context);
 
 /**
- * Allocates a set of initialized objects in fiber's pool.
+ * (DEPRECATED) Allocates a set of initialized objects in fiber's pool.
  * @param [in] nmemb number of members
  * @param [in] size size of a single member
  * @return zero-filled allocated memory chunk
@@ -1046,7 +1046,7 @@ void fbr_alloc_set_destructor(FBR_P_ void *ptr, fbr_alloc_destructor_func_t func
 void *fbr_calloc(FBR_P_ unsigned int nmemb, size_t size);
 
 /**
- * Explicitly frees allocated memory chunk.
+ * (DEPRECATED) Explicitly frees allocated memory chunk.
  * @param [in] ptr chunk address
  *
  * Explicitly frees a fiber pool chunk calling the destructor if any.
@@ -1057,7 +1057,7 @@ void *fbr_calloc(FBR_P_ unsigned int nmemb, size_t size);
 void fbr_free(FBR_P_ void *ptr);
 
 /**
- * Explicitly frees allocated memory chunk.
+ * (DEPRECATED) Explicitly frees allocated memory chunk.
  * @param [in] ptr chunk address
  *
  * Explicitly frees a fiber pool chunk without calling the destructor.

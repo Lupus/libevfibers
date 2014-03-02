@@ -1220,6 +1220,7 @@ fbr_id_t fbr_parent(FBR_P)
 void *fbr_calloc(FBR_P_ unsigned int nmemb, size_t size)
 {
 	void *ptr;
+	fprintf(stderr, "libevfibers: fbr_calloc is deprecated\n");
 	ptr = allocate_in_fiber(FBR_A_ nmemb * size, CURRENT_FIBER);
 	memset(ptr, 0x00, nmemb * size);
 	return ptr;
@@ -1227,6 +1228,7 @@ void *fbr_calloc(FBR_P_ unsigned int nmemb, size_t size)
 
 void *fbr_alloc(FBR_P_ size_t size)
 {
+	fprintf(stderr, "libevfibers: fbr_alloc is deprecated\n");
 	return allocate_in_fiber(FBR_A_ size, CURRENT_FIBER);
 }
 
@@ -1234,6 +1236,8 @@ void fbr_alloc_set_destructor(_unused_ FBR_P_ void *ptr,
 		fbr_alloc_destructor_func_t func, void *context)
 {
 	struct mem_pool *pool_entry;
+	fprintf(stderr, "libevfibers:"
+		       " fbr_alloc_set_destructor is deprecated\n");
 	pool_entry = (struct mem_pool *)ptr - 1;
 	pool_entry->destructor = func;
 	pool_entry->destructor_context = context;
@@ -1241,11 +1245,13 @@ void fbr_alloc_set_destructor(_unused_ FBR_P_ void *ptr,
 
 void fbr_free(FBR_P_ void *ptr)
 {
+	fprintf(stderr, "libevfibers: fbr_free is deprecated\n");
 	fbr_free_in_fiber(FBR_A_ CURRENT_FIBER, ptr, 1);
 }
 
 void fbr_free_nd(FBR_P_ void *ptr)
 {
+	fprintf(stderr, "libevfibers: fbr_free_nd is deprecated\n");
 	fbr_free_in_fiber(FBR_A_ CURRENT_FIBER, ptr, 0);
 }
 
