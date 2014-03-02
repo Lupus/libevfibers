@@ -1,0 +1,6 @@
+install: cmake libev-dev check libeio-dev
+language: c
+script: cmake
+compiler:
+        - clang
+        - gcc
