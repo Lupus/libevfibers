@@ -41,7 +41,7 @@ if(WANT_EIO)
 			CVS_MODULE libeio
 			CVS_TAG -r rel-4_19
 			UPDATE_COMMAND ""
-			CONFIGURE_COMMAND ./configure --prefix=${CMAKE_CURRENT_BINARY_DIR}/eio
+			CONFIGURE_COMMAND CFLAGS=-fpic ./configure --enable-static --disable-shared --prefix=${CMAKE_CURRENT_BINARY_DIR}/eio
 			BUILD_IN_SOURCE 1
 			)
 		ExternalProject_Add_Step(libeio autogen
@@ -57,7 +57,8 @@ if(WANT_EIO)
 			WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/eio/src/libeio"
 		)
 		set(LIBEIO_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/eio/include")
-		set(LIBEIO_LIBRARY "-L${CMAKE_CURRENT_BINARY_DIR}/eio/lib -leio")
+		set(LIBEIO_LIBRARY "-L${CMAKE_CURRENT_BINARY_DIR}/eio/lib -Wl,-whole-archive -leio -Wl,-no-whole-archive")
+		set(LIBEIO_FOUND TRUE)
 	else(WANT_EMBEDDED_EIO)
 		find_package(LibEio)
 	endif(WANT_EMBEDDED_EIO)
@@ -99,13 +100,16 @@ target_link_libraries(evfibers
 	${LIBEV_LIBRARY}
 	${LIBEIO_LIBRARY}
 	${CMAKE_THREAD_LIBS_INIT})
+if(WANT_EIO AND WANT_EMBEDDED_EIO)
+	add_dependencies(evfibers libeio)
+endif(WANT_EIO AND WANT_EMBEDDED_EIO)
 
 add_library(evfibers_static STATIC ${SOURCES})
 set_target_properties(evfibers_static  PROPERTIES
 	OUTPUT_NAME evfibers
 	COMPILE_FLAGS "-fPIC")
 
-if (EVFIBERS_EMBED)
+if(EVFIBERS_EMBED)
 	set(EVFIBERS_EMBED_LIBS evfibers_static
 		${LIBEV_LIBRARY}
 		${LIBEIO_LIBRARY}
