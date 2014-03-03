@@ -32,7 +32,35 @@ aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/coro" CORO_SOURCES)
 
 find_package(LibEv REQUIRED)
 if(WANT_EIO)
-	find_package(LibEio)
+	if(WANT_EMBEDDED_EIO)
+		include(ExternalProject)
+		ExternalProject_Add(
+			libeio
+			PREFIX "${CMAKE_CURRENT_BINARY_DIR}/eio"
+			CVS_REPOSITORY :pserver:anonymous@cvs.schmorp.de/schmorpforge
+			CVS_MODULE libeio
+			CVS_TAG -r rel-4_19
+			UPDATE_COMMAND ""
+			CONFIGURE_COMMAND ./configure --prefix=${CMAKE_CURRENT_BINARY_DIR}/eio
+			BUILD_IN_SOURCE 1
+			)
+		ExternalProject_Add_Step(libeio autogen
+			COMMAND "./autogen.sh"
+				DEPENDEES update
+				DEPENDERS configure
+			WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/eio/src/libeio"
+		)
+		ExternalProject_Add_Step(libeio autoconf
+			COMMAND "autoconf"
+				DEPENDEES autogen
+				DEPENDERS configure
+			WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/eio/src/libeio"
+		)
+		set(LIBEIO_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/eio/include")
+		set(LIBEIO_LIBRARY "-L${CMAKE_CURRENT_BINARY_DIR}/eio/lib -leio")
+	else(WANT_EMBEDDED_EIO)
+		find_package(LibEio)
+	endif(WANT_EMBEDDED_EIO)
 	find_package(Threads)
 endif(WANT_EIO)
 check_include_files(ucontext.h HAVE_UCONTEXT_H)
@@ -77,11 +105,13 @@ set_target_properties(evfibers_static  PROPERTIES
 	OUTPUT_NAME evfibers
 	COMPILE_FLAGS "-fPIC")
 
-set(EVFIBERS_EMBED_LIBS evfibers_static
-	${LIBEV_LIBRARY}
-	${LIBEIO_LIBRARY}
-	${CMAKE_THREAD_LIBS_INIT}
-	PARENT_SCOPE)
+if (EVFIBERS_EMBED)
+	set(EVFIBERS_EMBED_LIBS evfibers_static
+		${LIBEV_LIBRARY}
+		${LIBEIO_LIBRARY}
+		${CMAKE_THREAD_LIBS_INIT}
+		PARENT_SCOPE)
+endif(EVFIBERS_EMBED)
 
 add_executable(fiber_bench_buffer "${CMAKE_CURRENT_SOURCE_DIR}/bench/buffer.c")
 target_link_libraries(fiber_bench_buffer evfibers ${CMAKE_THREAD_LIBS_INIT})
