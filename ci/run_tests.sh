@@ -2,9 +2,6 @@
 
 set -e
 
-BUILD_TYPE=Debug
-EIO="-DWANT_EIO=TRUE -DWANT_EMBEDDED_EIO=TRUE"
-
 if [ -d build ] ; then
         rm -rf build
 fi
