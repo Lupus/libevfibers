@@ -1,4 +1,4 @@
-install: sudo apt-get install cmake libev-dev check libtool autoconf
+install: sudo apt-get install cmake libev-dev check cvs libtool autoconf
 language: c
 script: "./ci/run_tests.sh"
 compiler:
