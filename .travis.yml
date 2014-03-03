@@ -1,6 +1,6 @@
-install: sudo apt-get install cmake libev-dev check libeio-dev
+install: sudo apt-get install cmake libev-dev check libtool autoconf
 language: c
-script: cmake
+script: "./ci/run_tests.sh"
 compiler:
         - clang
         - gcc
