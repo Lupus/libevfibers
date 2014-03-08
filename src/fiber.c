@@ -678,21 +678,21 @@ int fbr_ev_wait_to(FBR_P_ struct fbr_ev_base *events[], ev_tstamp timeout)
 int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
-	struct fbr_ev_base **ev_pptr;
 	enum ev_action_hint hint;
 	int num = 0;
+	int i;
 
 	fiber->ev.arrived = 0;
 	fiber->ev.waiting = events;
 
-	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++) {
-		hint = prepare_ev(FBR_A_ *ev_pptr);
+	for (i = 0; NULL != events[i]; i++) {
+		hint = prepare_ev(FBR_A_ events[i]);
 		switch (hint) {
 		case EV_AH_OK:
 			break;
 		case EV_AH_ARRIVED:
 			fiber->ev.arrived = 1;
-			(*ev_pptr)->arrived = 1;
+			events[i]->arrived = 1;
 			break;
 		case EV_AH_EINVAL:
 			return_error(-1, FBR_EINVAL);
@@ -702,24 +702,41 @@ int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 	while (0 == fiber->ev.arrived)
 		fbr_yield(FBR_A);
 
-	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++) {
-		if ((*ev_pptr)->arrived) {
+	for (i = 0; NULL != events[i]; i++) {
+		if (events[i]->arrived) {
 			num++;
-			finish_ev(FBR_A_ *ev_pptr);
+			finish_ev(FBR_A_ events[i]);
 		} else
-			cancel_ev(FBR_A_ *ev_pptr);
+			cancel_ev(FBR_A_ events[i]);
 	}
 	return_success(num);
 }
 
 int fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one)
 {
-	int n_events;
+	struct fbr_fiber *fiber = CURRENT_FIBER;
+	enum ev_action_hint hint;
 	struct fbr_ev_base *events[] = {one, NULL};
-	n_events = fbr_ev_wait(FBR_A_ events);
-	if (1 == n_events)
-		return 0;
-	return -1;
+
+	fiber->ev.arrived = 0;
+	fiber->ev.waiting = events;
+
+	hint = prepare_ev(FBR_A_ one);
+	switch (hint) {
+	case EV_AH_OK:
+		break;
+	case EV_AH_ARRIVED:
+		goto finish;
+	case EV_AH_EINVAL:
+		return_error(-1, FBR_EINVAL);
+	}
+
+	while (0 == fiber->ev.arrived)
+		fbr_yield(FBR_A);
+
+finish:
+	finish_ev(FBR_A_ one);
+	return 0;
 }
 
 int fbr_transfer(FBR_P_ fbr_id_t to)

@@ -119,6 +119,8 @@ endif(EVFIBERS_EMBED)
 
 add_executable(fiber_bench_buffer "${CMAKE_CURRENT_SOURCE_DIR}/bench/buffer.c")
 target_link_libraries(fiber_bench_buffer evfibers ${CMAKE_THREAD_LIBS_INIT})
+add_executable(fiber_bench_condvar "${CMAKE_CURRENT_SOURCE_DIR}/bench/condvar.c")
+target_link_libraries(fiber_bench_condvar evfibers ${CMAKE_THREAD_LIBS_INIT})
 
 # Variables for config.h
 if(WANT_EIO AND THREADS_FOUND AND LIBEIO_FOUND)
