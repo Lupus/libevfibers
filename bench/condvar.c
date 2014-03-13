@@ -90,6 +90,7 @@ int main()
 	struct fbr_context context;
 	fbr_id_t fiber1, fiber2, fiber_stats;
 	int retval;
+	(void)retval;
 	struct fiber_arg arg = {
 		.count = 0
 	};
