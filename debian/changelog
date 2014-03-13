@@ -1,3 +1,9 @@
+libevfibers (0.4.1) unstable; urgency=low
+
+  * Fixed building with embedded libeio
+
+ -- Konstantin Olkhovskiy <kolkhovskiy@kolkhovskiy-laptop>  Thu, 13 Mar 2014 19:22:02 +0400
+
 libevfibers (0.4.0) unstable; urgency=low
 
   * Added no-reclaim mode for a fiber
