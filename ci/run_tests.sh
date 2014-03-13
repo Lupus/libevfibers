@@ -21,7 +21,7 @@ echo "         Running unit tests"
 echo "======================================"
 echo
 
-export CK_TIMEOUT_MULTIPLIER=10
+export CK_TIMEOUT_MULTIPLIER=25
 ./test/evfibers_test
 
 popd
