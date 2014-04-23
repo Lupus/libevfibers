@@ -63,10 +63,11 @@ if(WANT_EIO)
 	endif(WANT_EMBEDDED_EIO)
 	find_package(Threads)
 endif(WANT_EIO)
-check_include_files(ucontext.h HAVE_UCONTEXT_H)
-if(HAVE_UCONTEXT_H)
-	add_definitions("-DHAVE_UCONTEXT_H")
-endif(HAVE_UCONTEXT_H)
+
+if(WANT_ASAN)
+	# Force ucontext.h as libcoro backend so as to better interact with ASan
+	add_definitions(-DCORO_UCONTEXT)
+endif(WANT_ASAN)
 
 if(WANT_VALGRIND)
 	check_include_files(valgrind/valgrind.h HAVE_VALGRIND_H)
@@ -86,7 +87,10 @@ include_directories(
 if(WANT_LTO)
 	set(LTO_FLAGS "-flto")
 endif(WANT_LTO)
-set(CMAKE_C_FLAGS "-W -Wall -Werror -fno-strict-aliasing ${LTO_FLAGS} ${CMAKE_C_FLAGS}")
+if(WANT_ASAN)
+	set(ASAN_FLAGS "-fsanitize=address")
+endif(WANT_ASAN)
+set(CMAKE_C_FLAGS "-W -Wall -Werror -fno-strict-aliasing ${LTO_FLAGS} ${ASAN_FLAGS} ${CMAKE_C_FLAGS}")
 set(SOURCES ${EVFIBERS_SOURCES} ${CORO_SOURCES})
 
 add_library(evfibers SHARED ${SOURCES})

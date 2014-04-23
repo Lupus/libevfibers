@@ -334,8 +334,7 @@ void fbr_destroy(FBR_P)
 	}
 
 	LIST_FOREACH_SAFE(fiber, &fctx->__p->reclaimed, entries.reclaimed, x) {
-		if (0 != munmap(fiber->stack, fiber->stack_size))
-			err(EXIT_FAILURE, "munmap");
+		free(fiber->stack);
 		free(fiber);
 	}
 
@@ -1176,10 +1175,9 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 		if (0 == stack_size)
 			stack_size = FBR_STACK_SIZE;
 		stack_size = round_up_to_page_size(stack_size);
-		fiber->stack = mmap(NULL, stack_size, PROT_READ | PROT_WRITE,
-				MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-		if (MAP_FAILED == fiber->stack)
-			err(EXIT_FAILURE, "mmap failed");
+		fiber->stack = malloc(stack_size);
+		if (NULL == fiber->stack)
+			err(EXIT_FAILURE, "malloc failed");
 		fiber->stack_size = stack_size;
 		(void)VALGRIND_STACK_REGISTER(fiber->stack, fiber->stack +
 				stack_size);
