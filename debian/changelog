@@ -1,8 +1,36 @@
-libevfibers (0.3.0.rc11) unstable; urgency=low
+libevfibers (0.4.1) unstable; urgency=low
 
-  * New upstream build
+  * Fixed building with embedded libeio
 
- -- Konstantin Olkhovskiy <kolkhovskiy@kolkhovskiy-laptop>  Mon, 23 Dec 2013 12:33:51 +0400
+ -- Konstantin Olkhovskiy <kolkhovskiy@kolkhovskiy-laptop>  Thu, 13 Mar 2014 19:22:02 +0400
+
+libevfibers (0.4.0) unstable; urgency=low
+
+  * Added no-reclaim mode for a fiber
+  * Got rid of 128 bit integers in favour of packed struct
+  * Added fbr_ev_wait with timeout (fbr_ev_wait_to)
+  * Assert for a yield in the root fiber
+  * Added fbr_connect function and test case for it (thanks, Mikhail)
+  * Added fbr_buffer_reset method
+  * Implemented libeio support (configurable at build time)
+  * Debian package includes libeio support by default
+  * In-place download&build support for libeio (if it's missing on the system)
+  * Replaced libvrb with in-house implementation
+  * Fixed unit tests run inside of pbuilder (/dev/shm workaround)
+  * Support for cmake-level embedding into other cmake projects
+  * Default build type set to RelWithDebInfo
+  * Support for building with lto support
+  * Added fbr_system, fbr_popenN and fbr_waitpid calls
+  * Added fbr_send and fbr_recv wrappers
+  * Marked fiber memory pool APIs as deprecated
+  * Dropped usage of fiber memory pools in tests
+  * Valgrind is now an optional dependency
+  * Added travis-ci support
+  * Added missing build script (used in test coverage script)
+  * Changing license to Apache License, Version 2.0
+  * Improved fbr_ev_wait_one performance
+
+ -- Konstantin Olkhovskiy <kolkhovskiy@kolkhovskiy-laptop>  Thu, 13 Mar 2014 17:19:22 +0400
 
 libevfibers (0.3.0) unstable; urgency=low
 

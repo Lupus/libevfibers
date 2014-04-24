@@ -1,22 +1,18 @@
 /********************************************************************
 
-  Copyright 2012 Konstantin Olkhovskiy <lupus@oxnull.net>
+   Copyright 2013 Konstantin Olkhovskiy <lupus@oxnull.net>
 
-  This file is part of libevfibers.
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
 
-  libevfibers is free software: you can redistribute it and/or modify
-  it under the terms of the GNU Lesser General Public License as
-  published by the Free Software Foundation, either version 3 of the
-  License, or any later version.
+       http://www.apache.org/licenses/LICENSE-2.0
 
-  libevfibers is distributed in the hope that it will be useful, but
-  WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  Lesser General Public License for more details.
-
-  You should have received a copy of the GNU Lesser General
-  Public License along with libevfibers.  If not, see
-  <http://www.gnu.org/licenses/>.
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
 
  ********************************************************************/
 
@@ -108,14 +104,15 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	void *buf;
 	off_t offt;
 	char path_buf[PATH_MAX + 1];
+	char path_buf2[PATH_MAX + 1];
 	EIO_STRUCT_STAT statdata;
 	EIO_STRUCT_STATVFS statvdata;
 
 	memset(&statvdata, 0x00, sizeof(statvdata));
-	retval = fbr_eio_statvfs(FBR_A_ "/tmp", &statvdata, 0);
+	retval = fbr_eio_statvfs(FBR_A_ "/", &statvdata, 0);
 	assert(0 == retval);
 
-	fd = fbr_eio_open(FBR_A_ "/tmp/async.test", O_RDWR | O_CREAT | O_TRUNC,
+	fd = fbr_eio_open(FBR_A_ "./async.test", O_RDWR | O_CREAT | O_TRUNC,
 			0644, 0);
 	fail_unless(0 <= fd);
 
@@ -204,68 +201,70 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	fail_unless(0 == retval);
 
 
-	retval = fbr_eio_chown(FBR_A_ "/tmp/async.test", getuid(), getgid(), 0);
+	retval = fbr_eio_chown(FBR_A_ "./async.test", getuid(), getgid(), 0);
 	assert(0 == retval);
 
-	retval = fbr_eio_chmod(FBR_A_ "/tmp/async.test", 0644, 0);
+	retval = fbr_eio_chmod(FBR_A_ "./async.test", 0644, 0);
 	assert(0 == retval);
 
-	retval = fbr_eio_utime(FBR_A_ "/tmp/async.test",
+	retval = fbr_eio_utime(FBR_A_ "./async.test",
 			ev_now(fctx->__p->loop),
 			ev_now(fctx->__p->loop), 0);
 	assert(0 == retval);
 
 	memset(&statdata, 0x00, sizeof(statdata));
-	retval = fbr_eio_stat(FBR_A_ "/tmp/async.test", &statdata, 0);
+	retval = fbr_eio_stat(FBR_A_ "./async.test", &statdata, 0);
 	assert(0 == retval);
 
 	memset(&statdata, 0x00, sizeof(statdata));
-	retval = fbr_eio_lstat(FBR_A_ "/tmp/async.test", &statdata, 0);
+	retval = fbr_eio_lstat(FBR_A_ "./async.test", &statdata, 0);
 	assert(0 == retval);
 
-	retval = fbr_eio_truncate(FBR_A_ "/tmp/async.test", 0, 0);
+	retval = fbr_eio_truncate(FBR_A_ "./async.test", 0, 0);
 	assert(0 == retval);
 
-	retval = fbr_eio_unlink(FBR_A_ "/tmp/async.test", 0);
+	retval = fbr_eio_unlink(FBR_A_ "./async.test", 0);
 	assert(0 == retval);
 
-	retval = fbr_eio_mkdir(FBR_A_ "/tmp/async.test.dir", 0755, 0);
+	retval = fbr_eio_mkdir(FBR_A_ "./async.test.dir", 0755, 0);
 	assert(0 == retval);
 
-	retval = fbr_eio_rmdir(FBR_A_ "/tmp/async.test.dir", 0);
+	retval = fbr_eio_rmdir(FBR_A_ "./async.test.dir", 0);
 	assert(0 == retval);
 
-	retval = fbr_eio_mknod(FBR_A_ "/tmp/async.node", 0644, S_IFREG, 0);
+	retval = fbr_eio_mknod(FBR_A_ "./async.node", 0644, S_IFREG, 0);
 	assert(0 == retval);
 
-	retval = fbr_eio_link(FBR_A_ "/tmp/async.node",
-			"/tmp/async.node.link", 0);
+	retval = fbr_eio_link(FBR_A_ "./async.node",
+			"./async.node.link", 0);
 	assert(0 == retval);
 
-	retval = fbr_eio_symlink(FBR_A_ "/tmp/async.node",
-			"/tmp/async.node.symlink", 0);
+	retval = fbr_eio_symlink(FBR_A_ "./async.node",
+			"./async.node.symlink", 0);
 	assert(0 == retval);
 
 	memset(path_buf, 0x00, sizeof(path_buf));
-	retval = fbr_eio_readlink(FBR_A_ "/tmp/async.node.symlink", path_buf,
+	retval = fbr_eio_readlink(FBR_A_ "./async.node.symlink", path_buf,
 			sizeof(path_buf) - 1, 0);
-	printf("path_buf: %s\n", path_buf);
-	assert(retval > 0);
-	fail_unless(!strcmp(path_buf, "/tmp/async.node"));
+	fail_unless(retval > 0);
+	fail_unless(!strcmp(path_buf, "./async.node"));
 
-	retval = fbr_eio_realpath(FBR_A_ "/tmp/../tmp/./async.node",
+	fail_unless(NULL != getcwd(path_buf2, sizeof(path_buf2)));
+	strcat(path_buf2, "/async.node");
+	memset(path_buf, 0x00, sizeof(path_buf));
+	retval = fbr_eio_realpath(FBR_A_ "./././async.node",
 			path_buf, sizeof(path_buf) - 1, 0);
-	assert(retval > 0);
-	fail_unless(!strcmp(path_buf, "/tmp/async.node"));
+	fail_unless(retval > 0);
+	fail_unless(!strcmp(path_buf2, path_buf));
 
-	retval = fbr_eio_rename(FBR_A_ "/tmp/async.node.link",
-			"/tmp/async.node.symlink", 0);
+	retval = fbr_eio_rename(FBR_A_ "./async.node.link",
+			"./async.node.symlink", 0);
 	assert(0 == retval);
 
-	retval = fbr_eio_unlink(FBR_A_ "/tmp/async.node.symlink", 0);
+	retval = fbr_eio_unlink(FBR_A_ "./async.node.symlink", 0);
 	assert(0 == retval);
 
-	retval = fbr_eio_unlink(FBR_A_ "/tmp/async.node", 0);
+	retval = fbr_eio_unlink(FBR_A_ "./async.node", 0);
 	assert(0 == retval);
 }
 

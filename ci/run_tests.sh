@@ -2,9 +2,6 @@
 
 set -e
 
-BUILD_TYPE=Debug
-EIO="-DWANT_EIO=TRUE -DWANT_EMBEDDED_EIO=TRUE"
-
 if [ -d build ] ; then
         rm -rf build
 fi
@@ -24,6 +21,7 @@ echo "         Running unit tests"
 echo "======================================"
 echo
 
+export CK_TIMEOUT_MULTIPLIER=25
 ./test/evfibers_test
 
 popd

@@ -1,22 +1,18 @@
 /********************************************************************
 
-  Copyright 2012 Konstantin Olkhovskiy <lupus@oxnull.net>
+   Copyright 2013 Konstantin Olkhovskiy <lupus@oxnull.net>
 
-  This file is part of libevfibers.
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
 
-  libevfibers is free software: you can redistribute it and/or modify
-  it under the terms of the GNU Lesser General Public License as
-  published by the Free Software Foundation, either version 3 of the
-  License, or any later version.
+       http://www.apache.org/licenses/LICENSE-2.0
 
-  libevfibers is distributed in the hope that it will be useful, but
-  WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  Lesser General Public License for more details.
-
-  You should have received a copy of the GNU Lesser General
-  Public License along with libevfibers.  If not, see
-  <http://www.gnu.org/licenses/>.
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
 
  ********************************************************************/
 
@@ -681,21 +677,21 @@ int fbr_ev_wait_to(FBR_P_ struct fbr_ev_base *events[], ev_tstamp timeout)
 int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 {
 	struct fbr_fiber *fiber = CURRENT_FIBER;
-	struct fbr_ev_base **ev_pptr;
 	enum ev_action_hint hint;
 	int num = 0;
+	int i;
 
 	fiber->ev.arrived = 0;
 	fiber->ev.waiting = events;
 
-	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++) {
-		hint = prepare_ev(FBR_A_ *ev_pptr);
+	for (i = 0; NULL != events[i]; i++) {
+		hint = prepare_ev(FBR_A_ events[i]);
 		switch (hint) {
 		case EV_AH_OK:
 			break;
 		case EV_AH_ARRIVED:
 			fiber->ev.arrived = 1;
-			(*ev_pptr)->arrived = 1;
+			events[i]->arrived = 1;
 			break;
 		case EV_AH_EINVAL:
 			return_error(-1, FBR_EINVAL);
@@ -705,24 +701,41 @@ int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[])
 	while (0 == fiber->ev.arrived)
 		fbr_yield(FBR_A);
 
-	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++) {
-		if ((*ev_pptr)->arrived) {
+	for (i = 0; NULL != events[i]; i++) {
+		if (events[i]->arrived) {
 			num++;
-			finish_ev(FBR_A_ *ev_pptr);
+			finish_ev(FBR_A_ events[i]);
 		} else
-			cancel_ev(FBR_A_ *ev_pptr);
+			cancel_ev(FBR_A_ events[i]);
 	}
 	return_success(num);
 }
 
 int fbr_ev_wait_one(FBR_P_ struct fbr_ev_base *one)
 {
-	int n_events;
+	struct fbr_fiber *fiber = CURRENT_FIBER;
+	enum ev_action_hint hint;
 	struct fbr_ev_base *events[] = {one, NULL};
-	n_events = fbr_ev_wait(FBR_A_ events);
-	if (1 == n_events)
-		return 0;
-	return -1;
+
+	fiber->ev.arrived = 0;
+	fiber->ev.waiting = events;
+
+	hint = prepare_ev(FBR_A_ one);
+	switch (hint) {
+	case EV_AH_OK:
+		break;
+	case EV_AH_ARRIVED:
+		goto finish;
+	case EV_AH_EINVAL:
+		return_error(-1, FBR_EINVAL);
+	}
+
+	while (0 == fiber->ev.arrived)
+		fbr_yield(FBR_A);
+
+finish:
+	finish_ev(FBR_A_ one);
+	return 0;
 }
 
 int fbr_transfer(FBR_P_ fbr_id_t to)
