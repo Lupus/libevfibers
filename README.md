@@ -44,6 +44,13 @@ In case you dont, use the following command instead:
 
 This will checkout libeio from CVS and build it in-place.
 
+Who uses this project
+=====================
+
+Although libevfibers is a relatively young project, it is currently used in production at NVIDIA, inside of its internal server software products.
+
+If you are using libevfibers in your environment, I would be glad to hear from you (see "Questions and feedback below")!
+
 Running unit tests
 ==================
 
