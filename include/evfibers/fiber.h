@@ -1091,6 +1091,8 @@ int fbr_fd_nonblock(FBR_P_ int fd);
  */
 int fbr_connect(FBR_P_ int sockfd, const struct sockaddr *addr,
                    socklen_t addrlen);
+int fbr_connect_wto(FBR_P_ int sockfd, const struct sockaddr *addr,
+                   socklen_t addrlen, ev_tstamp timeout);
 
 /**
  * Fiber friendly libc read wrapper.
@@ -1111,6 +1113,7 @@ int fbr_connect(FBR_P_ int sockfd, const struct sockaddr *addr,
  * @see fbr_read_line
  */
 ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count);
+ssize_t fbr_read_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout);
 
 /**
  * Even more fiber friendly libc read wrapper.
@@ -1133,6 +1136,7 @@ ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count);
  * @see fbr_read_line
  */
 ssize_t fbr_read_all(FBR_P_ int fd, void *buf, size_t count);
+ssize_t fbr_read_all_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout);
 
 /**
  * Utility function to read a line.
@@ -1190,6 +1194,7 @@ ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count);
  * @see fbr_write
  */
 ssize_t fbr_write_all(FBR_P_ int fd, const void *buf, size_t count);
+ssize_t fbr_write_all_wto(FBR_P_ int fd, const void *buf, size_t count, ev_tstamp timeout);
 
 /**
  * Fiber friendly libc recvfrom wrapper.
