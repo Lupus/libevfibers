@@ -1091,6 +1091,23 @@ int fbr_fd_nonblock(FBR_P_ int fd);
  */
 int fbr_connect(FBR_P_ int sockfd, const struct sockaddr *addr,
                    socklen_t addrlen);
+
+/**
+ * Fiber friendly connect wrapper with timeout.
+ * @param [in] sockfd - socket file descriptor
+ * @param [in] addr - pointer to struct sockaddr, containing connection details
+ * @param [in] length of struct sockaddr
+ * @param [in] timeout in seconds to wait for events
+ * @return zero on success, -1 in case of error and errno set
+ *
+ * Connect wrapper, that connects the socket referred to by the file
+ * descriptor sockfd to the address specified by addr.
+ * starting at buf. Calling fiber will be blocked until sockfd is connected or
+ * either timeout or error occurs
+ *
+ * Possible errno values are described in connect man page. The are special cases:
+ * EINPROGRESS is handled internally; ETIMEDOUT is returned in case of timeout.
+ */
 int fbr_connect_wto(FBR_P_ int sockfd, const struct sockaddr *addr,
                    socklen_t addrlen, ev_tstamp timeout);
 
@@ -1110,9 +1127,29 @@ int fbr_connect_wto(FBR_P_ int sockfd, const struct sockaddr *addr,
  * case when non-root fiber called the fiber waiting in fbr_read.
  *
  * @see fbr_read_all
- * @see fbr_read_line
+ * @see fbr_readline
  */
 ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count);
+
+/**
+ * Fiber friendly libc read wrapper with timeout.
+ * @param [in] fd file descriptor to read from
+ * @param [in] buf pointer to some user-allocated buffer
+ * @param [in] count maximum number of bytes to read
+ * @param [in] timeout in seconds to wait for events
+ * @return number of bytes read on success, -1 in case of error and errno set
+ *
+ * Attempts to read up to count bytes from file descriptor fd into the buffer
+ * starting at buf. Calling fiber will be blocked until something arrives at
+ * fd or timeout occurs.
+ *
+ * Possible errno values are described in read man page. The only special case
+ * is EINTR which is handled internally and is returned to the caller only in
+ * case when non-root fiber called the fiber waiting in fbr_read.
+ *
+ * @see fbr_read_all
+ * @see fbr_readline
+ */
 ssize_t fbr_read_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout);
 
 /**
@@ -1136,6 +1173,29 @@ ssize_t fbr_read_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout);
  * @see fbr_read_line
  */
 ssize_t fbr_read_all(FBR_P_ int fd, void *buf, size_t count);
+
+/**
+ * Even more fiber friendly libc read wrapper with timeout.
+ * @param [in] fd file descriptor to read from
+ * @param [in] buf pointer to some user-allocated buffer
+ * @param [in] count desired number of bytes to read
+ * @param [in] timeout in seconds to wait for events
+ * @return number of bytes read on success, -1 in case of error and errno set
+ *
+ * Attempts to read exactly count bytes from file descriptor fd into the buffer
+ * starting at buf. Calling fiber will be blocked for timeout number of seconds, or
+ * the required amount of data arrives, or EOF is got at fd. If latter occurs too
+ * early, returned number of bytes will be less that required.
+ *
+ * Possible errno values are described in read man page. Unlike fbr_read this
+ * function will never return -1 with EINTR and will silently ignore any
+ * attempts to call this fiber from other non-root fibers (call infos are still
+ * queued if the called desired to do so).
+ *
+ * @see fbr_read
+ * @see fbr_readline
+ */
+
 ssize_t fbr_read_all_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout);
 
 /**
@@ -1176,6 +1236,27 @@ ssize_t fbr_readline(FBR_P_ int fd, void *buffer, size_t n);
 ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count);
 
 /**
+ * Fiber friendly libc write wrapper with timeout.
+ * @param [in] fd file descriptor to write to
+ * @param [in] buf pointer to some user-allocated buffer
+ * @param [in] count maximum number of bytes to write
+ * @param [in] timeout in seconds to wait for events
+ * @return number of bytes written on success, -1 in case of error and errno set
+ *
+ * Attempts to write up to count bytes to file descriptor fd from the buffer
+ * starting at buf. Calling fiber will be blocked until the data is written
+ * or timeout occurs.
+ *
+ * Possible errno values are described in write man page. The are special cases:
+ * EINTR is handled internally and is returned to the caller only in
+ * case when non-root fiber called the fiber sitting in fbr_write;
+ * ETIMEDOUT is returned in case of timeout.
+ *
+ * @see fbr_write_all_wto
+ */
+ssize_t fbr_write_wto(FBR_P_ int fd, const void *buf, size_t count, ev_tstamp timeout);
+
+/**
  * Even more fiber friendly libc write wrapper.
  * @param [in] fd file descriptor to write to
  * @param [in] buf pointer to some user-allocated buffer
@@ -1194,6 +1275,26 @@ ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count);
  * @see fbr_write
  */
 ssize_t fbr_write_all(FBR_P_ int fd, const void *buf, size_t count);
+
+/**
+ * Even more fiber friendly libc write wrapper with timeout.
+ * @param [in] fd file descriptor to write to
+ * @param [in] buf pointer to some user-allocated buffer
+ * @param [in] count desired number of bytes to write
+ * @param [in] timeout in seconds to wait for events
+ * @return number of bytes read on success, -1 in case of error and errno set
+ *
+ * Attempts to write exactly count bytes to file descriptor fd from the buffer
+ * starting at buf. Calling fiber will be blocked until the required amount of
+ * data is written to fd or timeout occurs.
+ *
+ * Possible errno values are described in write man page. Unlike fbr_write this
+ * function will never return -1 with EINTR and will silently ignore any
+ * attempts to call this fiber from other non-root fibers (call infos are still
+ * queued if the called desired to do so).
+ *
+ * @see fbr_write_wto
+ */
 ssize_t fbr_write_all_wto(FBR_P_ int fd, const void *buf, size_t count, ev_tstamp timeout);
 
 /**

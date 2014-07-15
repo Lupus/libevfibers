@@ -741,9 +741,25 @@ finish:
 int fbr_ev_wait_one_wto(FBR_P_ struct fbr_ev_base *one, ev_tstamp timeout)
 {
 	int n_events;
-	struct fbr_ev_base *events[] = {one, NULL};
-	n_events = fbr_ev_wait_to(FBR_A_ events, timeout);
-	if (1 == n_events)
+	struct fbr_ev_base *events[] = {one, NULL, NULL};
+	ev_timer timer;
+	struct fbr_ev_watcher twatcher;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
+
+	ev_timer_init(&timer, NULL, timeout, 0.);
+	ev_timer_start(fctx->__p->loop, &timer);
+
+	fbr_ev_watcher_init(FBR_A_ &twatcher,
+			(struct ev_watcher *)&timer);
+	dtor.func = watcher_timer_dtor;
+	dtor.arg = &timer;
+	fbr_destructor_add(FBR_A_ &dtor);
+	events[1] = &twatcher.ev_base;
+
+	n_events = fbr_ev_wait(FBR_A_ events);
+	fbr_destructor_remove(FBR_A_ &dtor, 1 /* Call it? */);
+
+	if (n_events > 0 && events[0]->arrived)
 		return 0;
 	return -1;
 }
@@ -1118,6 +1134,33 @@ ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count)
 	do {
 		r = write(fd, buf, count);
 	} while (-1 == r && EINTR == errno);
+
+	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
+	ev_io_stop(fctx->__p->loop, &io);
+	return r;
+}
+
+ssize_t fbr_write_wto(FBR_P_ int fd, const void *buf, size_t count, ev_tstamp timeout)
+{
+	ssize_t r = 0;
+	int rc;
+	ev_io io;
+	struct fbr_ev_watcher watcher;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
+
+	ev_io_init(&io, NULL, fd, EV_WRITE);
+	ev_io_start(fctx->__p->loop, &io);
+	dtor.func = watcher_io_dtor;
+	dtor.arg = &io;
+	fbr_destructor_add(FBR_A_ &dtor);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
+	rc = fbr_ev_wait_one_wto(FBR_A_ &watcher.ev_base, timeout);
+	if (0 == rc) {
+		do {
+			r = write(fd, buf, count);
+		} while (-1 == r && EINTR == errno);
+	}
 
 	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
 	ev_io_stop(fctx->__p->loop, &io);
