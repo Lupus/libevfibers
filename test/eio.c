@@ -121,7 +121,7 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 
 	retval = fbr_eio_syncfs(FBR_A_ fd, 0);
 	fail_unless(0 == retval || ENOSYS == errno);
-	/*
+	/* fallocate is not working on tmpfs on older kernels
 	retval = fbr_eio_fallocate(FBR_A_ fd, EIO_FALLOC_FL_KEEP_SIZE, 0,
 			sizeof(big_msg), 0);
 	fail_unless(0 == retval || ENOSYS == errno);
@@ -290,7 +290,6 @@ END_TEST
 TCase * eio_tcase(void)
 {
 	TCase *tc_eio = tcase_create("EIO");
-	tcase_set_timeout(tc_eio, 100);
 	tcase_add_test(tc_eio, test_eio);
 	return tc_eio;
 }
