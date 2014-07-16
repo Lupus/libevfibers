@@ -121,11 +121,11 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 
 	retval = fbr_eio_syncfs(FBR_A_ fd, 0);
 	fail_unless(0 == retval || ENOSYS == errno);
-	/* fallocate is not working on tmpfs on older kernels
+
 	retval = fbr_eio_fallocate(FBR_A_ fd, EIO_FALLOC_FL_KEEP_SIZE, 0,
 			sizeof(big_msg), 0);
-	fail_unless(0 == retval || ENOSYS == errno);
-	*/
+	fail_unless(0 == retval || ENOSYS == errno || EOPNOTSUPP == errno);
+
 	memset(&statdata, 0x00, sizeof(statdata));
 	retval = fbr_eio_fstat(FBR_A_ fd, &statdata, 0);
 	assert(0 == retval);

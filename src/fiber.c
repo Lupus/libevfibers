@@ -931,7 +931,7 @@ ssize_t fbr_read_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout)
 	ev_io io;
 	struct fbr_ev_watcher watcher;
 	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-    int rc = 0;
+	int rc = 0;
 
 	ev_io_init(&io, NULL, fd, EV_READ);
 	ev_io_start(fctx->__p->loop, &io);
@@ -943,7 +943,7 @@ ssize_t fbr_read_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout)
 	rc = fbr_ev_wait_one_wto(FBR_A_ &watcher.ev_base, timeout);
 
 	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-    if (0 == rc) {
+	if (0 == rc) {
 		do {
 			r = read(fd, buf, count);
 		} while (-1 == r && EINTR == errno);

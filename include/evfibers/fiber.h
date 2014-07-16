@@ -1122,9 +1122,7 @@ int fbr_connect_wto(FBR_P_ int sockfd, const struct sockaddr *addr,
  * starting at buf. Calling fiber will be blocked until something arrives at
  * fd.
  *
- * Possible errno values are described in read man page. The only special case
- * is EINTR which is handled internally and is returned to the caller only in
- * case when non-root fiber called the fiber waiting in fbr_read.
+ * Possible errno values are described in read man page.
  *
  * @see fbr_read_all
  * @see fbr_readline
@@ -1144,8 +1142,7 @@ ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count);
  * fd or timeout occurs.
  *
  * Possible errno values are described in read man page. The only special case
- * is EINTR which is handled internally and is returned to the caller only in
- * case when non-root fiber called the fiber waiting in fbr_read.
+ * is ETIMEDOUT, which is returned to the caller when timeout occurs.
  *
  * @see fbr_read_all
  * @see fbr_readline
@@ -1164,10 +1161,7 @@ ssize_t fbr_read_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout);
  * data or EOF arrive at fd. If latter occurs too early returned number of
  * bytes will be less that required.
  *
- * Possible errno values are described in read man page. Unlike fbr_read this
- * function will never return -1 with EINTR and will silently ignore any
- * attempts to call this fiber from other non-root fibers (call infos are still
- * queued if the called desired to do so).
+ * Possible errno values are described in read man page.
  *
  * @see fbr_read
  * @see fbr_read_line
@@ -1187,10 +1181,8 @@ ssize_t fbr_read_all(FBR_P_ int fd, void *buf, size_t count);
  * the required amount of data arrives, or EOF is got at fd. If latter occurs too
  * early, returned number of bytes will be less that required.
  *
- * Possible errno values are described in read man page. Unlike fbr_read this
- * function will never return -1 with EINTR and will silently ignore any
- * attempts to call this fiber from other non-root fibers (call infos are still
- * queued if the called desired to do so).
+ * Possible errno values are described in read man page. Errno is set to ETIMEDOUT
+ * when timeout occurs.
  *
  * @see fbr_read
  * @see fbr_readline
@@ -1209,8 +1201,7 @@ ssize_t fbr_read_all_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeo
  * starting at buf, but stops if newline is encountered. Calling fiber will be
  * blocked until the required amount of data, EOF or newline arrive at fd.
  *
- * Possible errno values are described in read man page. As with fbr_read_all this
- * function will never return -1 with EINTR.
+ * Possible errno values are described in read man page.
  *
  * @see fbr_read
  * @see fbr_read_all
@@ -1227,9 +1218,7 @@ ssize_t fbr_readline(FBR_P_ int fd, void *buffer, size_t n);
  * Attempts to write up to count bytes to file descriptor fd from the buffer
  * starting at buf. Calling fiber will be blocked until the data is written.
  *
- * Possible errno values are described in write man page. The only special case
- * is EINTR which is handled internally and is returned to the caller only in
- * case when non-root fiber called the fiber sitting in fbr_write.
+ * Possible errno values are described in write man page.
  *
  * @see fbr_write_all
  */
@@ -1247,9 +1236,7 @@ ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count);
  * starting at buf. Calling fiber will be blocked until the data is written
  * or timeout occurs.
  *
- * Possible errno values are described in write man page. The are special cases:
- * EINTR is handled internally and is returned to the caller only in
- * case when non-root fiber called the fiber sitting in fbr_write;
+ * Possible errno values are described in write man page.
  * ETIMEDOUT is returned in case of timeout.
  *
  * @see fbr_write_all_wto
@@ -1267,10 +1254,7 @@ ssize_t fbr_write_wto(FBR_P_ int fd, const void *buf, size_t count, ev_tstamp ti
  * starting at buf. Calling fiber will be blocked until the required amount of
  * data is written to fd.
  *
- * Possible errno values are described in write man page. Unlike fbr_write this
- * function will never return -1 with EINTR and will silently ignore any
- * attempts to call this fiber from other non-root fibers (call infos are still
- * queued if the called desired to do so).
+ * Possible errno values are described in write man page.
  *
  * @see fbr_write
  */
@@ -1288,10 +1272,7 @@ ssize_t fbr_write_all(FBR_P_ int fd, const void *buf, size_t count);
  * starting at buf. Calling fiber will be blocked until the required amount of
  * data is written to fd or timeout occurs.
  *
- * Possible errno values are described in write man page. Unlike fbr_write this
- * function will never return -1 with EINTR and will silently ignore any
- * attempts to call this fiber from other non-root fibers (call infos are still
- * queued if the called desired to do so).
+ * Possible errno values are described in write man page.
  *
  * @see fbr_write_wto
  */
@@ -1309,9 +1290,7 @@ ssize_t fbr_write_all_wto(FBR_P_ int fd, const void *buf, size_t count, ev_tstam
  *
  * This function is used to receive messages from a socket.
  *
- * Possible errno values are described in recvfrom man page. The only special case
- * is EINTR which is handled internally and is returned to the caller only in
- * case when non-root fiber called the fiber sitting in fbr_recvfrom.
+ * Possible errno values are described in recvfrom man page.
  *
  */
 ssize_t fbr_recvfrom(FBR_P_ int sockfd, void *buf, size_t len, int flags,
@@ -1343,9 +1322,7 @@ ssize_t fbr_recv(FBR_P_ int sockfd, void *buf, size_t len, int flags);
  *
  * This function is used to send messages to a socket.
  *
- * Possible errno values are described in sendto man page. The only special case
- * is EINTR which is handled internally and is returned to the caller only in
- * case when non-root fiber called the fiber sitting in fbr_sendto.
+ * Possible errno values are described in sendto man page.
  *
  */
 ssize_t fbr_sendto(FBR_P_ int sockfd, const void *buf, size_t len, int flags, const
@@ -1373,9 +1350,7 @@ ssize_t fbr_send(FBR_P_ int sockfd, const void *buf, size_t len, int flags);
  *
  * This function is used to accept a connection on a listening socket.
  *
- * Possible errno values are described in accept man page. The only special case
- * is EINTR which is handled internally and is returned to the caller only in
- * case when non-root fiber called the fiber sitting in fbr_accept.
+ * Possible errno values are described in accept man page.
  *
  */
 int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen);
