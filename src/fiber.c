@@ -1587,6 +1587,8 @@ void fbr_mutex_lock(FBR_P_ struct fbr_mutex *mutex)
 {
 	struct fbr_ev_mutex ev;
 
+	assert(!fbr_id_eq(mutex->locked_by, CURRENT_FIBER_ID) &&
+			"Mutex is already locked by current fiber");
 	fbr_ev_mutex_init(FBR_A_ &ev, mutex);
 	fbr_ev_wait_one(FBR_A_ &ev.ev_base);
 	assert(fbr_id_eq(mutex->locked_by, CURRENT_FIBER_ID));
@@ -1605,6 +1607,8 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 {
 	struct fbr_id_tailq_i *item, *x;
 	struct fbr_fiber *fiber = NULL;
+	assert(fbr_id_eq(mutex->locked_by, CURRENT_FIBER_ID) &&
+			"Can't unlock the mutex, locked by another fiber");
 
 	if (TAILQ_EMPTY(&mutex->pending)) {
 		mutex->locked_by = FBR_ID_NULL;
@@ -1624,6 +1628,7 @@ void fbr_mutex_unlock(FBR_P_ struct fbr_mutex *mutex)
 	}
 
 	mutex->locked_by = item->id;
+	assert(!fbr_id_isnull(mutex->locked_by));
 	post_ev(FBR_A_ fiber, item->ev);
 
 	transfer_later(FBR_A_ item);
