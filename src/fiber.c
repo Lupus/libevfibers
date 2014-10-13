@@ -428,14 +428,36 @@ static void filter_fiber_stack(FBR_P_ struct fbr_fiber *fiber)
 	}
 }
 
+static int do_reclaim(FBR_P_ struct fbr_fiber *fiber)
+{
+#if 0
+	struct fbr_fiber *f;
+#endif
+
+	fill_trace_info(FBR_A_ &fiber->reclaim_tinfo);
+	reclaim_children(FBR_A_ fiber);
+	fiber_cleanup(FBR_A_ fiber);
+	fiber->id = fctx->__p->last_id++;
+#if 0
+	LIST_FOREACH(f, &fctx->__p->reclaimed, entries.reclaimed) {
+		assert(f != fiber);
+	}
+#endif
+	LIST_INSERT_HEAD(&fctx->__p->reclaimed, fiber, entries.reclaimed);
+
+	filter_fiber_stack(FBR_A_ fiber);
+
+	if (CURRENT_FIBER == fiber)
+		fbr_yield(FBR_A);
+
+	return_success(0);
+}
+
 int fbr_reclaim(FBR_P_ fbr_id_t id)
 {
 	struct fbr_fiber *fiber;
 	struct fbr_mutex mutex;
 	int retval;
-#if 0
-	struct fbr_fiber *f;
-#endif
 
 	unpack_transfer_errno(-1, &fiber, id);
 
@@ -459,23 +481,7 @@ int fbr_reclaim(FBR_P_ fbr_id_t id)
 			FBR_ENOFIBER == fctx->f_errno)
 		return_success(0);
 
-	fill_trace_info(FBR_A_ &fiber->reclaim_tinfo);
-	reclaim_children(FBR_A_ fiber);
-	fiber_cleanup(FBR_A_ fiber);
-	fiber->id = fctx->__p->last_id++;
-#if 0
-	LIST_FOREACH(f, &fctx->__p->reclaimed, entries.reclaimed) {
-		assert(f != fiber);
-	}
-#endif
-	LIST_INSERT_HEAD(&fctx->__p->reclaimed, fiber, entries.reclaimed);
-
-	filter_fiber_stack(FBR_A_ fiber);
-
-	if (CURRENT_FIBER == fiber)
-		fbr_yield(FBR_A);
-
-	return_success(0);
+	return do_reclaim(FBR_A_ fiber);
 }
 
 int fbr_set_reclaim(FBR_P_ fbr_id_t id)
@@ -517,6 +523,8 @@ fbr_id_t fbr_self(FBR_P)
 	return CURRENT_FIBER_ID;
 }
 
+static int do_reclaim(FBR_P_ struct fbr_fiber *fiber);
+
 static void call_wrapper(FBR_P)
 {
 	int retval;
@@ -524,7 +532,7 @@ static void call_wrapper(FBR_P)
 
 	fiber->func(FBR_A_ fiber->func_arg);
 
-	retval = fbr_reclaim(FBR_A_ fbr_id_pack(fiber));
+	retval = do_reclaim(FBR_A_ fiber);
 	assert(0 == retval);
 	(void)retval;
 	fbr_yield(FBR_A);
