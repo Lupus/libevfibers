@@ -583,7 +583,7 @@ static enum ev_action_hint prepare_ev(FBR_P_ struct fbr_ev_base *ev)
 		break;
 	case FBR_EV_COND_VAR:
 		e_cond = fbr_ev_upcast(ev, fbr_ev_cond_var);
-		if (fbr_id_isnull(e_cond->mutex->locked_by)) {
+		if (e_cond->mutex && fbr_id_isnull(e_cond->mutex->locked_by)) {
 			fbr_destructor_remove(FBR_A_ &ev->item.dtor,
 					0 /* call it */);
 			return EV_AH_EINVAL;
@@ -593,7 +593,8 @@ static enum ev_action_hint prepare_ev(FBR_P_ struct fbr_ev_base *ev)
 		ev->data = item;
 		TAILQ_INSERT_TAIL(&e_cond->cond->waiting, item, entries);
 		item->head = &e_cond->cond->waiting;
-		fbr_mutex_unlock(FBR_A_ e_cond->mutex);
+		if (e_cond->mutex)
+			fbr_mutex_unlock(FBR_A_ e_cond->mutex);
 		break;
 	case FBR_EV_EIO:
 #ifdef FBR_EIO_ENABLED
@@ -615,7 +616,8 @@ static void finish_ev(FBR_P_ struct fbr_ev_base *ev)
 	switch (ev->type) {
 	case FBR_EV_COND_VAR:
 		e_cond = fbr_ev_upcast(ev, fbr_ev_cond_var);
-		fbr_mutex_lock(FBR_A_ e_cond->mutex);
+		if (e_cond->mutex)
+			fbr_mutex_lock(FBR_A_ e_cond->mutex);
 		break;
 	case FBR_EV_WATCHER:
 		e_watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
