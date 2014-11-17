@@ -1676,7 +1676,7 @@ int fbr_cond_wait(FBR_P_ struct fbr_cond_var *cond, struct fbr_mutex *mutex)
 {
 	struct fbr_ev_cond_var ev;
 
-	if (fbr_id_isnull(mutex->locked_by))
+	if (mutex && fbr_id_isnull(mutex->locked_by))
 		return_error(-1, FBR_EINVAL);
 
 	fbr_ev_cond_var_init(FBR_A_ &ev, cond, mutex);
