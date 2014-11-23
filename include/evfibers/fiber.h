@@ -576,6 +576,14 @@ struct fbr_buffer {
 	struct fbr_mutex read_mutex;
 };
 
+struct fbr_mq {
+	void **q;
+	unsigned size;
+	unsigned len;
+	struct fbr_cond_var read_cond;
+	struct fbr_cond_var write_cond;
+};
+
 /**
  * Fiber-local data key.
  *
