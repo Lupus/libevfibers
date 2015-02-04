@@ -771,6 +771,7 @@ int fbr_ev_wait_one_wto(FBR_P_ struct fbr_ev_base *one, ev_tstamp timeout)
 
 	if (n_events > 0 && events[0]->arrived)
 		return 0;
+	errno = ETIMEDOUT;
 	return -1;
 }
 
@@ -1255,8 +1256,10 @@ ssize_t fbr_write_all_wto(FBR_P_ int fd, const void *buf, size_t count, ev_tstam
 	while (count != done) {
 next:
 		fbr_ev_wait(FBR_A_ events);
-		if (events[1]->arrived)
+		if (events[1]->arrived) {
+			errno = ETIMEDOUT;
 			goto error;
+		}
 
 		for (;;) {
 			r = write(fd, buf + done, count - done);
