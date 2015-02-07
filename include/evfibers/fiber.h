@@ -927,11 +927,53 @@ fbr_id_t fbr_parent(FBR_P);
  *
  * When you have some reclaimed fibers in the list, reclaiming and creating are
  * generally cheap operations.
+ *
+ * This function takes action immediately unless the target fiber has blocked
+ * the reclaim by fbr_set_noreclaim (in this case fbr_reclaim will block and
+ * wait for fbr_set_reclaim to be called).
  */
 int fbr_reclaim(FBR_P_ fbr_id_t fiber);
 
+/**
+ * Allows a fiber to be reclaimed.
+ * @param [in] fiber fiber pointer
+ * @returns -1 on error with f_errno set, 0 upon success
+ *
+ * The opposite of fbr_set_noreclaim. Enables the fiber to be reclaimed and
+ * returns the control flow to the caller (i.e. the fiber will not be
+ * immediately reclaimed).
+ * fbr_want_reclaim can be used to check if reclaim of the fiber was requested
+ * so as to cooperate nicely and return from the fiber or call fbr_reclaim on
+ * fbr_self.
+ *
+ * @see fbr_want_reclaim
+ */
 int fbr_set_reclaim(FBR_P_ fbr_id_t fiber);
+
+/**
+ * Blocks a fiber from being reclaimed.
+ * @param [in] fiber fiber pointer
+ * @returns -1 on error with f_errno set, 0 upon success
+ *
+ * After this call the fiber will not be reclaimed until explicitly allowed by
+ * fbr_set_reclaim. Nesting of such blocks is allowed as long as
+ * fbr_set_reclaim and fbr_set_noreclaim are called the same number of times.
+ *
+ * @see fbr_set_reclaim
+ */
 int fbr_set_noreclaim(FBR_P_ fbr_id_t fiber);
+
+/**
+ * Checks if reclaim requests are pending.
+ * @param [in] fiber fiber pointer
+ * @returns -1 on error with f_errno set, 0 if no pending reclaim requests, 1
+ * if there are pending requests
+ *
+ * This function can be used to check if there are pending reclaim requests. It
+ * can return 1 only when fuber is out of any (nested) no reclaim blocks.
+ *
+ * @see fbr_set_noreclaim
+ */
 int fbr_want_reclaim(FBR_P_ fbr_id_t fiber);
 
 /**

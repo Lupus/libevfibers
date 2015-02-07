@@ -463,7 +463,7 @@ int fbr_reclaim(FBR_P_ fbr_id_t id)
 
 	fbr_mutex_init(FBR_A_ &mutex);
 	fbr_mutex_lock(FBR_A_ &mutex);
-	while (fiber->no_reclaim) {
+	while (fiber->no_reclaim > 0) {
 		fiber->want_reclaim = 1;
 		assert("Attempt to reclaim self while no_reclaim is set would"
 				" block forever" && fiber != CURRENT_FIBER);
@@ -489,8 +489,9 @@ int fbr_set_reclaim(FBR_P_ fbr_id_t id)
 	struct fbr_fiber *fiber;
 
 	unpack_transfer_errno(-1, &fiber, id);
-	fiber->no_reclaim = 0;
-	fbr_cond_broadcast(FBR_A_ &fiber->reclaim_cond);
+	fiber->no_reclaim--;
+	if (0 == fiber->no_reclaim)
+		fbr_cond_broadcast(FBR_A_ &fiber->reclaim_cond);
 	return_success(0);
 }
 
@@ -499,7 +500,7 @@ int fbr_set_noreclaim(FBR_P_ fbr_id_t id)
 	struct fbr_fiber *fiber;
 
 	unpack_transfer_errno(-1, &fiber, id);
-	fiber->no_reclaim = 1;
+	fiber->no_reclaim++;
 	return_success(0);
 }
 
@@ -508,6 +509,9 @@ int fbr_want_reclaim(FBR_P_ fbr_id_t id)
 	struct fbr_fiber *fiber;
 
 	unpack_transfer_errno(-1, &fiber, id);
+	if (fiber->no_reclaim > 0)
+		/* If we're in noreclaim block of any depth, always return 0 */
+		return 0;
 	return_success(fiber->want_reclaim);
 }
 
