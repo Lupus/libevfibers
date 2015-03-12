@@ -40,7 +40,7 @@ if(WANT_EIO)
 			PREFIX "${CMAKE_CURRENT_BINARY_DIR}/eio"
 			CVS_REPOSITORY :pserver:anonymous@cvs.schmorp.de/schmorpforge
 			CVS_MODULE libeio
-			CVS_TAG -r rel-4_19
+			CVS_TAG -r rel-4_32
 			UPDATE_COMMAND ""
 			CONFIGURE_COMMAND CFLAGS=-fpic ./configure --enable-static --disable-shared --prefix=${CMAKE_CURRENT_BINARY_DIR}/eio
 			BUILD_IN_SOURCE 1
