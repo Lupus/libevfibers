@@ -57,9 +57,14 @@ if(WANT_EIO)
 				DEPENDERS configure
 			WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/eio/src/libeio"
 		)
+		ExternalProject_Add_Step(libeio mvembedheader
+                        COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/eio/include/eio.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/libeio_embedded.h
+			DEPENDEES install
+		)
 		set(LIBEIO_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/eio/include")
 		set(LIBEIO_LIBRARY "-L${CMAKE_CURRENT_BINARY_DIR}/eio/lib -Wl,-whole-archive -leio -Wl,-no-whole-archive ${CMAKE_THREAD_LIBS_INIT}")
 		set(LIBEIO_FOUND TRUE)
+                set(FBR_USE_EMBEDDED_EIO TRUE)
 	else(WANT_EMBEDDED_EIO)
 		find_package(LibEio)
 	endif(WANT_EMBEDDED_EIO)
@@ -153,4 +158,8 @@ if(NOT EVFIBERS_EMBED)
 	file(GLOB DEV_HEADERS2 "${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/*.h")
 	install(FILES ${DEV_HEADERS} ${DEV_HEADERS2}
 		DESTINATION "include/evfibers")
+	if(WANT_EMBEDDED_EIO)
+            install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/libeio_embedded.h 
+                    DESTINATION "include/evfibers")
+	endif(WANT_EMBEDDED_EIO)
 endif(NOT EVFIBERS_EMBED)

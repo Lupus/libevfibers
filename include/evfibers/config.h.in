@@ -21,5 +21,6 @@
 
 #cmakedefine HAVE_VALGRIND_H
 #cmakedefine FBR_EIO_ENABLED
+#cmakedefine FBR_USE_EMBEDDED_EIO
 
 #endif

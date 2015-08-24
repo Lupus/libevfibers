@@ -37,7 +37,11 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/statvfs.h>
+#ifdef FBR_USE_EMBEDDED_EIO
+#include <evfibers/libeio_embedded.h>
+#else
 #include <eio.h>
+#endif
 #include <evfibers/fiber.h>
 
 /**
