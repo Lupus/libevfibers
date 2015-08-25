@@ -141,6 +141,18 @@ endif(WANT_EIO AND THREADS_FOUND AND LIBEIO_FOUND)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/include/evfibers/config.h.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/config.h")
 
+# provide pkg-config file
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/libevfibers.pc.in
+  ${CMAKE_CURRENT_BINARY_DIR}/libevfibers.pc @ONLY
+)
+install(
+  FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/libevfibers.pc
+  DESTINATION
+    "lib/pkgconfig"
+)
+
 subdirs(test)
 
 if(NOT EVFIBERS_EMBED)
