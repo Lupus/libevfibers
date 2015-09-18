@@ -232,8 +232,16 @@ static void io_fiber(FBR_P_ _unused_ void *_arg)
 	retval = fbr_eio_rmdir(FBR_A_ "./async.test.dir", 0);
 	assert(0 == retval);
 
+#ifdef FBR_TEST_NO_MKNOD
+	fd = fbr_eio_open(FBR_A_ "./async.node", O_RDWR | O_CREAT | O_TRUNC,
+			0644, 0);
+	fail_unless(0 <= fd);
+	retval = fbr_eio_close(FBR_A_ fd, 0);
+	fail_unless(0 == retval);
+#else
 	retval = fbr_eio_mknod(FBR_A_ "./async.node", 0644, S_IFREG, 0);
 	assert(0 == retval);
+#endif
 
 	retval = fbr_eio_link(FBR_A_ "./async.node",
 			"./async.node.link", 0);

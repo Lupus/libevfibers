@@ -21,6 +21,7 @@ set(VERSION_PATCH 1)
 set(VERSION_STRING "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 
 include(CheckIncludeFiles)
+include(CheckCCompilerFlag)
 
 if(NOT DEFINED WANT_EIO)
 	message(STATUS "WANT_EIO flag not specified, defaulting to TRUE")
@@ -30,9 +31,46 @@ endif(NOT DEFINED WANT_EIO)
 aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/src" EVFIBERS_SOURCES)
 aux_source_directory("${CMAKE_CURRENT_SOURCE_DIR}/coro" CORO_SOURCES)
 
+# OSX-related checks - linking, using ucontext, etc. is slightly different than
+# on linux
+if(APPLE)
+	# def needed to get ucontext support
+	set(CMAKE_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS} -D_XOPEN_SOURCE")
+	add_definitions(-D_XOPEN_SOURCE)
+	# ucontext is labeled deprecated, so make sure -Werror doesn't kill the
+	# compile
+	set(CMAKE_C_FLAGS "-Wno-error=deprecated-declarations ${CMAKE_C_FLAGS}")
+	# OSX uses MAP_ANON for mmap while linux uses MAP_ANONYMOUS
+	set(FBR_MAP_ANON_FLAG MAP_ANON)
+	set(EIO_LD_WHOLE_ARCHIVE -Wl,-all_load)
+	set(EIO_LD_NOWHOLE_ARCHIVE )
+	# use of swapcontext hits false positives on OSX when using either
+	# address-sanitizer or stack protector (stack protector is on by default in
+	# clang). Disable them.
+	if(WANT_ASAN)
+		message(WARNING "Address sanitizer causes false positive errors for makecontext/swapcontext on OSX, disabling...")
+		set(WANT_ASAN FALSE)
+	endif(WANT_ASAN)
+	CHECK_C_COMPILER_FLAG("-fno-stack-protector" FBR_HAS_NO_STACK_PROTECT)
+	if(FBR_HAS_NO_STACK_PROTECT)
+		set(CMAKE_C_FLAGS "-fno-stack-protector ${CMAKE_C_FLAGS}")
+	endif(FBR_HAS_NO_STACK_PROTECT)
+else(APPLE)
+	set(FBR_MAP_ANON_FLAG MAP_ANONYMOUS)
+	set(EIO_LD_WHOLE_ARCHIVE -Wl,-whole-archive)
+	set(EIO_LD_NOWHOLE_ARCHIVE -Wl,-no-whole-archive)
+endif(APPLE)
+
+# need to provide this define on the command line instead of config.h so
+# we don't have to modify the embedded libcoro.
+check_include_files(ucontext.h HAVE_UCONTEXT_H)
+if(HAVE_UCONTEXT_H)
+	add_definitions(-DHAVE_UCONTEXT_H)
+endif(HAVE_UCONTEXT_H)
+
 find_package(LibEv REQUIRED)
 if(WANT_EIO)
-	find_package(Threads)
+	find_package(Threads REQUIRED)
 	if(WANT_EMBEDDED_EIO)
 		include(ExternalProject)
 		ExternalProject_Add(
@@ -62,7 +100,10 @@ if(WANT_EIO)
 			DEPENDEES install
 		)
 		set(LIBEIO_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/eio/include")
-		set(LIBEIO_LIBRARY "-L${CMAKE_CURRENT_BINARY_DIR}/eio/lib -Wl,-whole-archive -leio -Wl,-no-whole-archive ${CMAKE_THREAD_LIBS_INIT}")
+		set(LIBEIO_LIBRARY
+			"-L${CMAKE_CURRENT_BINARY_DIR}/eio/lib"
+			"${EIO_LD_WHOLE_ARCHIVE}" "-leio" "${EIO_LD_NOWHOLE_ARCHIVE}"
+			"${CMAKE_THREAD_LIBS_INIT}")
 		set(LIBEIO_FOUND TRUE)
                 set(FBR_USE_EMBEDDED_EIO TRUE)
 	else(WANT_EMBEDDED_EIO)
@@ -73,6 +114,7 @@ endif(WANT_EIO)
 if(WANT_ASAN)
 	# Force ucontext.h as libcoro backend so as to better interact with ASan
 	add_definitions(-DCORO_UCONTEXT)
+	set(ASAN_FLAGS "-fsanitize=address")
 endif(WANT_ASAN)
 
 if(WANT_VALGRIND)
@@ -93,9 +135,6 @@ include_directories(
 if(WANT_LTO)
 	set(LTO_FLAGS "-flto")
 endif(WANT_LTO)
-if(WANT_ASAN)
-	set(ASAN_FLAGS "-fsanitize=address")
-endif(WANT_ASAN)
 set(CMAKE_C_FLAGS "-W -Wall -Werror -fno-strict-aliasing ${LTO_FLAGS} ${ASAN_FLAGS} ${CMAKE_C_FLAGS}")
 set(SOURCES ${EVFIBERS_SOURCES} ${CORO_SOURCES})
 
