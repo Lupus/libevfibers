@@ -1905,6 +1905,121 @@ int fbr_buffer_resize(FBR_P_ struct fbr_buffer *buffer, size_t size)
 	return_success(0);
 }
 
+struct fbr_mq *fbr_mq_create(FBR_P_ size_t size, int flags)
+{
+	struct fbr_mq *mq;
+
+	mq = calloc(1, sizeof(*mq));
+	mq->fctx = fctx;
+	mq->max = size + 1; /* One element is always unused */
+	mq->rb = calloc(mq->max, sizeof(void *));
+	mq->flags = flags;
+
+	fbr_cond_init(FBR_A_ &mq->bytes_available_cond);
+	fbr_cond_init(FBR_A_ &mq->bytes_freed_cond);
+
+	return mq;
+}
+
+void fbr_mq_clear(struct fbr_mq *mq, int wake_up_writers)
+{
+	memset(mq->rb, 0x00, mq->max * sizeof(void *));
+	mq->head = 0;
+	mq->tail = 0;
+
+	if (wake_up_writers)
+		fbr_cond_signal(mq->fctx, &mq->bytes_available_cond);
+}
+
+void fbr_mq_push(struct fbr_mq *mq, void *obj)
+{
+	unsigned next;
+
+	while ((next = ((mq->head + 1) % mq->max )) == mq->tail)
+		fbr_cond_wait(mq->fctx, &mq->bytes_freed_cond, NULL);
+
+	mq->rb[mq->head] = obj;
+	mq->head = next;
+
+	fbr_cond_signal(mq->fctx, &mq->bytes_available_cond);
+}
+
+int fbr_mq_try_push(struct fbr_mq *mq, void *obj)
+{
+	unsigned next = mq->head + 1;
+	if (next >= mq->max)
+		next = 0;
+
+	/* Cicular buffer is full */
+	if (next == mq->tail)
+		return -1;
+
+	mq->rb[mq->head] = obj;
+	mq->head = next;
+
+	fbr_cond_signal(mq->fctx, &mq->bytes_available_cond);
+	return 0;
+}
+
+void fbr_mq_wait_push(struct fbr_mq *mq)
+{
+	while (((mq->head + 1) % mq->max) == mq->tail)
+		fbr_cond_wait(mq->fctx, &mq->bytes_freed_cond, NULL);
+}
+
+static void *mq_do_pop(struct fbr_mq *mq)
+{
+	void *obj;
+	unsigned next;
+
+	obj = mq->rb[mq->tail];
+	mq->rb[mq->tail] = NULL;
+
+	next = mq->tail + 1;
+	if (next >= mq->max)
+		next = 0;
+
+	mq->tail = next;
+
+	fbr_cond_signal(mq->fctx, &mq->bytes_freed_cond);
+	return obj;
+}
+
+void *fbr_mq_pop(struct fbr_mq *mq)
+{
+
+	/* if the head isn't ahead of the tail, we don't have any emelemnts */
+	while (mq->head == mq->tail)
+		fbr_cond_wait(mq->fctx, &mq->bytes_available_cond, NULL);
+
+	return mq_do_pop(mq);
+}
+
+int fbr_mq_try_pop(struct fbr_mq *mq, void **obj)
+{
+	/* if the head isn't ahead of the tail, we don't have any emelemnts */
+	if (mq->head == mq->tail)
+		return -1;
+
+	*obj = mq_do_pop(mq);
+	return 0;
+}
+
+void fbr_mq_wait_pop(struct fbr_mq *mq)
+{
+	/* if the head isn't ahead of the tail, we don't have any emelemnts */
+	while (mq->head == mq->tail)
+		fbr_cond_wait(mq->fctx, &mq->bytes_available_cond, NULL);
+}
+
+void fbr_mq_destroy(struct fbr_mq *mq)
+{
+	fbr_cond_destroy(mq->fctx, &mq->bytes_freed_cond);
+	fbr_cond_destroy(mq->fctx, &mq->bytes_available_cond);
+	free(mq->rb);
+	free(mq);
+}
+
 void *fbr_get_user_data(FBR_P_ fbr_id_t id)
 {
 	struct fbr_fiber *fiber;

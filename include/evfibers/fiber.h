@@ -576,6 +576,8 @@ struct fbr_buffer {
 	struct fbr_mutex read_mutex;
 };
 
+struct fbr_mq;
+
 /**
  * Fiber-local data key.
  *
@@ -2074,6 +2076,16 @@ static inline int fbr_buffer_can_write(FBR_P_ struct fbr_buffer *buffer,
 {
 	return fbr_buffer_free_bytes(FBR_A_ buffer) >= size;
 }
+
+struct fbr_mq *fbr_mq_create(FBR_P_ size_t size, int flags);
+void fbr_mq_push(struct fbr_mq *mq, void *obj);
+int fbr_mq_try_push(struct fbr_mq *mq, void *obj);
+void fbr_mq_wait_push(struct fbr_mq *mq);
+void *fbr_mq_pop(struct fbr_mq *mq);
+int fbr_mq_try_pop(struct fbr_mq *mq, void **obj);
+void fbr_mq_wait_pop(struct fbr_mq *mq);
+void fbr_mq_clear(struct fbr_mq *mq, int wake_up_writers);
+void fbr_mq_destroy(struct fbr_mq *mq);
 
 /**
  * Gets fiber user data pointer.

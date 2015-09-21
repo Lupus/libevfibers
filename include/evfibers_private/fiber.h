@@ -191,4 +191,15 @@ struct fbr_context_private {
 	struct ev_loop *loop;
 };
 
+struct fbr_mq {
+	struct fbr_context *fctx;
+	void **rb;
+	unsigned head;
+	unsigned tail;
+	unsigned max;
+	int flags;
+	struct fbr_cond_var bytes_available_cond;
+	struct fbr_cond_var bytes_freed_cond;
+};
+
 #endif
