@@ -20,7 +20,6 @@
 
 #include <sys/mman.h>
 #include <fcntl.h>
-#include <linux/limits.h>
 #include <libgen.h>
 #include <assert.h>
 #include <errno.h>
@@ -1763,7 +1762,7 @@ int fbr_vrb_init(struct fbr_vrb *vrb, size_t size, const char *file_pattern)
 	//fctx->__p->vrb_file_pattern);
 	vrb->mem_ptr_size = size * 2 + sz * 2;
 	vrb->mem_ptr = mmap(NULL, vrb->mem_ptr_size, PROT_NONE,
-			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+			FBR_MAP_ANON_FLAG | MAP_PRIVATE, -1, 0);
 	if (MAP_FAILED == vrb->mem_ptr)
 		goto error;
 	vrb->lower_ptr = vrb->mem_ptr + sz;
