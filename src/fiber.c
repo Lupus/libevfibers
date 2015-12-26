@@ -2219,7 +2219,7 @@ pid_t fbr_popen3(FBR_P_ const char *filename, char *const argv[],
 			if (-1 == retval)
 				goto error;
 		} else {
-			devnull = open("/dev/null", O_WRONLY);
+			devnull = open("/dev/null", O_RDONLY);
 			if (-1 == retval)
 				goto error;
 			retval = dup2(devnull, STDIN_FILENO);
@@ -2237,7 +2237,7 @@ pid_t fbr_popen3(FBR_P_ const char *filename, char *const argv[],
 			if (-1 == retval)
 				goto error;
 		} else {
-			devnull = open("/dev/null", O_RDONLY);
+			devnull = open("/dev/null", O_WRONLY);
 			if (-1 == retval)
 				goto error;
 			retval = dup2(devnull, STDOUT_FILENO);
@@ -2255,7 +2255,7 @@ pid_t fbr_popen3(FBR_P_ const char *filename, char *const argv[],
 			if (-1 == retval)
 				goto error;
 		} else {
-			devnull = open("/dev/null", O_RDONLY);
+			devnull = open("/dev/null", O_WRONLY);
 			if (-1 == retval)
 				goto error;
 			retval = dup2(devnull, STDERR_FILENO);
