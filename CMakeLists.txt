@@ -23,6 +23,17 @@ set(VERSION_STRING "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 include(CheckIncludeFiles)
 include(CheckCCompilerFlag)
 
+get_property(LIB64 GLOBAL PROPERTY FIND_LIBRARY_USE_LIB64_PATHS)
+
+if ("${LIB64}" STREQUAL "TRUE")
+    set(LIBSUFFIX 64)
+else("${LIB64}" STREQUAL "TRUE")
+    set(LIBSUFFIX "")
+endif("${LIB64}" STREQUAL "TRUE")
+
+set(INSTALL_LIB_DIR lib${LIBSUFFIX} CACHE PATH "Installation directory for libraries")
+mark_as_advanced(INSTALL_LIB_DIR)
+
 if(NOT DEFINED WANT_EIO)
 	message(STATUS "WANT_EIO flag not specified, defaulting to TRUE")
 	set(WANT_EIO TRUE)
