@@ -3,7 +3,8 @@
 os=$(uname -s)
 err=
 if [[ "$os" == "Linux" ]] ; then
-    sudo apt-get install cmake libev-dev check cvs libtool autoconf
+    sudo apt-get update -qq
+    sudo apt-get install -y cmake libev-dev check cvs libtool autoconf
     err=$?
 elif [[ "$os" == "Darwin" ]] ; then
     brew install cmake libev check cvs libtool autoconf
