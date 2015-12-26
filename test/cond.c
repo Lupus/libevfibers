@@ -278,7 +278,7 @@ START_TEST(test_premature_cond)
 	fbr_mutex_init(&context, &arg.mutex);
 	fbr_cond_init(&context, &arg.cond);
 
-	for(i = 0; i < num_fibers; i++) {
+	for(i = 0; i < num_fibers - 1; i++) {
 		fiber = fbr_create(&context, "cond_premature_i",
 				cond_premature_waiter, &arg, 0);
 		fail_if(fbr_id_isnull(fiber));
