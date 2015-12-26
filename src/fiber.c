@@ -674,7 +674,7 @@ int fbr_ev_wait_to(FBR_P_ struct fbr_ev_base *events[], ev_tstamp timeout)
 	size = 0;
 	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++)
 		size++;
-	new_events = alloca((size + 1) * sizeof(void *));
+	new_events = alloca((size + 2) * sizeof(void *));
 	memcpy(new_events, events, size * sizeof(void *));
 	new_events[size] = &watcher.ev_base;
 	new_events[size + 1] = NULL;
