@@ -1755,6 +1755,8 @@ int fbr_vrb_init(struct fbr_vrb *vrb, size_t size, const char *file_pattern)
 	size = (size ? round_up_to_page_size(size) : sz);
 	void *ptr = MAP_FAILED;
 	char *temp_name = NULL;
+	mode_t old_umask;
+	const mode_t secure_umask = 077;
 
 	temp_name = strdup(file_pattern);
 	if (!temp_name)
@@ -1771,7 +1773,10 @@ int fbr_vrb_init(struct fbr_vrb *vrb, size_t size, const char *file_pattern)
 	vrb->data_ptr = vrb->lower_ptr;
 	vrb->space_ptr = vrb->lower_ptr;
 
+	old_umask = umask(0);
+	umask(secure_umask);
 	fd = mkstemp(temp_name);
+	umask(old_umask);
 	if (0 >= fd)
 		goto error;
 
