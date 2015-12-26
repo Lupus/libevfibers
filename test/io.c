@@ -301,6 +301,7 @@ static void udp_reader_fiber(FBR_P_ _unused_ void *_arg)
 	struct sockaddr_in addr;
 	socklen_t addrlen;
 
+	memset(&addr, 0x00, sizeof(addr));
 	addr.sin_family = AF_INET;
 	retval = inet_aton(ADDRESS, &addr.sin_addr);
 	fail_if(0 == retval);
@@ -363,6 +364,7 @@ static void tcp_reader_fiber(FBR_P_ _unused_ void *_arg)
 	struct sockaddr_in addr, peer_addr;
 	socklen_t addrlen;
 
+	memset(&addr, 0x00, sizeof(addr));
 	addr.sin_family = AF_INET;
 	retval = inet_aton(ADDRESS, &addr.sin_addr);
 	fail_if(0 == retval);
