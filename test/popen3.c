@@ -90,9 +90,9 @@ static void popen_fiber(FBR_P_ void *_arg)
 
 	/* Just run something */
 	pid = fbr_popen3(
-		FBR_A_ "/bin/true",
+		FBR_A_ "/bin/ls",
 		(char *[]){
-			"/bin/true", NULL,
+			"/bin/ls", NULL,
 		},
 		(char *[]){NULL}, NULL, NULL, NULL, NULL);
 	fail_unless(pid > 0);
