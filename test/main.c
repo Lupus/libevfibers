@@ -31,12 +31,13 @@
 #include "key.h"
 #include "eio.h"
 #include "async-wait.h"
+#include "popen3.h"
 
 Suite *evfibers_suite(void)
 {
 	Suite *s;
 	TCase *tc_init, *tc_mutex, *tc_cond, *tc_reclaim, *tc_io, *tc_logger,
-	      *tc_buffer, *tc_key, *tc_eio, *tc_async_wait;
+	      *tc_buffer, *tc_key, *tc_eio, *tc_async_wait, *tc_popen3;
 
 	s = suite_create ("evfibers");
 	tc_init = init_tcase();
@@ -49,6 +50,7 @@ Suite *evfibers_suite(void)
 	tc_key = key_tcase();
 	tc_eio = eio_tcase();
 	tc_async_wait = async_wait_tcase();
+	tc_popen3 = popen3_tcase();
 	suite_add_tcase(s, tc_init);
 	suite_add_tcase(s, tc_mutex);
 	suite_add_tcase(s, tc_cond);
@@ -59,6 +61,7 @@ Suite *evfibers_suite(void)
 	suite_add_tcase(s, tc_key);
 	suite_add_tcase(s, tc_eio);
 	suite_add_tcase(s, tc_async_wait);
+	suite_add_tcase(s, tc_popen3);
 
 	return s;
 }

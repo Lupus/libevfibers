@@ -2189,86 +2189,92 @@ pid_t fbr_popen3(FBR_P_ const char *filename, char *const argv[],
 		int *stdin_w_ptr, int *stdout_r_ptr, int *stderr_r_ptr)
 {
 	pid_t pid;
-	int stdin_r = 0, stdin_w = 0;
-	int stdout_r = 0, stdout_w = 0;
-	int stderr_r = 0, stderr_w = 0;
-	int devnull;
+	int stdin_r = -1, stdin_w = -1;
+	int stdout_r = -1, stdout_w = -1;
+	int stderr_r = -1, stderr_w = -1;
+	int devnull = -1;
 	int retval;
-
-	if (!stdin_w_ptr || !stdout_r_ptr || !stderr_r_ptr)
-		devnull = open("/dev/null", O_WRONLY);
 
 	retval = (stdin_w_ptr ? make_pipe(FBR_A_ &stdin_r, &stdin_w) : 0);
 	if (retval)
-		return retval;
+		goto error;
 	retval = (stdout_r_ptr ? make_pipe(FBR_A_ &stdout_r, &stdout_w) : 0);
 	if (retval)
-		return retval;
+		goto error;
 	retval = (stderr_r_ptr ? make_pipe(FBR_A_ &stderr_r, &stderr_w) : 0);
 	if (retval)
-		return retval;
+		goto error;
 
 	pid = fork();
 	if (-1 == pid)
-		return_error(-1, FBR_ESYSTEM);
+		goto error;
 	if (0 == pid) {
 		/* Child */
 		ev_break(EV_DEFAULT, EVBREAK_ALL);
 		if (stdin_w_ptr) {
 			retval = close(stdin_w);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "close");
+				goto error;
 			retval = dup2(stdin_r, STDIN_FILENO);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "dup2");
+				goto error;
 		} else {
-			devnull = open("/dev/null", O_RDONLY);
+			devnull = open("/dev/null", O_WRONLY);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "open");
+				goto error;
 			retval = dup2(devnull, STDIN_FILENO);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "dup2");
+				goto error;
+			retval = close(devnull);
+			if (-1 == retval)
+				goto error;
 		}
 		if (stdout_r_ptr) {
 			retval = close(stdout_r);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "close");
+				goto error;
 			retval = dup2(stdout_w, STDOUT_FILENO);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "dup2");
+				goto error;
 		} else {
-			devnull = open("/dev/null", O_WRONLY);
+			devnull = open("/dev/null", O_RDONLY);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "open");
+				goto error;
 			retval = dup2(devnull, STDOUT_FILENO);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "dup2");
+				goto error;
+			retval = close(devnull);
+			if (-1 == retval)
+				goto error;
 		}
 		if (stderr_r_ptr) {
 			retval = close(stderr_r);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "close");
+				goto error;
 			retval = dup2(stderr_w, STDERR_FILENO);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "dup2");
+				goto error;
 		} else {
-			devnull = open("/dev/null", O_WRONLY);
+			devnull = open("/dev/null", O_RDONLY);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "open");
-			retval = dup2(stderr_w, STDERR_FILENO);
+				goto error;
+			retval = dup2(devnull, STDERR_FILENO);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "dup2");
+				goto error;
+			retval = close(devnull);
+			if (-1 == retval)
+				goto error;
 		}
 
 		if (working_dir) {
 			retval = chdir(working_dir);
 			if (-1 == retval)
-				err(EXIT_FAILURE, "chdir");
+				goto error;
 		}
 
 		retval = execve(filename, argv, envp);
 		if (-1 == retval)
-			err(EXIT_FAILURE, "execve");
+			goto error;
 
 		errx(EXIT_FAILURE, "execve failed without error code");
 	}
@@ -2276,33 +2282,52 @@ pid_t fbr_popen3(FBR_P_ const char *filename, char *const argv[],
 	if (stdin_w_ptr) {
 		retval = close(stdin_r);
 		if (-1 == retval)
-			return_error(-1, FBR_ESYSTEM);
+			goto error;
 		retval = fbr_fd_nonblock(FBR_A_ stdin_w);
 		if (retval)
-			return retval;
+			goto error;
 	}
 	if (stdout_r_ptr) {
 		retval = close(stdout_w);
 		if (-1 == retval)
-			return_error(-1, FBR_ESYSTEM);
+			goto error;
 		retval = fbr_fd_nonblock(FBR_A_ stdout_r);
 		if (retval)
-			return retval;
+			goto error;
 	}
 	if (stderr_r_ptr) {
 		retval = close(stderr_w);
 		if (-1 == retval)
-			return_error(-1, FBR_ESYSTEM);
+			goto error;
 		retval = fbr_fd_nonblock(FBR_A_ stderr_r);
 		if (retval)
-			return retval;
+			goto error;
 	}
 
 	fbr_log_d(FBR_A_ "child pid %d has been launched", pid);
-	*stdin_w_ptr = stdin_w;
-	*stdout_r_ptr = stdout_r;
-	*stderr_r_ptr = stderr_r;
+	if (stdin_w_ptr)
+		*stdin_w_ptr = stdin_w;
+	if (stdout_r_ptr)
+		*stdout_r_ptr = stdout_r;
+	if (stderr_r_ptr)
+		*stderr_r_ptr = stderr_r;
 	return pid;
+error:
+	if (0 <= devnull)
+		close(devnull);
+	if (0 <= stdin_r)
+	       close(stdin_r);
+	if (0 <= stdin_w)
+	       close(stdin_w);
+	if (0 <= stdout_r)
+	       close(stdout_r);
+	if (0 <= stdout_w)
+	       close(stdout_w);
+	if (0 <= stderr_r)
+	       close(stderr_r);
+	if (0 <= stderr_w)
+	       close(stderr_w);
+	return_error(-1, FBR_ESYSTEM);
 }
 
 static void watcher_child_dtor(_unused_ FBR_P_ void *_arg)
