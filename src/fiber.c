@@ -1453,17 +1453,25 @@ void fbr_async_wait(FBR_P_ ev_async *w)
 	return;
 }
 
-static long get_page_size()
+static unsigned get_page_size()
 {
-	static long sz;
-	if (0 == sz)
-		sz = sysconf(_SC_PAGESIZE);
+	static unsigned sz;
+	long retval;
+	if (sz > 0)
+		return sz;
+	retval = sysconf(_SC_PAGESIZE);
+	if (0 > retval) {
+		fprintf(stderr, "libevfibers: sysconf(_SC_PAGESIZE): %s",
+				strerror(errno));
+		abort();
+	}
+	sz = retval;
 	return sz;
 }
 
 static size_t round_up_to_page_size(size_t size)
 {
-	long sz = get_page_size();
+	unsigned sz = get_page_size();
 	size_t remainder;
 	remainder = size % sz;
 	if (remainder == 0)
