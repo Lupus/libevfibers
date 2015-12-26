@@ -205,7 +205,7 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	TAILQ_INIT(&fctx->__p->pending_fibers);
 
 	root = &fctx->__p->root;
-	strncpy(root->name, "root", FBR_MAX_FIBER_NAME);
+	strncpy(root->name, "root", FBR_MAX_FIBER_NAME - 1);
 	fctx->__p->last_id = 0;
 	root->id = fctx->__p->last_id++;
 	coro_create(&root->ctx, NULL, NULL, NULL, 0);
@@ -1498,7 +1498,7 @@ fbr_id_t fbr_create(FBR_P_ const char *name, fbr_fiber_func_t func, void *arg,
 	LIST_INIT(&fiber->children);
 	LIST_INIT(&fiber->pool);
 	TAILQ_INIT(&fiber->destructors);
-	strncpy(fiber->name, name, FBR_MAX_FIBER_NAME);
+	strncpy(fiber->name, name, FBR_MAX_FIBER_NAME - 1);
 	fiber->func = func;
 	fiber->func_arg = arg;
 	LIST_INSERT_HEAD(&CURRENT_FIBER->children, fiber, entries.children);
@@ -2155,7 +2155,7 @@ int fbr_set_name(FBR_P_ fbr_id_t id, const char *name)
 {
 	struct fbr_fiber *fiber;
 	unpack_transfer_errno(-1, &fiber, id);
-	strncpy(fiber->name, name, FBR_MAX_FIBER_NAME);
+	strncpy(fiber->name, name, FBR_MAX_FIBER_NAME - 1);
 	return_success(0);
 }
 
