@@ -1410,6 +1410,15 @@ int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds);
 
 /**
+ * Waits for an async libev event.
+ * @param [in] w ev_async watcher (initialized by caller)
+ *
+ * This function will cause the calling fiber to wait until an
+ * ev_async_send() has been triggered on the specified ev_async watcher.
+ */
+void fbr_async_wait(FBR_P_ ev_async *w);
+
+/**
  * Prints fiber call stack to stderr.
  *
  * useful while debugging obscure fiber call problems.

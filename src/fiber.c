@@ -20,7 +20,6 @@
 
 #include <sys/mman.h>
 #include <fcntl.h>
-#include <linux/limits.h>
 #include <libgen.h>
 #include <assert.h>
 #include <errno.h>
@@ -1430,6 +1429,30 @@ ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds)
 	return max(0., expected - ev_now(fctx->__p->loop));
 }
 
+static void watcher_async_dtor(FBR_P_ void *_arg)
+{
+	struct ev_async *w = _arg;
+	ev_async_stop(fctx->__p->loop, w);
+}
+
+void fbr_async_wait(FBR_P_ ev_async *w)
+{
+	struct fbr_ev_watcher watcher;
+	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
+
+	dtor.func = watcher_async_dtor;
+	dtor.arg = w;
+	fbr_destructor_add(FBR_A_ &dtor);
+
+	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)w);
+	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
+
+	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
+	ev_async_stop(fctx->__p->loop, w);
+
+	return;
+}
+
 static long get_page_size()
 {
 	static long sz;
@@ -1739,7 +1762,7 @@ int fbr_vrb_init(struct fbr_vrb *vrb, size_t size, const char *file_pattern)
 	//fctx->__p->vrb_file_pattern);
 	vrb->mem_ptr_size = size * 2 + sz * 2;
 	vrb->mem_ptr = mmap(NULL, vrb->mem_ptr_size, PROT_NONE,
-			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+			FBR_MAP_ANON_FLAG | MAP_PRIVATE, -1, 0);
 	if (MAP_FAILED == vrb->mem_ptr)
 		goto error;
 	vrb->lower_ptr = vrb->mem_ptr + sz;

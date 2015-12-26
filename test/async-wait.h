@@ -16,12 +16,9 @@
 
  ********************************************************************/
 
-#ifndef _FBR_CONFIG_H_
-#define _FBR_CONFIG_H_
+#ifndef _ASYNC_WAIT_H_
+#define _ASYNC_WAIT_H_
 
-#cmakedefine HAVE_VALGRIND_H
-#cmakedefine FBR_EIO_ENABLED
-#cmakedefine FBR_USE_EMBEDDED_EIO
-#cmakedefine FBR_MAP_ANON_FLAG @FBR_MAP_ANON_FLAG@
+TCase * async_wait_tcase(void);
 
 #endif
