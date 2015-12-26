@@ -269,7 +269,7 @@ START_TEST(test_premature_cond)
 	int retval;
 	struct fiber_arg3 arg;
 	const int num_fibers = 100;
-	fbr_id_t fibers[num_fibers];
+	fbr_id_t fibers[num_fibers + 1];
 	fbr_id_t fiber;
 	int i;
 
@@ -278,7 +278,7 @@ START_TEST(test_premature_cond)
 	fbr_mutex_init(&context, &arg.mutex);
 	fbr_cond_init(&context, &arg.cond);
 
-	for(i = 0; i < num_fibers - 1; i++) {
+	for(i = 0; i < num_fibers; i++) {
 		fiber = fbr_create(&context, "cond_premature_i",
 				cond_premature_waiter, &arg, 0);
 		fail_if(fbr_id_isnull(fiber));
