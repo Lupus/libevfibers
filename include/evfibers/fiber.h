@@ -2185,6 +2185,16 @@ static inline pid_t fbr_popen0(FBR_P_ const char *filename, char *const argv[],
 			NULL);
 }
 
+/**
+ * Waits for child process to finish.
+ * @param [in] pid is the PID of the process to wait for
+ * @returns the process exit/trace status caused by rpid (see your systems
+ * waitpid and sys/wait.h documentation for details)
+ *
+ * This function is basically a fiber wrapper for ev_child watcher. It's worth
+ * reading the libev documentation for ev_child to fully understand the
+ * limitations.
+ */
 int fbr_waitpid(FBR_P_ pid_t pid);
 
 int fbr_system(FBR_P_ const char *filename, char *const argv[],
