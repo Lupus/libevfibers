@@ -2117,10 +2117,47 @@ void *fbr_get_user_data(FBR_P_ fbr_id_t id);
  */
 int fbr_set_user_data(FBR_P_ fbr_id_t id, void *data);
 
+/**
+ * Implementation of popen() with redirection of all descriptors --- stdin,
+ * stdout and stderr.
+ * @param [in] filename as in execve(2)
+ * @param [in] argv as in execve(2)
+ * @param [in] envp as in execve(2)
+ * @param [in] working_dir if not NULL, child process will be launched with
+ * working directory set to working_dir
+ * @param [in] stdin_w_ptr if not NULL, a new write-only file descriptor mapped
+ * to child STDIN will be written at the provided address
+ * @param [in] stdout_r_ptr if not NULL, a new read-only file descriptor mapped
+ * to child STDOUT will be written at the provided address
+ * @param [in] stderr_r_ptr if not NULL, a new read-only file descriptor mapped
+ * to child STDERR will be written at the provided address
+ * @returns the pid of the launched process or -1 upon error
+ *
+ * If any of the file descriptor pointers are NULLs, fbr_popen3 will use read or
+ * write file descriptor for /dev/null instead.
+ */
 pid_t fbr_popen3(FBR_P_ const char *filename, char *const argv[],
 		char *const envp[], const char *working_dir,
 		int *stdin_w_ptr, int *stdout_r_ptr, int *stderr_r_ptr);
 
+/**
+ * Convenience wrapper for fbr_popen3() without stderr redirection.
+ * @param [in] filename as in execve(2)
+ * @param [in] argv as in execve(2)
+ * @param [in] envp as in execve(2)
+ * @param [in] working_dir if not NULL, child process will be launched with
+ * working directory set to working_dir
+ * @param [in] stdin_w_ptr if not NULL, a new write-only file descriptor mapped
+ * to child STDIN will be written at the provided address
+ * @param [in] stdout_r_ptr if not NULL, a new read-only file descriptor mapped
+ * to child STDOUT will be written at the provided address
+ * @returns the pid of the launched process or -1 upon error
+ *
+ * If any of the file descriptor pointers are NULLs, fbr_popen3 will use read or
+ * write file descriptor for /dev/null instead.
+ *
+ * @see fbr_popen3
+ */
 static inline pid_t fbr_popen2(FBR_P_ const char *filename, char *const argv[],
 		char *const envp[], const char *working_dir, int *stdin_w_ptr,
 		int *stdout_r_ptr)
@@ -2129,6 +2166,18 @@ static inline pid_t fbr_popen2(FBR_P_ const char *filename, char *const argv[],
 			stdout_r_ptr, NULL);
 }
 
+/**
+ * Convenience wrapper for fbr_popen3() without any descriptors being
+ * redirected.
+ * @param [in] filename as in execve(2)
+ * @param [in] argv as in execve(2)
+ * @param [in] envp as in execve(2)
+ * @param [in] working_dir if not NULL, child process will be launched with
+ * working directory set to working_dir
+ * @returns the pid of the launched process or -1 upon error
+ *
+ * @see fbr_popen3
+ */
 static inline pid_t fbr_popen0(FBR_P_ const char *filename, char *const argv[],
 		char *const envp[], const char *working_dir)
 {
