@@ -222,7 +222,7 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	fctx->__p->loop = loop;
 	fctx->__p->pending_async.data = fctx;
 	fctx->__p->backtraces_enabled = 0;
-	memset(&fctx->__p->key_free_mask, 0x00,
+	memset(&fctx->__p->key_free_mask, 0xFF,
 			sizeof(fctx->__p->key_free_mask));
 	ev_async_init(&fctx->__p->pending_async, pending_async_cb);
 
@@ -2105,7 +2105,8 @@ static inline int is_key_registered(FBR_P_ fbr_key_t key)
 
 static inline void register_key(FBR_P_ fbr_key_t key)
 {
-	fctx->__p->key_free_mask &= ~(1 << key);
+
+	fctx->__p->key_free_mask &= ~(1ULL << key);
 }
 
 static inline void unregister_key(FBR_P_ fbr_key_t key)
@@ -2115,7 +2116,7 @@ static inline void unregister_key(FBR_P_ fbr_key_t key)
 
 int fbr_key_create(FBR_P_ fbr_key_t *key_ptr)
 {
-	fbr_key_t key = wrap_ffsll(fctx->__p->key_free_mask);
+	fbr_key_t key = wrap_ffsll(fctx->__p->key_free_mask) - 1;
 	assert(key < FBR_MAX_KEY);
 	register_key(FBR_A_ key);
 	*key_ptr = key;

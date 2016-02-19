@@ -29,6 +29,7 @@
 #include "key.h"
 
 int x;
+int y;
 
 START_TEST(test_key)
 {
@@ -36,6 +37,7 @@ START_TEST(test_key)
 	fbr_id_t fiber;
 	int retval;
 	fbr_key_t key;
+	fbr_key_t key2;
 	void *val;
 
 	fbr_init(&context, EV_DEFAULT);
@@ -45,11 +47,20 @@ START_TEST(test_key)
 
 	retval = fbr_key_create(&context, &key);
 	fail_unless(0 == retval);
+	retval = fbr_key_create(&context, &key2);
+	fail_unless(0 == retval);
+
 	retval = fbr_key_set(&context, fiber, key, &x);
+	fail_unless(0 == retval);
+	retval = fbr_key_set(&context, fiber, key2, &y);
 	fail_unless(0 == retval);
 	val = fbr_key_get(&context, fiber, key);
 	fail_unless(val == &x);
+	val = fbr_key_get(&context, fiber, key2);
+	fail_unless(val == &y);
 	retval = fbr_key_delete(&context, key);
+	fail_unless(0 == retval);
+	retval = fbr_key_delete(&context, key2);
 	fail_unless(0 == retval);
 
 	retval = fbr_key_set(&context, fiber, key, &x);
@@ -59,15 +70,42 @@ START_TEST(test_key)
 	retval = fbr_key_delete(&context, key);
 	fail_unless(-1 == retval);
 
+	retval = fbr_key_set(&context, fiber, key2, &y);
+	fail_unless(-1 == retval);
+	val = fbr_key_get(&context, fiber, key2);
+	fail_unless(NULL == val);
+	retval = fbr_key_delete(&context, key2);
+	fail_unless(-1 == retval);
+
 	fbr_destroy(&context);
 
 }
 END_TEST
 
+START_TEST(test_multiple_keys)
+{
+	struct fbr_context context;
+	int retval;
+	fbr_key_t key;
+	unsigned int i;
+
+	fbr_init(&context, EV_DEFAULT);
+
+	for (i = 0; i < 64; i++) {
+		retval = fbr_key_create(&context, &key);
+		fail_unless(0 == retval);
+		fail_unless(key == i);
+	}
+
+	fbr_destroy(&context);
+
+}
+END_TEST
 
 TCase * key_tcase(void)
 {
 	TCase *tc_key = tcase_create ("Key");
 	tcase_add_test(tc_key, test_key);
+	tcase_add_test(tc_key, test_multiple_keys);
 	return tc_key;
 }
