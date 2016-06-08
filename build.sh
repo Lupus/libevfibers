@@ -26,6 +26,9 @@ do
 		+eio)
 			EIO="-DWANT_EIO=TRUE"
 			;;
+		+valgrind)
+			VALGRIND="-DWANT_VALGRIND=TRUE"
+			;;
 		+eioe)
 			EIO="-DWANT_EIO=TRUE -DWANT_EMBEDDED_EIO=TRUE"
 			;;
@@ -55,9 +58,9 @@ export LD
 export CC
 export CFLAGS
 
-echo cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE $EIO ..
+echo cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE $EIO $VALGRIND ..
 echo
-cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE $EIO ..
+cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE $EIO $VALGRIND ..
 echo
 
 make
