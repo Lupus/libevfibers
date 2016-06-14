@@ -359,6 +359,17 @@ static void post_ev(_unused_ FBR_P_ struct fbr_fiber *fiber,
 	ev->arrived = 1;
 }
 
+/* This callback should't be called if watcher has been stopped properly */
+static void ev_abort_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
+{
+	(void)event;
+
+	fprintf(stderr, "libevfibers: libev callback called for pending "
+			"watcher (%p), which is no longer being awaited via "
+			"fbr_ev_wait()", w);
+	abort();
+}
+
 static void ev_watcher_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
 {
 	struct fbr_fiber *fiber;
@@ -632,7 +643,7 @@ static void finish_ev(FBR_P_ struct fbr_ev_base *ev)
 		break;
 	case FBR_EV_WATCHER:
 		e_watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
-		ev_set_cb(e_watcher->w, NULL);
+		ev_set_cb(e_watcher->w, ev_abort_cb);
 		break;
 	case FBR_EV_MUTEX:
 		/* NOP */
