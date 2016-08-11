@@ -1,0 +1,171 @@
+--[[
+
+   Copyright 2013 Konstantin Olkhovskiy <lupus@oxnull.net>
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+   ]]
+
+-- vim: set syntax=terra:
+
+local S = require("std")
+local inspect = require("inspect")
+
+local M = {}
+
+local function starts(str,start)
+	return string.sub(str,1,string.len(start))==start
+end
+
+local function fname(i)
+	return ("arg_%d"):format(i)
+end
+
+local next_id = 1
+
+M.partial = macro(function(fn, ...)
+	local fn_type
+	local args = {...}
+	if fn.tree.type:isfunction() then
+		fn_type = fn.tree.type
+	elseif fn.tree.type:ispointertofunction() then
+		fn_type = fn.tree.type.type
+	elseif fn.tree.type:ispointertostruct() then
+		local s_type = fn.tree.type.type
+		if not starts(tostring(s_type), "util_partial_") then
+			error("found unexpected pointer to struct")
+		end
+		assert(s_type.entries[1].field == "fn",
+				"invalid partial structure")
+		assert(s_type.entries[1].type:ispointertofunction(),
+				"not a function pointer")
+		local new_args = {}
+		for i = 2,#s_type.entries-1 do -- -1 due to .invoke
+			table.insert(new_args, `fn.[fname(i-1)]) 
+		end
+		for _, v in ipairs(args) do
+			table.insert(new_args, v)
+		end
+		args = new_args
+		fn_type = s_type.entries[1].type.type
+		fn = `fn.fn
+	else
+		error("fn must be a function (or pointer to function)")
+	end
+
+	local pdata = terralib.types.newstruct(("util_partial_%s_%d"):format(
+			fn.tree.name, next_id))
+	next_id = next_id + 1
+	pdata.entries:insert({
+		field = "fn",
+		type = &fn_type,
+	})
+	local inv_params,inv_rets = terralib.newlist(), fn_type.returntype
+	for i, v in ipairs(fn_type.parameters) do
+		if i > #args then
+			inv_params:insert(v)
+		else
+			pdata.entries:insert({
+				field = fname(i),
+				type = v,
+			})
+		end
+	end
+	local partial_fn_type = inv_params -> inv_rets
+	pdata.entries:insert({
+		field = "invoke",
+		type = partial_fn_type,
+	})
+	S.Object(pdata)
+	
+	local partial = global(&pdata)
+
+	pdata.metamethods.__apply = macro(function(self, ...)
+		return `self.invoke([{...}])
+	end)
+	pdata.metamethods.__cast = function(from,to,exp)
+		if to:ispointertofunction() then
+			if tostring(partial_fn_type) == tostring(to) then
+				return quote
+					S.assert(exp ~= nil)
+				in
+					exp.invoke
+				end
+			end
+		end
+		error(("invalid cast from %s to %s"):format(from, to))
+	end
+	pdata.methods.__destruct = terra(self: &pdata)
+		partial = nil
+	end
+
+	local fn_args = {}
+	for i, _ in ipairs(args) do
+		table.insert(fn_args, `partial.[fname(i)])
+	end
+	local arg_syms = {}
+	for _, v in ipairs(inv_params) do
+		local s = symbol(v)
+		table.insert(fn_args, s)
+		table.insert(arg_syms, s)
+	end
+	
+	local invoke = terra([arg_syms])
+		return [partial].fn([fn_args])
+	end
+
+	local lpartial = symbol(&pdata)
+	local stmts = {}
+	table.insert(stmts, quote
+		var [lpartial] = pdata.alloc()
+		lpartial.fn = fn
+		lpartial.invoke = invoke
+	end)
+	for i, v in ipairs(args) do
+		table.insert(stmts, quote
+			lpartial.[fname(i)] = v
+		end)
+	end
+	return quote
+		[stmts]
+		[partial] = lpartial
+	in
+		lpartial
+	end
+end)
+
+--[[
+M.partial = macro(function(fn, ...)
+	local fn_type
+	if fn.tree.type:isfunction() then
+		fn_type = fn.tree.type
+	elseif fn.tree.type:ispointertofunction() then
+		fn_type = fn.tree.type.type
+	else
+		error("fn must be a function (or pointer to function)")
+	end
+
+	local args = {...}
+	local free_args = {}
+	for i=#args+1,#fn_type.parameters do
+		local s = symbol(fn_type.parameters[i])
+		table.insert(free_args, s)
+		table.insert(args, s)
+	end
+	return terra([free_args])
+		return fn([args])
+	end
+end)
+]]
+
+return M
