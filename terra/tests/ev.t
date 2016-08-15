@@ -38,7 +38,7 @@ terra test_default_loop(i: int)
 	check.assert(loop.loop)
 end
 
-local struct CountingListener {
+local struct CountingListener(S.Object) {
 	count: int
 	last_revents: int
 }

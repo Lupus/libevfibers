@@ -22,6 +22,8 @@
    
    ]]
 
+local S = require("std")
+
 local M = {}
 
 local interface = {}
@@ -55,6 +57,8 @@ function M.Interface(methods)
 	
 	self.methods = terralib.newlist()
 	self.vtabletype = terralib.types.newstruct("vtable")
+	-- We assume interfaced objects to have S.Object metatable
+	methods["delete"] = {} -> {}
 	for k,v in pairs(methods) do
 		-- print(k," = ",v)
 		assert(v:ispointer() and v.type:isfunction())
@@ -113,7 +117,15 @@ function interface:createcast(from,exp)
 		local vtableentry = self.vtablearray[self.nextid]
 		self.nextid = self.nextid + 1
 		for _,m in ipairs(self.methods) do
-			local fn = from.methods[m.name]
+			local fn
+			if m.name == "delete" then
+				-- workaround for ondemand delete method
+				fn = terra(self: &from)
+					self:delete()
+				end
+			else
+				fn = from.methods[m.name]
+			end
 			assert(fn and terralib.isfunction(fn))
 			vtableentry[m.name] = terralib.cast(&uint8,fn:getpointer()) 
 		end
