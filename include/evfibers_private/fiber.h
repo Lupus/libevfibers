@@ -187,6 +187,7 @@ struct fbr_context_private {
 	uint64_t last_id;
 	uint64_t key_free_mask;
 	const char *buffer_file_pattern;
+	int force_reclaim;
 
 	struct ev_loop *loop;
 };

@@ -203,6 +203,7 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	LIST_INIT(&fctx->__p->root.pool);
 	TAILQ_INIT(&fctx->__p->root.destructors);
 	TAILQ_INIT(&fctx->__p->pending_fibers);
+	fctx->__p->force_reclaim = 0;
 
 	root = &fctx->__p->root;
 	strncpy(root->name, "root", FBR_MAX_FIBER_NAME - 1);
@@ -321,6 +322,8 @@ void fbr_destroy(FBR_P)
 {
 	struct fbr_fiber *fiber, *x;
 	struct mem_pool *p, *x2;
+
+	fctx->__p->force_reclaim = 1;
 
 	reclaim_children(FBR_A_ &fctx->__p->root);
 
@@ -473,7 +476,7 @@ int fbr_reclaim(FBR_P_ fbr_id_t id)
 
 	fbr_mutex_init(FBR_A_ &mutex);
 	fbr_mutex_lock(FBR_A_ &mutex);
-	while (fiber->no_reclaim > 0) {
+	while (fiber->no_reclaim > 0 && 0 == fctx->__p->force_reclaim) {
 		fiber->want_reclaim = 1;
 		assert("Attempt to reclaim self while no_reclaim is set would"
 				" block forever" && fiber != CURRENT_FIBER);
