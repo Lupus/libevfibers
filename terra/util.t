@@ -19,7 +19,76 @@
 -- vim: set syntax=terra:
 
 local S = require("std")
+local golike = require("golike")
 local inspect = require("inspect")
+
+local C = terralib.includecstring[[
+
+#include <string.h>
+
+/**
+ * `asprintf.c' - asprintf
+ *
+ * copyright (c) 2014 joseph werle <joseph.werle@gmail.com>
+ *
+ * https://github.com/littlstar/asprintf.c/blob/master/asprintf.c
+ */
+
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdarg.h>
+
+int
+vasprintf (char **str, const char *fmt, va_list args) {
+  int size = 0;
+  va_list tmpa;
+
+  // copy
+  va_copy(tmpa, args);
+
+  // apply variadic arguments to
+  // sprintf with format to get size
+  size = vsnprintf(NULL, size, fmt, tmpa);
+
+  // toss args
+  va_end(tmpa);
+
+  // return -1 to be compliant if
+  // size is less than 0
+  if (size < 0) { return -1; }
+
+  // alloc with size plus 1 for `\0'
+  *str = (char *) malloc(size + 1);
+
+  // return -1 to be compliant
+  // if pointer is `NULL'
+  if (NULL == *str) { return -1; }
+
+  // format string with original
+  // variadic arguments and set new size
+  size = vsprintf(*str, fmt, args);
+  return size;
+}
+
+int
+asprintf (char **str, const char *fmt, ...) {
+  int size = 0;
+  va_list args;
+
+  // init variadic argumens
+  va_start(args, fmt);
+
+  // format and get size
+  size = vasprintf(str, fmt, args);
+
+  // toss args
+  va_end(args);
+
+  return size;
+}
+
+]]
 
 local M = {}
 
@@ -167,5 +236,77 @@ M.partial = macro(function(fn, ...)
 	end
 end)
 ]]
+
+local struct CString(S.Object) {
+	ptr: &int8
+	is_heap: bool,
+}
+
+M.CString = CString
+
+CString.metamethods.__cast = function(from,to,exp)
+	if to == &int8 then
+		return `exp.ptr
+	elseif from == &int8 and terralib.isconstant(exp) then
+		return `CString { exp, false }
+	end
+	error(("invalid cast from %s to %s"):format(from, to))
+end
+
+do
+	local obj = CString
+	local terra obj_init(o: &obj, c_string: &int8, is_heap: bool)
+		o.ptr = c_string
+		o.is_heap = is_heap
+	end
+	local old_alloc = obj.methods.alloc
+	obj.methods.alloc = terralib.overloadedfunction("alloc")
+	obj.methods.alloc:adddefinition(old_alloc)
+	obj.methods.alloc:adddefinition(terra(c_string: &int8, is_heap: bool)
+		var o = old_alloc()
+		obj_init(o, c_string, is_heap)
+		return o
+	end)
+	local old_salloc = obj.methods.salloc
+	obj.methods.salloc = macro(function(c_string, is_heap)
+		if not c_string then
+			c_string = `nil
+			is_heap = `false
+		else
+			assert(is_heap, "is_heap is expected")
+		end
+		return quote
+			var o = old_salloc()
+			obj_init(o, c_string, is_heap)
+		in
+			o
+		end
+	end)
+end
+
+terra CString:__destruct()
+	if self.is_heap then
+		C.free(self.ptr)
+	end
+end
+
+CString.methods.sprintf = macro(function(format, ...)
+	assert(format:gettype() == &int8, "format must be string literal")
+	assert(terralib.isconstant(format, "format must be a constant"))
+	return quote
+		var cstr = CString.alloc()
+		C.asprintf(&cstr.ptr, format, [{...}])
+		cstr.is_heap = true
+	in
+		cstr
+	end
+end)
+
+
+local IError = golike.Interface({
+	to_string = {} -> &CString
+})
+
+M.IError = IError
 
 return M
