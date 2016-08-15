@@ -35,9 +35,12 @@ local function castmethod(from,to,exp)
 		if not self then error("not a interface") end
 		local cst = self:createcast(from.type,exp)
 		return cst
+	elseif to:isstruct() and from == niltype then
+		return `to { 0 }
 	end
 	error("invalid cast")
 end
+
 function M.Interface(methods)
 	local self = setmetatable({}, interface)
 	struct self.type {
@@ -74,10 +77,31 @@ function M.Interface(methods)
 			var id = interface.data >> 48
 			var mask = (1ULL << 48) - 1
 			var obj = [&uint8](mask and interface.data)
-			return  m.type(self.vtables[id].[m.name])(obj,[m.syms])
+			return m.type(self.vtables[id].[m.name])(obj,[m.syms])
 		end
 	end
 
+	self.type.metamethods.__eq = macro(function(a, b)
+		local iface
+		local with
+		if a:gettype() == self.type then
+			iface = a
+			with = b
+		else
+			iface = b
+			with = a
+		end
+		if with:gettype() == niltype then
+			return quote
+				var mask = (1ULL << 48) - 1
+				var obj = [&uint8](mask and iface.data)
+			in
+				obj ~= nil
+			end
+		end
+		error(("invalid comparison between %s and %s"):format(
+				a:gettype(), b:gettype()))
+	end)
 	return self.type
 end
 
