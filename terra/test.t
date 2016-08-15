@@ -24,10 +24,38 @@ local check = require("check")
 local ev = require("ev")
 local fbr = require("evfibers")
 
+local m = global(&fbr.Mutex)
+
+terra fiber_1(fctx: &fbr.Context)
+	fctx:log_d("hello from fiber 1!")
+	m:lock()
+	defer m:unlock()
+	fctx:sleep(1.0)
+
+	fctx:log_d("hello from fiber 1!")
+	return
+end
+
+terra fiber_2(fctx: &fbr.Context)
+	fctx:log_d("hello from fiber 2!")
+	m:lock()
+	defer m:unlock()
+	fctx:sleep(1.0)
+
+	fctx:log_d("hello from fiber 2!")
+	return
+end
 
 terra test_one(i: int)
-	var loop = ev.Loop.alloc()
-	var f = fbr.Context.alloc()
+	var loop = ev.Loop.salloc()
+	var fctx = fbr.Context.salloc(loop)
+	fctx:set_log_level(fbr.LOG_DEBUG)
+	m = fbr.Mutex.salloc(fctx)
+	var id1 = fctx:create("my fiber", fbr.simple_fiber(fiber_1))
+	fctx:transfer(id1)
+	var id2 = fctx:create("my fiber 2", fbr.simple_fiber(fiber_2))
+	fctx:transfer(id2)
+	loop:run()
 end
 
 terra basic_tc()
@@ -52,10 +80,6 @@ end
 
 run_tests()
 
---[[
-
 terralib.saveobj("run_tests", "executable", {
 	main = run_tests
-}, {"-lcheck", "-lm", "-lrt", "-lev", "-pthread"})
-
-]]
+}, {"-lcheck", "-lm", "-lrt", "-lev", "-L../build", "-levfibers", "-pthread"})
