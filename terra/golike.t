@@ -45,24 +45,23 @@ end
 
 function M.Interface(methods)
 	local self = setmetatable({}, interface)
+	self.vtabletype = terralib.types.newstruct("vtable")
 	struct self.type {
-		data : uint64
+		vtable: &self.vtabletype
+		obj: &opaque
 	}
 	defined[self.type] = self
 	self.type.metamethods.__cast = castmethod
 
-	self.nextid = 0
-	self.allocatedsize = 256
 	self.implementedtypes = {} 
 	
 	self.methods = terralib.newlist()
-	self.vtabletype = terralib.types.newstruct("vtable")
 	-- We assume interfaced objects to have S.Object metatable
 	methods["delete"] = {} -> {}
 	for k,v in pairs(methods) do
 		-- print(k," = ",v)
 		assert(v:ispointer() and v.type:isfunction())
-		local params,rets = terralib.newlist{&uint8}, v.type.returntype
+		local params,rets = terralib.newlist{&opaque}, v.type.returntype
 		local syms = terralib.newlist()
 		for i,p in ipairs(v.type.parameters) do
 			params:insert(p)
@@ -70,18 +69,13 @@ function M.Interface(methods)
 		end
 		local typ = params -> rets
 		self.methods:insert({name = k, type = typ, syms = syms})
-		self.vtabletype.entries:insert { field = k, type = &uint8 }
+		self.vtabletype.entries:insert { field = k, type = &opaque }
 	end
-	self.vtables = global(&self.vtabletype)
-	self.vtablearray = terralib.new(self.vtabletype[self.allocatedsize])
-	self.vtables:set(self.vtablearray)
 
 	for _,m in ipairs(self.methods) do
 		self.type.methods[m.name] = terra(interface : &self.type, [m.syms])
-			var id = interface.data >> 48
-			var mask = (1ULL << 48) - 1
-			var obj = [&uint8](mask and interface.data)
-			return m.type(self.vtables[id].[m.name])(obj,[m.syms])
+			var fn = m.type(interface.vtable.[m.name])
+			return fn(interface.obj,[m.syms])
 		end
 	end
 
@@ -112,10 +106,7 @@ end
 function interface:createcast(from,exp)
 	if not self.implementedtypes[from] then
 		local instance = {}
-		instance.id = self.nextid
-		assert(instance.id < self.allocatedsize) --TODO: handle resize
-		local vtableentry = self.vtablearray[self.nextid]
-		self.nextid = self.nextid + 1
+		local impl = terralib.newlist()
 		for _,m in ipairs(self.methods) do
 			local fn
 			if m.name == "delete" then
@@ -127,13 +118,14 @@ function interface:createcast(from,exp)
 				fn = from.methods[m.name]
 			end
 			assert(fn and terralib.isfunction(fn))
-			vtableentry[m.name] = terralib.cast(&uint8,fn:getpointer()) 
+			impl:insert(fn)
 		end
+		instance.vtable = constant(`[self.vtabletype] { [impl] })
 		self.implementedtypes[from] = instance
 	end
 
-	local id = self.implementedtypes[from].id
-	return `self.type { uint64(exp) or (uint64(id) << 48) }
+	local vtable = self.implementedtypes[from].vtable
+	return `self.type { &vtable, [&opaque](exp) }
 end
 
 return M
