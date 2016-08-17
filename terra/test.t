@@ -82,4 +82,10 @@ run_tests()
 
 terralib.saveobj("run_tests", "executable", {
 	main = run_tests
-}, {"-lcheck", "-lm", "-lrt", "-lev", "-L../build", "-levfibers", "-pthread"})
+}, {
+	"-lcheck", "-lm", "-lrt", "-lev",
+	"-L../build",
+	"-Wl,-rpath", "-Wl,../build",
+	"-levfibers",
+	"-pthread"
+})
