@@ -384,7 +384,7 @@ terra CondVar:signal()
 end
 
 terra CondVar:broadcast()
-	C.fbr_cond_signal(self.fctx, self)
+	C.fbr_cond_broadcast(self.fctx, self)
 end
 
 Context.methods.ev_wait = macro(function(self, ...)
