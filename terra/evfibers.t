@@ -409,19 +409,30 @@ Context.methods.ev_wait = macro(function(self, ...)
 				field = base(i),
 				type = C.fbr_ev_mutex
 			})
+		elseif arg:gettype() == &CondVar then
+			wait_impl.entries:insert({
+				field = base(i),
+				type = C.fbr_ev_cond_var
+			})
+		else
+			error("unexpected type for ev_wait: " ..
+					tostring(arg:gettype()))
+		end
+	end
+	for i, arg in ipairs(args) do
+		local j = i - 1
+		if arg:gettype() == &Mutex then
 			init:insert(quote
 				var ev_mutex = &impl.[base(i)]
 				C.fbr_ev_mutex_init(self, ev_mutex, arg)
 				impl.events[j] = &ev_mutex.ev_base
 			end)
 		elseif arg:gettype() == &CondVar then
-			wait_impl.entries:insert({
-				field = base(i),
-				type = &C.fbr_ev_cond_var
-			})
 			init:insert(quote
-				C.fbr_ev_cond_var_init(self, &impl.[base(i)],
-						arg)
+				var ev_cond_var = &impl.[base(i)]
+				C.fbr_ev_cond_var_init(self, ev_cond_var, arg,
+						nil)
+				impl.events[j] = &ev_cond_var.ev_base
 			end)
 		else
 			error("unexpected type for ev_wait: " ..

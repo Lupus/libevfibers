@@ -25,6 +25,9 @@ local ev = require("ev")
 local fbr = require("evfibers")
 
 local m = global(&fbr.Mutex)
+local c1 = global(&fbr.CondVar)
+local c2 = global(&fbr.CondVar)
+local c3 = global(&fbr.CondVar)
 
 terra fiber_1(fctx: &fbr.Context)
 	fctx:log_d("hello from fiber 1!")
@@ -82,10 +85,75 @@ terra test_wait(i: int)
 	loop:run()
 end
 
+terra fiber_4(fctx: &fbr.Context)
+	fctx:log_d("hello from fiber 4!")
+	var w = fctx:ev_wait(m)
+	var nevents, err = w:wait()
+	check.assert(err == nil)
+	check.assert(nevents == 1)
+	check.assert(w:arrived(m) == true)
+	defer m:unlock()
+	fctx:sleep(1.0)
+
+	fctx:log_d("hello from fiber 4!")
+	return
+end
+
+local narrived = global(int)
+
+terra fiber_5(fctx: &fbr.Context)
+	fctx:log_d("waiting for events")
+	var w = fctx:ev_wait(c1, c2, c3)
+	var nevents, err = w:wait()
+	check.assert(err == nil)
+	check.assert(nevents == 3)
+	check.assert(w:arrived(c1) == true)
+	check.assert(w:arrived(c2) == true)
+	check.assert(w:arrived(c3) == true)
+
+	fctx:log_d("all events arrived")
+	narrived = narrived + 1
+end
+
+terra fiber_6(fctx: &fbr.Context)
+	fctx:log_d("hello from fiber 6!")
+	fctx:sleep(1.0)
+	c1:broadcast()
+	c2:broadcast()
+	c3:broadcast()
+	fctx:log_d("hello from fiber 6!")
+end
+
+terra test_wait2(i: int)
+	var loop = ev.Loop.salloc()
+	var fctx = fbr.Context.salloc(loop)
+	fctx:set_log_level(fbr.LOG_DEBUG)
+	c1 = fbr.CondVar.salloc(fctx)
+	c2 = fbr.CondVar.salloc(fctx)
+	c3 = fbr.CondVar.salloc(fctx)
+
+	var id1 = fctx:create("my fiber a", fbr.simple_fiber(fiber_5))
+	var id2 = fctx:create("my fiber b", fbr.simple_fiber(fiber_5))
+	var id3 = fctx:create("my fiber c", fbr.simple_fiber(fiber_5))
+
+	narrived = 0
+
+	fctx:transfer(id3)
+	fctx:transfer(id1)
+	fctx:transfer(id2)
+
+	var id4 = fctx:create("my fiber 2", fbr.simple_fiber(fiber_6))
+	fctx:transfer(id4)
+	loop:run()
+
+	check.assert(narrived == 3)
+end
+
 terra basic_tc()
 	var tc = check.TCase.alloc("bacis")
 	tc:add_test(test_one)
 	tc:add_test(test_wait)
+	tc:add_test(test_wait2)
 	return tc
 end
 
