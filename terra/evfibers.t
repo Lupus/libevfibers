@@ -387,4 +387,75 @@ terra CondVar:broadcast()
 	C.fbr_cond_signal(self.fctx, self)
 end
 
+Context.methods.ev_wait = macro(function(self, ...)
+	local args = {...}
+	local wait_impl = terralib.types.newstruct("EVWaitImpl")
+	local function ev(i) return ("arg_%d"):format(i) end
+	local function base(i) return ("arg_base_%d"):format(i) end
+	local init = terralib.newlist()
+	local impl = symbol(&wait_impl)
+	wait_impl.entries:insert({
+		field = "fctx",
+		type = &Context,
+	})
+	wait_impl.entries:insert({
+		field = "events",
+		type = (&C.fbr_ev_base)[#args + 1],
+	})
+	for i, arg in ipairs(args) do
+		local j = i - 1
+		if arg:gettype() == &Mutex then
+			wait_impl.entries:insert({
+				field = base(i),
+				type = C.fbr_ev_mutex
+			})
+			init:insert(quote
+				var ev_mutex = &impl.[base(i)]
+				C.fbr_ev_mutex_init(self, ev_mutex, arg)
+				impl.events[j] = &ev_mutex.ev_base
+			end)
+		elseif arg:gettype() == &CondVar then
+			wait_impl.entries:insert({
+				field = base(i),
+				type = &C.fbr_ev_cond_var
+			})
+			init:insert(quote
+				C.fbr_ev_cond_var_init(self, &impl.[base(i)],
+						arg)
+			end)
+		else
+			error("unexpected type for ev_wait: " ..
+					tostring(arg:gettype()))
+		end
+	end
+	init:insert(quote
+		impl.events[ [#args] ] = nil
+		impl.fctx = &self
+	end)
+	terra wait_impl:wait()
+		var nevents = C.fbr_ev_wait(self.fctx, self.events)
+		if -1 == nevents then
+			return 0, self.fctx:last_error()
+		end
+		return nevents, nil
+	end
+	wait_impl.methods.arrived = macro(function(self, what)
+		for i, arg in ipairs(args) do
+			local j = i - 1
+			if tostring(what) == tostring(arg) then
+				return `self.events[j].arrived == 1
+			end
+		end
+		error("arrived called on object not in the wait set")
+	end)
+
+	return quote
+		var wait_data : wait_impl
+		var [impl] = &wait_data
+		[init]
+	in
+		impl
+	end
+end)
+
 return M
