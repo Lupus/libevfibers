@@ -309,4 +309,11 @@ local IError = golike.Interface({
 
 M.IError = IError
 
+local struct inv_struct {}
+
+M.inv_start = terralib.intrinsic("llvm.invariant.start",
+		{int64,&int8} -> {&inv_struct})
+M.inv_end = terralib.intrinsic("llvm.invariant.end",
+		{&inv_struct,int64,&int8} -> {})
+
 return M
