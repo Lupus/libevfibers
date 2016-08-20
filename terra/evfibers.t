@@ -390,7 +390,6 @@ end
 Context.methods.ev_wait = macro(function(self, ...)
 	local args = {...}
 	local wait_impl = terralib.types.newstruct("EVWaitImpl")
-	local function ev(i) return ("arg_%d"):format(i) end
 	local function base(i) return ("arg_base_%d"):format(i) end
 	local init = terralib.newlist()
 	local impl = symbol(&wait_impl)
@@ -414,6 +413,11 @@ Context.methods.ev_wait = macro(function(self, ...)
 				field = base(i),
 				type = C.fbr_ev_cond_var
 			})
+		elseif ev.is_watcher(arg:gettype()) then
+			wait_impl.entries:insert({
+				field = base(i),
+				type = C.fbr_ev_watcher
+			})
 		else
 			error("unexpected type for ev_wait: " ..
 					tostring(arg:gettype()))
@@ -433,6 +437,12 @@ Context.methods.ev_wait = macro(function(self, ...)
 				C.fbr_ev_cond_var_init(self, ev_cond_var, arg,
 						nil)
 				impl.events[j] = &ev_cond_var.ev_base
+			end)
+		elseif ev.is_watcher(arg:gettype()) then
+			init:insert(quote
+				var ev_watcher = &impl.[base(i)]
+				C.fbr_ev_watcher_init(self, ev_watcher, arg)
+				impl.events[j] = &ev_watcher.ev_base
 			end)
 		else
 			error("unexpected type for ev_wait: " ..

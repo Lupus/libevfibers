@@ -149,11 +149,43 @@ terra test_wait2(i: int)
 	check.assert(narrived == 3)
 end
 
+local tm = global(&ev.Timer)
+
+terra fiber_7(fctx: &fbr.Context)
+	fctx:log_d("waiting for events")
+	var w = fctx:ev_wait(tm)
+	var nevents, err = w:wait()
+	check.assert(err == nil)
+	check.assert(nevents == 1)
+	check.assert(w:arrived(tm) == true)
+
+	fctx:log_d("all events arrived")
+	narrived = narrived + 1
+end
+
+terra test_wait3(i: int)
+	var loop = ev.Loop.salloc()
+	var fctx = fbr.Context.salloc(loop)
+	fctx:set_log_level(fbr.LOG_DEBUG)
+	tm = ev.Timer.salloc(loop)
+	tm:start(1.0, 0.0)
+
+	narrived = 0
+
+	var id1 = fctx:create("my fiber", fbr.simple_fiber(fiber_7))
+	fctx:transfer(id1)
+
+	loop:run()
+
+	check.assert(narrived == 1)
+end
+
 terra basic_tc()
 	var tc = check.TCase.alloc("bacis")
 	tc:add_test(test_one)
 	tc:add_test(test_wait)
 	tc:add_test(test_wait2)
+	tc:add_test(test_wait3)
 	return tc
 end
 

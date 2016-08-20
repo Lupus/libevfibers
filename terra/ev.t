@@ -220,6 +220,14 @@ local function gen_watcher(name)
 		type = watcher_listener_iface
 	})
 	S.Object(watcher_impl)
+	watcher_impl.metamethods.__cast = function(from,to,exp)
+		if to:ispointer() and to.type == w_type then
+			return `&exp.base
+		elseif to:ispointer() and to.type == C.ev_watcher then
+			return `[&C.ev_watcher](&exp.base)
+		end
+		error(("invalid cast from %s to %s"):format(from, to))
+	end
 
 	local terra libev_cb(loop: &C.ev_loop, w: &w_type, revents: int)
 		var wi = [&watcher_impl](w.data)
@@ -231,7 +239,7 @@ local function gen_watcher(name)
 	local init_fn = terra(self: &watcher_impl, loop: &Loop)
 		self.loop = loop
 		self.base.data = [&uint8](self)
-		[C["wrap_ev_"..name.."_init"]](&self.base, libev_cb)
+		[C["wrap_ev_"..name.."_init"]](self, libev_cb)
 	end
 
 	watcher_impl.methods.alloc = terra(loop: &Loop)
@@ -252,22 +260,22 @@ local function gen_watcher(name)
 		self.listener = l
 	end
 	terra watcher_impl:is_active()
-		return 1 == C.wrap_ev_is_active([&C.ev_watcher](&self.base))
+		return 1 == C.wrap_ev_is_active(self)
 	end
 	terra watcher_impl:is_pending()
-		return 1 == C.wrap_ev_is_pending([&C.ev_watcher](&self.base))
+		return 1 == C.wrap_ev_is_pending(self)
 	end
 	terra watcher_impl:feed_event(revents: int)
-		C.ev_feed_event(self.loop, [&C.ev_watcher](&self.base), revents)
+		C.ev_feed_event(self.loop, self, revents)
 	end
 	terra watcher_impl:start()
-		[C["ev_"..name.."_start"]](self.loop, [&w_type](&self.base))
+		[C["ev_"..name.."_start"]](self.loop, self)
 	end
 	terra watcher_impl:stop()
-		[C["ev_"..name.."_stop"]](self.loop, [&w_type](&self.base))
+		[C["ev_"..name.."_stop"]](self.loop, self)
 	end
 	terra watcher_impl:feed(revents: int)
-		C.ev_feed_event(self.loop, [&C.ev_watcher](&self.base), revents)
+		C.ev_feed_event(self.loop, self, revents)
 	end
 	terra watcher_impl:__destruct()
 		self:stop()
@@ -336,6 +344,15 @@ terra M.Async:send()
 end
 terra M.Async:async_pending()
 	return 1 == C.wrap_ev_async_pending(&self.base)
+end
+
+function M.is_watcher(what)
+	if what:ispointer() then
+		what = what.type
+	end
+	return what == M.IO or
+		what == M.Timer or
+		what == M.Async
 end
 
 return M
