@@ -22,14 +22,14 @@ local S = require("std")
 local check = require("check")
 local talloc = require("talloc")
 
+local dtor_called = global(bool)
+
 local struct User {
 	uid: int
 	username: &int8
 	num_groups: int,
 	groups: &&int8,
 }
-
-local dtor_called = global(bool)
 
 terra User:destructor()
 	dtor_called = true
@@ -53,10 +53,52 @@ terra test_user(i: int)
 	check.assert(dtor_called)
 end
 
+local struct User2 {
+	uid: int
+	username: &int8
+	num_groups: int,
+	groups: &&int8,
+}
+
+terra User2:__init(uid: int)
+	self.uid = uid
+end
+
+terra User2:__destruct()
+	dtor_called = true
+end
+
+talloc.install_mt(User2)
+
+terra user_salloc()
+	var user2 = User2.salloc(42)
+end
+
+terra test_user2(i: int)
+	dtor_called = false
+	talloc.set_log_stderr()
+	var user = User2.talloc(nil, 42)
+	user.username = talloc.strdup(user, "Test user")
+	user.num_groups = 200
+	user.groups = talloc.array(user, [&int8], user.num_groups)
+	for i = 0,user.num_groups do
+		user.groups[i] = talloc.asprintf(user.groups, "Test group %d",
+				i)
+	end
+	check.assert(not dtor_called)
+	user:free()
+	check.assert(dtor_called)
+
+	dtor_called = false
+	user_salloc()
+	check.assert(dtor_called)
+end
+
 return {
 	tcase = terra()
 		var tc = check.TCase.alloc("talloc")
 		tc:add_test(test_user)
+		tc:add_test(test_user2)
 		return tc
 	end
 }

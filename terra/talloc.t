@@ -249,4 +249,50 @@ M.set_log_fn = C.talloc_set_log_fn
 M.set_log_stderr = C.talloc_set_log_stderr
 M.set_memlimit = C.talloc_set_memlimit
 
+function M.install_mt(T)
+	terra T.methods.free(self: &T)
+		M.free(self)
+	end
+	T.methods.talloc = macro(function(ctx, ...)
+		local ptr = symbol(&T)
+		local stmts = terralib.newlist()
+		local ctor = T:getmethod("__init")
+		if ctor then
+			local args = {ptr, ...}
+			stmts:insert(`ctor([args]))
+		end
+		if T:getmethod("__destruct") then
+			local dtor = T:getmethod("__destruct")
+			stmts:insert(`M.set_destructor(ptr, dtor))
+		end
+		return quote
+			var [ptr] = M.talloc(ctx, [T])
+			[stmts]
+		in
+			ptr
+		end
+	end)
+	T.methods.salloc = macro(function(...)
+		local ptr = symbol(&T)
+		local stmts = terralib.newlist()
+		local ctor = T:getmethod("__init")
+		if ctor then
+			local args = {ptr, ...}
+			stmts:insert(`ctor([args]))
+		end
+		if T:getmethod("__destruct") then
+			stmts:insert(quote
+				defer [ptr]:__destruct()
+			end)
+		end
+		return quote
+			var data : T
+			var [ptr] = &data
+			[stmts]
+		in
+			ptr
+		end
+	end)
+end
+
 return M
