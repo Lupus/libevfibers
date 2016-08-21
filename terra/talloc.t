@@ -1,0 +1,252 @@
+--[[
+
+   Copyright 2013 Konstantin Olkhovskiy <lupus@oxnull.net>
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+   ]]
+
+-- vim: set syntax=terra:
+
+local inspect = require("inspect")
+
+local C = terralib.includecstring[[
+
+#include <talloc.h>
+
+]]
+
+terralib.linklibrary("libtalloc.so")
+
+local M = {}
+
+local function location(what)
+	return ("%s:%d"):format(what.tree.filename, what.tree.linenumber)
+end
+
+local talloc = macro(function(ctx, typ)
+	typ = typ.tree.value -- get underlying type from luaobjecttype
+	return `[&typ](C.talloc_named_const(ctx, sizeof(typ), [tostring(typ)]))
+end)
+
+M.talloc = talloc
+
+M.init = macro(function(fmt, ...)
+	assert(fmt:gettype() == &int8,
+			"format must be string literal")
+	assert(terralib.isconstant(fmt, "format must be a constant"))
+	return `C.talloc_init(fmt, [{...}])
+end)
+
+M.free = macro(function(ctx)
+	return quote
+		var rv = C._talloc_free(ctx, [location(ctx)])
+	in
+		rv == 0
+	end
+end)
+
+M.free_children = terra(ctx: &opaque)
+	C.talloc_free_children(ctx)
+end
+
+M.set_destructor = macro(function(ctx, destructor)
+	assert(destructor:gettype():ispointertofunction(),
+			"destructor must be pointer to function")
+	assert(#destructor:gettype().type.parameters == 1,
+			"destructor should take one parameter")
+	local arg_type = destructor:gettype().type.parameters[1]
+	assert(tostring(arg_type) == tostring(ctx:gettype()),
+			("context and destructor argument types mismatch: \z
+			%s and %s"):format(ctx:gettype(), arg_type))
+	local df
+	local rets = destructor:gettype().type.returntype
+	if rets:isstruct(rets) then
+		assert(#rets.entries == 0,
+				"invalid return type for the destructor")
+		df = terra(ptr: &opaque)
+			destructor([arg_type](ptr))
+			return 0
+		end
+	else
+		assert(rets == bool,
+				"destructor return value must be a boolean")
+		df = terra(ptr: &opaque)
+			if destructor([arg_type](ptr)) then
+				return 0
+			else
+				return -1
+			end
+		end
+	end
+	return `C._talloc_set_destructor(ctx, df)
+end)
+
+M.steal = macro(function(new_ctx, ptr)
+	local typ = ptr:gettype()
+	return `[&typ](C._talloc_steal_loc(new_ctx, ptr, [location(new_ctx)]))
+end)
+
+M.set_name = macro(function(ptr, fmt, ...)
+	assert(fmt:gettype() == &int8,
+			"format must be string literal")
+	assert(terralib.isconstant(fmt, "format must be a constant"))
+	local args = {...}
+	if #args == 0 then
+		return `C.talloc_set_name_const(ptr, fmt)
+	end
+	return `C.talloc_set_name(ptr, fmt, [args])
+end)
+
+M.move = macro(function(new_ctx, ptr)
+	local typ = ptr:gettype()
+	return `[&typ](C._talloc_move(new_ctx, &ptr))
+end)
+
+M.named = macro(function(ctx, size, fmt, ...)
+	assert(fmt:gettype() == &int8,
+			"format must be string literal")
+	assert(terralib.isconstant(fmt, "format must be a constant"))
+	local args = {...}
+	if #args == 0 then
+		return `C.talloc_named_const(ctx, size, fmt)
+	end
+	return `C.talloc_named(ctx, size, fmt, [args])
+end)
+
+M.sized = macro(function(ctx, size)
+	return `C.talloc_named_const(ctx, size, [location(ctx)])
+end)
+
+M.new = macro(function(ctx)
+	return `C.talloc_named_const(ctx, 0, ["talloc_new: "..location(ctx)])
+end)
+
+M.zero = macro(function(ctx, typ)
+	typ = typ.tree.value -- get underlying type from luaobjecttype
+	return `[&typ](C._talloc_zero(ctx, sizeof(typ), [tostring(typ)]))
+end)
+
+M.zero_sized = macro(function(ctx, size)
+	return `C._talloc_zero(ctx, size, [location(ctx)])
+end)
+
+M.get_name = C.talloc_get_name
+
+M.check_name = macro(function(ctx, name)
+	local typ = ptr:gettype()
+	return `[&typ](C.talloc_check_name(ctx, name))
+end)
+
+M.parent = C.talloc_parent
+M.parent_name = C.talloc_parent_name
+M.total_size = C.talloc_total_size
+M.total_blocks = C.talloc_total_blocks
+
+M.memdup = macro(function(new_ctx, ptr, size)
+	local typ = ptr:gettype()
+	return `[&typ](C._talloc_memdup(new_ctx, ptr, size,
+			[location(new_ctx)]))
+end)
+
+M.find_parent_byname = C.talloc_find_parent_byname
+M.find_parent_bytype = macro(function(ctx, typ)
+	typ = typ.tree.value -- get underlying type from luaobjecttype
+	return `C.talloc_find_parent_byname(ctx, [tostring(typ)])
+end)
+
+M.autofree_context = C.talloc_autofree_context
+M.get_size = C.talloc_get_size
+
+M.array = macro(function(ctx, typ, count)
+	typ = typ.tree.value -- get underlying type from luaobjecttype
+	return `[&typ](C._talloc_array(ctx, sizeof(typ), count, [tostring(typ)]))
+end)
+
+M.array_sized = macro(function(ctx, size, count)
+	return `C._talloc_array(ctx, size, count, [tostring(typ)])
+end)
+
+M.array_length = macro(function(ctx)
+	return `C.talloc_get_size(ctx)/sizeof(@ctx)
+end)
+
+M.zero_array = macro(function(ctx, typ, count)
+	typ = typ.tree.value -- get underlying type from luaobjecttype
+	return `[&typ](C._talloc_zero_array(ctx, sizeof(typ), count,
+			[tostring(typ)]))
+end)
+
+M.realloc_array = macro(function(ctx, ptr, typ, count)
+	typ = typ.tree.value -- get underlying type from luaobjecttype
+	return `[&typ](C._talloc_realloc_array(ctx, ptr, sizeof(typ), count,
+			[location(ctx)]))
+end)
+
+M.realloc_size = macro(function(ctx, ptr, size)
+	local typ = ptr:gettype()
+	return `[&typ](C._talloc_realloc(ctx, ptr, size, [location(ctx)]))
+end)
+
+
+M.strdup = C.talloc_strdup
+M.strdup_append = C.talloc_strdup_append
+M.strdup_append_buffer = C.talloc_strdup_append_buffer
+M.strndup = C.talloc_strndup
+M.strndup_append = C.talloc_strndup_append
+M.strndup_append_buffer = C.talloc_strndup_append_buffer
+
+M.asprintf = macro(function(ctx, fmt, ...)
+	assert(fmt:gettype() == &int8,
+			"format must be string literal")
+	assert(terralib.isconstant(fmt, "format must be a constant"))
+	local args = {...}
+	if #args == 0 then
+		return `C.talloc_strdup(fmt)
+	end
+	return `C.talloc_asprintf(ctx, fmt, [args])
+end)
+
+M.asprintf_append = macro(function(s, fmt, ...)
+	assert(fmt:gettype() == &int8,
+			"format must be string literal")
+	assert(terralib.isconstant(fmt, "format must be a constant"))
+	local args = {...}
+	if #args == 0 then
+		return `C.talloc_strdup_append(s, fmt)
+	end
+	return `C.talloc_asprintf_append(s, fmt, [args])
+end)
+
+M.asprintf_append_buffer = macro(function(s, fmt, ...)
+	assert(fmt:gettype() == &int8,
+			"format must be string literal")
+	assert(terralib.isconstant(fmt, "format must be a constant"))
+	local args = {...}
+	if #args == 0 then
+		return `C.talloc_strdup_append_buffer(s, fmt)
+	end
+	return `C.talloc_asprintf_append_buffer(s, fmt, [args])
+end)
+
+
+M.report_depth_file = C.talloc_report_depth_file
+M.report_full = C.talloc_report_full
+M.report = C.talloc_report
+M.enable_leak_report = C.talloc_enable_leak_report
+M.enable_leak_report_full = C.talloc_enable_leak_report_full
+M.set_log_fn = C.talloc_set_log_fn
+M.set_log_stderr = C.talloc_set_log_stderr
+M.set_memlimit = C.talloc_set_memlimit
+
+return M
