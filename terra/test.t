@@ -202,6 +202,7 @@ terra run_tests()
 	var suite = evfibers_suite()
 	var srunner = check.SRunner.alloc(suite)
 	srunner:run_all()
+	srunner:delete()
 end
 
 run_tests()

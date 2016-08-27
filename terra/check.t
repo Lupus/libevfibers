@@ -133,6 +133,7 @@ end
 
 terra Suite:add_tcase(tc: &TCase)
 	C.suite_add_tcase(self.suite, tc.tcase)
+	tc:delete()
 end
 
 local struct SRunner(S.Object) {
@@ -141,11 +142,16 @@ local struct SRunner(S.Object) {
 
 M.SRunner = SRunner
 
+terra SRunner:__destruct()
+	C.srunner_free(self.srunner)
+end
+
 do
 	local old_alloc = SRunner.methods.alloc
 	SRunner.methods.alloc = terra(suite: &Suite)
 		var sr = old_alloc()
 		sr.srunner = C.srunner_create(suite.suite)
+		suite:delete()
 		return sr
 	end
 end
