@@ -23,6 +23,7 @@ local inspect = require("inspect")
 local ev = require("ev")
 local util = require("util")
 local golike = require("golike")
+local talloc = require("talloc")
 
 local CString = util.CString
 
@@ -115,37 +116,38 @@ Context.metamethods.__cast = function(from,to,exp)
 end
 
 
-do
-	local obj = Context
-	local terra obj_init(o: &obj, loop: &ev.Loop)
-		C.fbr_init(o, loop)
-	end
-	local old_alloc = obj.methods.alloc
-	obj.methods.alloc = terra(loop: &ev.Loop)
-		var o = old_alloc()
-		obj_init(o, loop)
-		return o
-	end
-	local old_salloc = obj.methods.salloc
-	obj.methods.salloc = macro(function(loop)
-		assert(loop, "loop is required")
-		return quote
-			var o = old_salloc()
-			obj_init(o, loop)
-		in
-			o
-		end
-	end)
+terra Context:__init(loop: &ev.Loop)
+	C.fbr_init(self, loop)
 end
+
+terra Context:__destruct()
+	C.fbr_destroy(self)
+end
+
+talloc.install_mt(Context)
 
 local ErrorCode = int
 M.ErrorCode = ErrorCode
 
-local struct Error(S.Object) {
+local struct Error {
 	fctx: &Context
 	code: ErrorCode
 	errno: int
 }
+
+terra Error:__init(fctx: &Context, code: ErrorCode, errno: int)
+	self.fctx = fctx
+	talloc.reference(self, fctx)
+	self.code = code
+	self.errno = errno
+end
+
+terra Error:__destruct()
+	util.assert(talloc.unlink(self, self.fctx), "unable to \z
+				talloc.unlink Context from self")
+end
+
+talloc.install_mt(Error)
 
 terra Error:to_string()
 	if self.code == M.ESYSTEM then
@@ -157,40 +159,10 @@ terra Error:to_string()
 	end
 end
 
-do
-	local obj = Error
-	local old_alloc = obj.methods.alloc
-	local terra obj_init(o: &obj, fctx: &Context,
-			code: ErrorCode, errno: int)
-		o.fctx = fctx
-		o.code = code
-		o.errno = errno
-	end
-	obj.methods.alloc = terra(fctx: &Context, code: ErrorCode, errno: int)
-		var o = old_alloc()
-		obj_init(o, fctx, code, errno)
-		return o
-	end
-	local old_salloc = obj.methods.salloc
-	obj.methods.salloc = macro(function(fctx, code, errno)
-		assert(fctx, "fctx is required")
-		assert(code, "code is required")
-		assert(errno, "errno is required")
-		return quote
-			var o = old_salloc()
-			obj_init(o, fctx, code, errno)
-		in
-			o
-		end
-	end)
-end
 
 terra Context:last_error()
-	return Error.alloc(self, self.fctx.f_errno, C.wrap_errno())
-end
-
-terra Context:__destruct()
-	C.fbr_destroy(self)
+	-- FIXME: allocate this per fiber
+	return Error.talloc(self, self, self.fctx.f_errno, C.wrap_errno())
 end
 
 local LogLevel = int
@@ -236,23 +208,33 @@ local IFiber = golike.Interface({
 
 M.IFiber = IFiber
 
-local struct SimpleFiber(S.Object) {
+local struct SimpleFiber {
 	func: {&Context} -> {}
 }
+
+terra SimpleFiber:__init(fn: {&Context} -> {})
+	self.func = fn
+end
+
+talloc.install_mt(SimpleFiber)
 
 terra SimpleFiber:run(fctx: &Context)
 	self.func(fctx)
 end
 
-terra M.simple_fiber(fn: {&Context} -> {}) : IFiber
-	var f = SimpleFiber.alloc()
-	f.func = fn
-	return f
+terra M.simple_fiber(ctx: &opaque, fn: {&Context} -> {}) : IFiber
+	return SimpleFiber.talloc(ctx, fn)
 end
 
-local struct TrampolineArg(S.Object) {
+local struct TrampolineArg {
 	fiber: IFiber
 }
+
+terra TrampolineArg:__init(fiber: IFiber)
+	self.fiber = fiber
+end
+
+talloc.install_mt(TrampolineArg)
 
 terra fiber_trampoline(fiber_context: &C.fbr_context, arg_: &opaque)
 	-- we assume fiber_context is pointer to the first member of Context,
@@ -262,17 +244,15 @@ terra fiber_trampoline(fiber_context: &C.fbr_context, arg_: &opaque)
 	C.fbr_set_noreclaim(fctx, fctx:self())
 	arg.fiber:run(fctx)
 	C.fbr_set_reclaim(fctx, fctx:self())
-	arg.fiber:delete()
-	arg:delete()
+	arg.fiber:free()
 end
 
 terra Context:create(name: CString, fiber: IFiber) : FiberID
-	var arg = TrampolineArg.alloc()
-	arg.fiber = fiber
+	var arg = TrampolineArg.talloc(fiber, fiber)
 	return C.fbr_create(&self.fctx, name, fiber_trampoline, [&int8](arg), 0)
 end
 
-local struct Mutex(S.Object) {
+local struct Mutex {
 	fctx: &Context
 	mutex: C.fbr_mutex
 }
@@ -287,33 +267,16 @@ Mutex.metamethods.__cast = function(from,to,exp)
 	error(("invalid cast from %s to %s"):format(from, to))
 end
 
-do
-	local obj = Mutex
-	local old_alloc = obj.methods.alloc
-	local terra obj_init(o: &obj, fctx: &Context)
-		o.fctx = fctx
-		C.fbr_mutex_init(fctx, o)
-	end
-	obj.methods.alloc = terra(fctx: &Context)
-		var o = old_alloc()
-		obj_init(o, fctx)
-		return o
-	end
-	local old_salloc = obj.methods.salloc
-	obj.methods.salloc = macro(function(fctx)
-		assert(fctx, "fctx is required")
-		return quote
-			var o = old_salloc()
-			obj_init(o, fctx)
-		in
-			o
-		end
-	end)
+terra Mutex:__init(fctx: &Context)
+	self.fctx = fctx
+	C.fbr_mutex_init(fctx, self)
 end
 
 terra Mutex:__destruct()
 	C.fbr_mutex_destroy(self.fctx, self)
 end
+
+talloc.install_mt(Mutex)
 
 terra Mutex:lock()
 	C.fbr_mutex_lock(self.fctx, self)
@@ -324,7 +287,7 @@ terra Mutex:unlock()
 end
 
 
-local struct CondVar(S.Object) {
+local struct CondVar {
 	fctx: &Context
 	cond_var: C.fbr_cond_var
 }
@@ -339,33 +302,16 @@ CondVar.metamethods.__cast = function(from,to,exp)
 	error(("invalid cast from %s to %s"):format(from, to))
 end
 
-do
-	local obj = CondVar
-	local old_alloc = obj.methods.alloc
-	local terra obj_init(o: &obj, fctx: &Context)
-		o.fctx = fctx
-		C.fbr_cond_init(fctx, o)
-	end
-	obj.methods.alloc = terra(fctx: &Context)
-		var o = old_alloc()
-		obj_init(o, fctx)
-		return o
-	end
-	local old_salloc = obj.methods.salloc
-	obj.methods.salloc = macro(function(fctx)
-		assert(fctx, "fctx is required")
-		return quote
-			var o = old_salloc()
-			obj_init(o, fctx)
-		in
-			o
-		end
-	end)
+terra CondVar:__init(fctx: &Context)
+	self.fctx = fctx
+	C.fbr_cond_init(fctx, self)
 end
 
 terra CondVar:__destruct()
 	C.fbr_cond_destroy(self.fctx, self)
 end
+
+talloc.install_mt(CondVar)
 
 CondVar.methods.wait = terralib.overloadedfunction("wait")
 CondVar.methods.wait:adddefinition(terra(self: &CondVar, m: &Mutex)

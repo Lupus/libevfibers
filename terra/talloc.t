@@ -128,8 +128,15 @@ M.sized = macro(function(ctx, size)
 	return `C.talloc_named_const(ctx, size, [location(ctx)])
 end)
 
+local struct TallocTmp {}
+
+TallocTmp.methods.free = macro(function(tmp)
+	return `C._talloc_free(&tmp, [location(tmp)])
+end)
+
 M.new = macro(function(ctx)
-	return `C.talloc_named_const(ctx, 0, ["talloc_new: "..location(ctx)])
+	local name = ("talloc_new: %s"):format(location(ctx))
+	return `[&TallocTmp](C.talloc_named_const(ctx, 0, name))
 end)
 
 M.zero = macro(function(ctx, typ)
@@ -163,6 +170,19 @@ M.find_parent_byname = C.talloc_find_parent_byname
 M.find_parent_bytype = macro(function(ctx, typ)
 	typ = typ.tree.value -- get underlying type from luaobjecttype
 	return `C.talloc_find_parent_byname(ctx, [tostring(typ)])
+end)
+
+M.reference = macro(function(ctx, ptr)
+	local typ = ptr:gettype()
+	return `[&typ](C._talloc_reference_loc(ctx, ptr, [location(ctx)]))
+end)
+
+M.unlink = macro(function(ctx, ptr)
+	return quote
+		var rv = C.talloc_unlink(ctx, ptr)
+	in
+		rv == 0
+	end
 end)
 
 M.autofree_context = C.talloc_autofree_context
@@ -249,7 +269,14 @@ M.set_log_fn = C.talloc_set_log_fn
 M.set_log_stderr = C.talloc_set_log_stderr
 M.set_memlimit = C.talloc_set_memlimit
 
-function M.install_mt(T)
+local defalt_options = {
+	enable_salloc = false,
+}
+
+function M.install_mt(T, options)
+	if not options then
+		options = defalt_options
+	end
 	terra T.methods.free(self: &T)
 		M.free(self)
 	end
@@ -272,27 +299,29 @@ function M.install_mt(T)
 			ptr
 		end
 	end)
-	T.methods.salloc = macro(function(...)
-		local ptr = symbol(&T)
-		local stmts = terralib.newlist()
-		local ctor = T:getmethod("__init")
-		if ctor then
-			local args = {ptr, ...}
-			stmts:insert(`ctor([args]))
-		end
-		if T:getmethod("__destruct") then
-			stmts:insert(quote
-				defer [ptr]:__destruct()
-			end)
-		end
-		return quote
-			var data : T
-			var [ptr] = &data
-			[stmts]
-		in
-			ptr
-		end
-	end)
+	if options.enable_salloc then
+		T.methods.salloc = macro(function(...)
+			local ptr = symbol(&T)
+			local stmts = terralib.newlist()
+			local ctor = T:getmethod("__init")
+			if ctor then
+				local args = {ptr, ...}
+				stmts:insert(`ctor([args]))
+			end
+			if T:getmethod("__destruct") then
+				stmts:insert(quote
+					defer [ptr]:__destruct()
+				end)
+			end
+			return quote
+				var data : T
+				var [ptr] = &data
+				[stmts]
+			in
+				ptr
+			end
+		end)
+	end
 end
 
 return M

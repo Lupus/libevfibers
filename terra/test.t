@@ -21,6 +21,7 @@
 local ffi = require("ffi")
 local S = require("std")
 local check = require("check")
+local talloc = require("talloc")
 local ev = require("ev")
 local fbr = require("evfibers")
 
@@ -49,14 +50,14 @@ terra fiber_2(fctx: &fbr.Context)
 	return
 end
 
-terra test_one(i: int)
-	var loop = ev.Loop.salloc()
-	var fctx = fbr.Context.salloc(loop)
+terra test_one(i: int, ctx: &opaque)
+	var loop = ev.Loop.talloc(ctx)
+	var fctx = fbr.Context.talloc(ctx, loop)
 	fctx:set_log_level(fbr.LOG_DEBUG)
-	m = fbr.Mutex.salloc(fctx)
-	var id1 = fctx:create("my fiber", fbr.simple_fiber(fiber_1))
+	m = fbr.Mutex.talloc(ctx, fctx)
+	var id1 = fctx:create("my fiber", fbr.simple_fiber(ctx, fiber_1))
 	fctx:transfer(id1)
-	var id2 = fctx:create("my fiber 2", fbr.simple_fiber(fiber_2))
+	var id2 = fctx:create("my fiber 2", fbr.simple_fiber(ctx, fiber_2))
 	fctx:transfer(id2)
 	loop:run()
 end
@@ -75,12 +76,12 @@ terra fiber_3(fctx: &fbr.Context)
 	return
 end
 
-terra test_wait(i: int)
-	var loop = ev.Loop.salloc()
-	var fctx = fbr.Context.salloc(loop)
+terra test_wait(i: int, ctx: &opaque)
+	var loop = ev.Loop.talloc(ctx)
+	var fctx = fbr.Context.talloc(ctx, loop)
 	fctx:set_log_level(fbr.LOG_DEBUG)
-	m = fbr.Mutex.salloc(fctx)
-	var id1 = fctx:create("my fiber", fbr.simple_fiber(fiber_3))
+	m = fbr.Mutex.talloc(ctx, fctx)
+	var id1 = fctx:create("my fiber", fbr.simple_fiber(ctx, fiber_3))
 	fctx:transfer(id1)
 	loop:run()
 end
@@ -124,17 +125,17 @@ terra fiber_6(fctx: &fbr.Context)
 	fctx:log_d("hello from fiber 6!")
 end
 
-terra test_wait2(i: int)
-	var loop = ev.Loop.salloc()
-	var fctx = fbr.Context.salloc(loop)
+terra test_wait2(i: int, ctx: &opaque)
+	var loop = ev.Loop.talloc(ctx)
+	var fctx = fbr.Context.talloc(ctx, loop)
 	fctx:set_log_level(fbr.LOG_DEBUG)
-	c1 = fbr.CondVar.salloc(fctx)
-	c2 = fbr.CondVar.salloc(fctx)
-	c3 = fbr.CondVar.salloc(fctx)
+	c1 = fbr.CondVar.talloc(ctx, fctx)
+	c2 = fbr.CondVar.talloc(ctx, fctx)
+	c3 = fbr.CondVar.talloc(ctx, fctx)
 
-	var id1 = fctx:create("my fiber a", fbr.simple_fiber(fiber_5))
-	var id2 = fctx:create("my fiber b", fbr.simple_fiber(fiber_5))
-	var id3 = fctx:create("my fiber c", fbr.simple_fiber(fiber_5))
+	var id1 = fctx:create("my fiber a", fbr.simple_fiber(ctx, fiber_5))
+	var id2 = fctx:create("my fiber b", fbr.simple_fiber(ctx, fiber_5))
+	var id3 = fctx:create("my fiber c", fbr.simple_fiber(ctx, fiber_5))
 
 	narrived = 0
 
@@ -142,7 +143,7 @@ terra test_wait2(i: int)
 	fctx:transfer(id1)
 	fctx:transfer(id2)
 
-	var id4 = fctx:create("my fiber 2", fbr.simple_fiber(fiber_6))
+	var id4 = fctx:create("my fiber 2", fbr.simple_fiber(ctx, fiber_6))
 	fctx:transfer(id4)
 	loop:run()
 
@@ -163,16 +164,16 @@ terra fiber_7(fctx: &fbr.Context)
 	narrived = narrived + 1
 end
 
-terra test_wait3(i: int)
-	var loop = ev.Loop.salloc()
-	var fctx = fbr.Context.salloc(loop)
+terra test_wait3(i: int, ctx: &opaque)
+	var loop = ev.Loop.talloc(ctx)
+	var fctx = fbr.Context.talloc(ctx, loop)
 	fctx:set_log_level(fbr.LOG_DEBUG)
-	tm = ev.Timer.salloc(loop)
+	tm = ev.Timer.talloc(ctx, loop)
 	tm:start(1.0, 0.0)
 
 	narrived = 0
 
-	var id1 = fctx:create("my fiber", fbr.simple_fiber(fiber_7))
+	var id1 = fctx:create("my fiber", fbr.simple_fiber(ctx, fiber_7))
 	fctx:transfer(id1)
 
 	loop:run()
@@ -180,12 +181,20 @@ terra test_wait3(i: int)
 	check.assert(narrived == 1)
 end
 
+local twrap = macro(function(test_fn)
+	return terra(i: int)
+		var ctx = talloc.new(nil)
+		test_fn(i, ctx)
+		ctx:free()
+	end
+end)
+
 terra basic_tc()
 	var tc = check.TCase.alloc("bacis")
-	tc:add_test(test_one)
-	tc:add_test(test_wait)
-	tc:add_test(test_wait2)
-	tc:add_test(test_wait3)
+	tc:add_test(twrap(test_one))
+	tc:add_test(twrap(test_wait))
+	tc:add_test(twrap(test_wait2))
+	tc:add_test(twrap(test_wait3))
 	return tc
 end
 

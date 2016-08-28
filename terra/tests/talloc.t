@@ -68,7 +68,9 @@ terra User2:__destruct()
 	dtor_called = true
 end
 
-talloc.install_mt(User2)
+talloc.install_mt(User2, {
+	enable_salloc = true,
+})
 
 terra user_salloc()
 	var user2 = User2.salloc(42)

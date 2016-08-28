@@ -21,6 +21,7 @@
 local ffi = require("ffi")
 local S = require("std")
 local check = require("check")
+local talloc = require("talloc")
 local ev = require("ev")
 local fbr = require("evfibers")
 
@@ -32,30 +33,33 @@ local C = terralib.includecstring[[
 
 ]]
 
-terra test_default_loop(i: int)
-	var loop = ev.Loop.alloc()
+terra test_default_loop(i: int, ctx: &opaque)
+	var loop = ev.Loop.talloc(ctx)
 	check.assert_msg(loop)
 	check.assert(loop.loop)
+	loop:free()
 end
 
-local struct CountingListener(S.Object) {
+local struct CountingListener {
 	count: int
 	last_revents: int
 }
+
+talloc.install_mt(CountingListener)
 
 terra CountingListener:on_event(io: &ev.IO, revents: int)
 	self.count = self.count + 1
 	self.last_revents = revents
 end
 
-terra test_io_watcher_feed(i: int)
-	var loop = ev.Loop.salloc()
+terra test_io_watcher_feed(i: int, ctx: &opaque)
+	var loop = ev.Loop.talloc(ctx)
 	
 	var fd = C.socket(C.PF_INET, C.SOCK_STREAM, 0)
 	check.assert(fd >= 0)
 	defer C.close(fd)
 
-	var w = ev.IO.salloc(loop)
+	var w = ev.IO.talloc(ctx, loop)
 	w:set(fd, ev.READ)
 	var cl = CountingListener { 0 }
 	w:set_listener(&cl)
@@ -66,20 +70,19 @@ terra test_io_watcher_feed(i: int)
 	check.assert(cl.count == 2)
 end
 
-terra test_io_watcher(i: int)
-	var loop = ev.Loop.alloc()
-	var w = ev.IO.alloc(loop)
+terra test_io_watcher(i: int, ctx: &opaque)
+	var loop = ev.Loop.talloc(ctx)
+	
+	var w = ev.IO.talloc(ctx, loop)
 	check.assert(w)
 	w:set(0, ev.READ)
 	w:start()
 	w:stop()
-	w:delete()
-	loop:delete()
 end
 
-terra test_io_watcher_salloc(i: int)
-	var loop = ev.Loop.salloc()
-	var w = ev.IO.salloc(loop)
+terra test_io_watcher_salloc(i: int, ctx: &opaque)
+	var loop = ev.Loop.talloc(ctx)
+	var w = ev.IO.talloc(ctx, loop)
 	check.assert(w)
 	check.assert(w.loop == loop)
 	w:set(0, ev.READ)
@@ -87,10 +90,10 @@ terra test_io_watcher_salloc(i: int)
 	w:stop()
 end
 
-terra test_timer_watcher_feed(i: int)
-	var loop = ev.Loop.salloc()
+terra test_timer_watcher_feed(i: int, ctx: &opaque)
+	var loop = ev.Loop.talloc(ctx)
 	
-	var w = ev.Timer.salloc(loop)
+	var w = ev.Timer.talloc(ctx, loop)
 	w:set(2.0, 0.0)
 	var cl = CountingListener { 0 }
 	w:set_listener(&cl)
@@ -102,10 +105,10 @@ terra test_timer_watcher_feed(i: int)
 	check.assert(cl.count == 2)
 end
 
-terra test_async_send(i: int)
-	var loop = ev.Loop.salloc()
+terra test_async_send(i: int, ctx: &opaque)
+	var loop = ev.Loop.talloc(ctx)
 	
-	var w = ev.Async.salloc(loop)
+	var w = ev.Async.talloc(ctx, loop)
 	var cl = CountingListener { 0 }
 	w:set_listener(&cl)
 	w:start()
@@ -117,15 +120,23 @@ terra test_async_send(i: int)
 	check.assert(cl.count == 1)
 end
 
+local twrap = macro(function(test_fn)
+	return terra(i: int)
+		var ctx = talloc.new(nil)
+		test_fn(i, ctx)
+		ctx:free()
+	end
+end)
+
 return {
 	tcase = terra()
 		var tc = check.TCase.alloc("ev-basic")
-		tc:add_test(test_default_loop)
-		tc:add_test(test_io_watcher)
-		tc:add_test(test_io_watcher_salloc)
-		tc:add_test(test_io_watcher_feed)
-		tc:add_test(test_timer_watcher_feed)
-		tc:add_test(test_async_send)
+		tc:add_test(twrap(test_default_loop))
+		tc:add_test(twrap(test_io_watcher))
+		tc:add_test(twrap(test_io_watcher_salloc))
+		tc:add_test(twrap(test_io_watcher_feed))
+		tc:add_test(twrap(test_timer_watcher_feed))
+		tc:add_test(twrap(test_async_send))
 		return tc
 	end
 }

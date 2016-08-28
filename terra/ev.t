@@ -19,7 +19,9 @@
 -- vim: set syntax=terra:
 
 local S = require("std")
+local talloc = require("talloc")
 local golike = require("golike")
+local util = require("util")
 local inspect = require("inspect")
 
 terralib.includepath = terralib.includepath .. ";../include;../build/include"
@@ -102,44 +104,21 @@ M.how = {
 }
 
 
-local struct Loop(S.Object) {
+local struct Loop {
 	loop: &C.ev_loop
 }
 
+talloc.install_mt(Loop)
+
 M.Loop = Loop
 
-do
-	local old_alloc = Loop.methods.alloc
-	Loop.methods.alloc = terralib.overloadedfunction("alloc")
-	Loop.methods.alloc:adddefinition(terra()
-		var c = old_alloc()
-		c.loop = C.ev_default_loop(M.AUTO)
-		return c
-	end)
-	Loop.methods.alloc:adddefinition(terra(loop: &C.ev_loop)
-		var c = old_alloc()
-		c.loop = loop
-		return c
-	end)
-	local old_salloc = Loop.methods.salloc
-	Loop.methods.salloc = macro(function(loop)
-		if loop then
-			return quote
-				var l = old_salloc()
-				l.loop = loop
-			in
-				l
-			end
-		else
-			return quote
-				var l = old_salloc()
-				l.loop = C.ev_default_loop(M.AUTO)
-			in
-				l
-			end
-		end
-	end)
-end
+Loop.methods.__init = terralib.overloadedfunction("__init")
+Loop.methods.__init:adddefinition(terra(self: &Loop)
+	self.loop = C.ev_default_loop(M.AUTO)
+end)
+Loop.methods.__init:adddefinition(terra(self: &Loop, loop: &C.ev_loop)
+	self.loop = loop
+end)
 
 Loop.metamethods.__eq = terra(a: Loop, b: Loop)
 	return a.loop == b.loop
@@ -219,7 +198,6 @@ local function gen_watcher(name)
 		field = "listener",
 		type = watcher_listener_iface
 	})
-	S.Object(watcher_impl)
 	watcher_impl.metamethods.__cast = function(from,to,exp)
 		if to:ispointer() and to.type == w_type then
 			return `&exp.base
@@ -228,34 +206,22 @@ local function gen_watcher(name)
 		end
 		error(("invalid cast from %s to %s"):format(from, to))
 	end
+	talloc.install_mt(watcher_impl)
 
 	local terra libev_cb(loop: &C.ev_loop, w: &w_type, revents: int)
 		var wi = [&watcher_impl](w.data)
 		wi.listener:on_event(wi, revents)
 	end
 
-
-	local old_alloc = watcher_impl.methods.alloc
-	local init_fn = terra(self: &watcher_impl, loop: &Loop)
+	terra watcher_impl:__init(loop: &Loop)
 		self.loop = loop
 		self.base.data = [&uint8](self)
 		[C["wrap_ev_"..name.."_init"]](self, libev_cb)
 	end
-
-	watcher_impl.methods.alloc = terra(loop: &Loop)
-		var w = old_alloc()
-		init_fn(w, loop)
-		return w
+	terra watcher_impl:__destruct()
+		self:stop()
 	end
-	local old_salloc = watcher_impl.methods.salloc
-	watcher_impl.methods.salloc = macro(function(loop)
-		return quote
-			var w = old_salloc()
-			init_fn(w, loop)
-		in
-			w
-		end
-	end)
+
 	terra watcher_impl:set_listener(l: watcher_listener_iface)
 		self.listener = l
 	end
@@ -276,9 +242,6 @@ local function gen_watcher(name)
 	end
 	terra watcher_impl:feed(revents: int)
 		C.ev_feed_event(self.loop, self, revents)
-	end
-	terra watcher_impl:__destruct()
-		self:stop()
 	end
 	return watcher_impl
 end

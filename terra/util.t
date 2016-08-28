@@ -92,6 +92,21 @@ asprintf (char **str, const char *fmt, ...) {
 
 local M = {}
 
+M.trap = terralib.intrinsic("llvm.trap", {} -> {})
+
+M.assert = macro(function(check, msg)
+	local loc = check.tree.filename..":"..check.tree.linenumber
+	if not msg then
+		msg = "assertion failed!"
+	end
+	return quote
+		if not check then
+			C.fprintf(C.stderr, "%s: %s\n", loc, msg)
+			C.abort()
+		end
+	end
+end)
+
 local function starts(str,start)
 	return string.sub(str,1,string.len(start))==start
 end

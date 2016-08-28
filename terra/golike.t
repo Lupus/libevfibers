@@ -39,6 +39,8 @@ local function castmethod(from,to,exp)
 		return cst
 	elseif to:isstruct() and from == niltype then
 		return `to { 0 }
+	elseif from:isstruct() and to == &opaque then
+		return `exp.obj
 	end
 	error("invalid cast")
 end
@@ -56,8 +58,8 @@ function M.Interface(methods)
 	self.implementedtypes = {} 
 	
 	self.methods = terralib.newlist()
-	-- We assume interfaced objects to have S.Object metatable
-	methods["delete"] = {} -> {}
+	-- We assume interfaced objects to have talloc metatable
+	methods["free"] = {} -> {}
 	for k,v in pairs(methods) do
 		-- print(k," = ",v)
 		assert(v:ispointer() and v.type:isfunction())
@@ -108,16 +110,14 @@ function interface:createcast(from,exp)
 		local instance = {}
 		local impl = terralib.newlist()
 		for _,m in ipairs(self.methods) do
-			local fn
-			if m.name == "delete" then
-				-- workaround for ondemand delete method
-				fn = terra(self: &from)
-					self:delete()
+			local fn = from.methods[m.name]
+			assert(fn)
+			if not terralib.isfunction(fn) then
+				-- assume it's a macro
+				fn = terra([m.syms])
+					return fn([m.sym])
 				end
-			else
-				fn = from.methods[m.name]
 			end
-			assert(fn and terralib.isfunction(fn))
 			impl:insert(fn)
 		end
 		instance.vtable = constant(`[self.vtabletype] { [impl] })
