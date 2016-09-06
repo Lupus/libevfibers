@@ -101,7 +101,7 @@ FiberID.metamethods.__ne = terra(a: FiberID, b: FiberID)
 end
 
 
-local struct Context(S.Object) {
+local struct Context(talloc.Object) {
 	fctx: C.fbr_context -- must be first for simple casts
 }
 
@@ -124,12 +124,10 @@ terra Context:__destruct()
 	C.fbr_destroy(self)
 end
 
-talloc.install_mt(Context)
-
 local ErrorCode = int
 M.ErrorCode = ErrorCode
 
-local struct Error {
+local struct Error(talloc.Object) {
 	fctx: &Context
 	code: ErrorCode
 	errno: int
@@ -146,8 +144,6 @@ terra Error:__destruct()
 	util.assert(talloc.unlink(self, self.fctx), "unable to \z
 				talloc.unlink Context from self")
 end
-
-talloc.install_mt(Error)
 
 terra Error:to_string()
 	if self.code == M.ESYSTEM then
@@ -208,15 +204,13 @@ local IFiber = golike.Interface({
 
 M.IFiber = IFiber
 
-local struct SimpleFiber {
+local struct SimpleFiber(talloc.Object) {
 	func: {&Context} -> {}
 }
 
 terra SimpleFiber:__init(fn: {&Context} -> {})
 	self.func = fn
 end
-
-talloc.install_mt(SimpleFiber)
 
 terra SimpleFiber:run(fctx: &Context)
 	self.func(fctx)
@@ -226,15 +220,13 @@ terra M.simple_fiber(ctx: &opaque, fn: {&Context} -> {}) : IFiber
 	return SimpleFiber.talloc(ctx, fn)
 end
 
-local struct TrampolineArg {
+local struct TrampolineArg(talloc.Object) {
 	fiber: IFiber
 }
 
 terra TrampolineArg:__init(fiber: IFiber)
 	self.fiber = fiber
 end
-
-talloc.install_mt(TrampolineArg)
 
 terra fiber_trampoline(fiber_context: &C.fbr_context, arg_: &opaque)
 	-- we assume fiber_context is pointer to the first member of Context,
@@ -252,7 +244,7 @@ terra Context:create(name: CString, fiber: IFiber) : FiberID
 	return C.fbr_create(&self.fctx, name, fiber_trampoline, [&int8](arg), 0)
 end
 
-local struct Mutex {
+local struct Mutex(talloc.Object) {
 	fctx: &Context
 	mutex: C.fbr_mutex
 }
@@ -276,8 +268,6 @@ terra Mutex:__destruct()
 	C.fbr_mutex_destroy(self.fctx, self)
 end
 
-talloc.install_mt(Mutex)
-
 terra Mutex:lock()
 	C.fbr_mutex_lock(self.fctx, self)
 end
@@ -287,7 +277,7 @@ terra Mutex:unlock()
 end
 
 
-local struct CondVar {
+local struct CondVar(talloc.Object) {
 	fctx: &Context
 	cond_var: C.fbr_cond_var
 }
@@ -310,8 +300,6 @@ end
 terra CondVar:__destruct()
 	C.fbr_cond_destroy(self.fctx, self)
 end
-
-talloc.install_mt(CondVar)
 
 CondVar.methods.wait = terralib.overloadedfunction("wait")
 CondVar.methods.wait:adddefinition(terra(self: &CondVar, m: &Mutex)

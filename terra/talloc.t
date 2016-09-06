@@ -273,7 +273,7 @@ local defalt_options = {
 	enable_salloc = false,
 }
 
-function M.install_mt(T, options)
+local function install_mt(T, options)
 	if not options then
 		options = defalt_options
 	end
@@ -321,6 +321,16 @@ function M.install_mt(T, options)
 				ptr
 			end
 		end)
+	end
+end
+
+function M.Object(T)
+	install_mt(T)
+end
+
+function M.ObjectWithOptions(options)
+	return function(T)
+		install_mt(T, options)
 	end
 end
 

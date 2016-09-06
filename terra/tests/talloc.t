@@ -53,7 +53,7 @@ terra test_user(i: int)
 	check.assert(dtor_called)
 end
 
-local struct User2 {
+local struct User2(talloc.ObjectWithOptions({enable_salloc = true})) {
 	uid: int
 	username: &int8
 	num_groups: int,
@@ -67,10 +67,6 @@ end
 terra User2:__destruct()
 	dtor_called = true
 end
-
-talloc.install_mt(User2, {
-	enable_salloc = true,
-})
 
 terra user_salloc()
 	var user2 = User2.salloc(42)

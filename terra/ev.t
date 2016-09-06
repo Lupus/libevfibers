@@ -104,11 +104,9 @@ M.how = {
 }
 
 
-local struct Loop {
+local struct Loop(talloc.Object) {
 	loop: &C.ev_loop
 }
-
-talloc.install_mt(Loop)
 
 M.Loop = Loop
 
@@ -198,6 +196,7 @@ local function gen_watcher(name)
 		field = "listener",
 		type = watcher_listener_iface
 	})
+	talloc.Object(watcher_impl)
 	watcher_impl.metamethods.__cast = function(from,to,exp)
 		if to:ispointer() and to.type == w_type then
 			return `&exp.base
@@ -206,7 +205,6 @@ local function gen_watcher(name)
 		end
 		error(("invalid cast from %s to %s"):format(from, to))
 	end
-	talloc.install_mt(watcher_impl)
 
 	local terra libev_cb(loop: &C.ev_loop, w: &w_type, revents: int)
 		var wi = [&watcher_impl](w.data)

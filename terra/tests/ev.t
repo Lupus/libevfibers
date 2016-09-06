@@ -40,12 +40,10 @@ terra test_default_loop(i: int, ctx: &opaque)
 	loop:free()
 end
 
-local struct CountingListener {
+local struct CountingListener(talloc.Object) {
 	count: int
 	last_revents: int
 }
-
-talloc.install_mt(CountingListener)
 
 terra CountingListener:on_event(io: &ev.IO, revents: int)
 	self.count = self.count + 1
