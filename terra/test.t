@@ -181,6 +181,34 @@ terra test_wait3(i: int, ctx: &opaque)
 	check.assert(narrived == 1)
 end
 
+local struct SampleFiber(fbr.Fiber) {
+	i: int
+}
+
+terra SampleFiber:__init(i: int)
+	self.i = i
+end
+
+terra SampleFiber:run(fctx: &fbr.Context)
+	self.i = self.i + 1
+	self:yield()
+	self.i = self.i + 1
+	self:yield()
+	self.i = self.i + 1
+	self:yield()
+end
+
+terra test_fiber_mt(i: int, ctx: &opaque)
+	var loop = ev.Loop.talloc(ctx)
+	var fctx = fbr.Context.talloc(ctx, loop)
+	var sf = SampleFiber.create(fctx, ctx, 10)
+	sf:transfer()
+	sf:transfer()
+	sf:transfer()
+
+	check.assert(sf.i == 13)
+end
+
 local twrap = macro(function(test_fn)
 	return terra(i: int)
 		var ctx = talloc.new(nil)
@@ -195,6 +223,7 @@ terra basic_tc()
 	tc:add_test(twrap(test_wait))
 	tc:add_test(twrap(test_wait2))
 	tc:add_test(twrap(test_wait3))
+	tc:add_test(twrap(test_fiber_mt))
 	return tc
 end
 

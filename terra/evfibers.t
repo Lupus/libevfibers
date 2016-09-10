@@ -194,6 +194,10 @@ terra Context:transfer(id: FiberID)
 	return C.fbr_transfer(self, id)
 end
 
+terra Context:yield()
+	return C.fbr_yield(self)
+end
+
 terra Context:sleep(duration: C.ev_tstamp)
 	return C.fbr_sleep(self, duration)
 end
@@ -412,5 +416,36 @@ Context.methods.ev_wait = macro(function(self, ...)
 		impl
 	end
 end)
+
+function M.Fiber(T)
+	local fld = function(name) return ("_fiber_%s"):format(name) end
+	T.entries:insert({
+		field = "fctx",
+		type = &Context,
+	})
+	T.entries:insert({
+		field = "fid",
+		type = FiberID,
+	})
+	talloc.Object(T)
+
+	T.methods.create = macro(function(fctx, ...)
+		local args = {...}
+		return quote
+			var f = T.talloc([args])
+			f.fctx = fctx
+			var id = fctx:create([tostring(T)], f)
+			f.fid = id
+		in
+			f
+		end
+	end)
+	terra T:transfer()
+		self.fctx:transfer(self.fid)
+	end
+	terra T:yield()
+		self.fctx:yield()
+	end
+end
 
 return M
