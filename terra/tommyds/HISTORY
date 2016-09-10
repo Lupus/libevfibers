@@ -1,0 +1,82 @@
+TommyDS HISTORY
+===============
+
+2.1 2015/07 BETA
+================
+ * Fixed some references to TOMMY_ARRAYBLKOF_SIZE, where instead
+   TOMMY_ARRAYBLK_SIZE was incorrectly used [Rocco].
+
+2.0 2014/12
+===========
+ * Fixed a Segmentation Fault bug in the trie_inplace container when inserting
+   duplicate elements.
+ * Faster array and hashlin implementation when accessing elements.
+ * Added new hashtable functions to iterate over all the elements.
+ * Added a new tommy_calloc() function used for allocating initialized memory.
+   If you redefined tommy_malloc(), likely you have to redefine also tommy_calloc().
+ * Reached 100% code coverage in the regression test.      
+ * Different source code organization.
+ * Added benchmark comparison with Binary Search Tesseract by Gregorius van
+   den Hoven.
+
+1.8 2013/12
+===========
+ * Fixed build of tommy_arrayblk in C++.
+ * Changed the default node size of tommy_trie to fit a cache line of 64 bytes.
+ * Added benchmark comparison with STX BTree.
+
+1.7 2013/12
+===========
+ * Extends tommy_hashlin_done() to work also if the hashtable is not empty.
+ * Removes the empty tommy_trie_done() because the real deallocation is done
+   by the allocator.
+
+1.6 2013/11
+===========
+ * Added a new tommy_arrayblk and tommy_arrayblkof types to store elements
+   in an array minimizing memory occupation.
+
+1.5 2013/06
+===========
+ * Fixed inline declaration to allow building with clang.
+ * Added a new tommy_arrayof type to store in an array elements of arbitrary
+   size.
+
+1.4 2013/03
+===========
+ * Added benchmark comparison with Google BTree, and C++ map and unordered_map.
+ * Benchmark for Linux is now compiled with "-O3 -march=pentium4 -mtune=generic",
+   and the Windows one with "/Ox /GL /GS- /arch:SSE2".
+
+1.3 2013/02
+===========
+ * Fixed a Segmentation Fault bug in the hashlin container if exact power
+   of 2 sizes were used.
+ * Removed some warnings with newer gcc.
+ * Minor documentation changes.
+ * Added benchmark comparison with the judy array implementation by Karl Malbrain.
+
+1.2 2012/05
+===========
+ * Minor documentation changes.
+ * In the check application, added a speed comparison with the C qsort()
+   implementation.
+
+1.1 2012/05
+===========
+ * Fixed the tommy_hashdyn_remove() function. Now it shrinks the hashtable if required.
+ * Minor documentation changes.
+
+1.0 2011/03
+===========
+ * First official version of TommyDS.
+ * Added tommy_list_foreach functions.
+
+0.2 2011/03
+===========
+ * Added tommy_array. A dynamic vector.
+
+0.1 2011/01
+===========
+ * First release of Tommy.
+

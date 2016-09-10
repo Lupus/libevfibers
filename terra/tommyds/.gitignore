@@ -1,0 +1,49 @@
+# archives
+*.zip
+*.tar.gz
+
+# backups
+*~
+
+# autotools
+Makefile
+Makefile.in
+aclocal.m4
+autom4te.cache/
+config.guess
+config.h
+config.h.in
+config.log
+config.status
+config.sub
+configure
+install-sh
+missing
+stamp-h1
+
+# objects
+*.o
+*.s
+*.S
+
+# coverage
+*.gcda
+*.gcno
+*.info
+cov/
+
+# project
+*.dst
+*.epr
+
+# specific
+tommycheck
+tommybench
+contrib/
+archive/
+*.ttf
+doc/
+benchmark/data/
+benchmark/exec/
+
+

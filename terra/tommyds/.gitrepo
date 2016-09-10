@@ -1,0 +1,11 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/git-commands/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/amadvance/tommyds.git
+	branch = master
+	commit = 5821a27984ae7c4e0e43eff84c37d58effe06454
+	parent = 1b6f5fc4bd3b3af76c854051e4e5f9f8230ab30d
+	cmdver = 0.3.0
