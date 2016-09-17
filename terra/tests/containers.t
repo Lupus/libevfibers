@@ -33,7 +33,7 @@ local foo_cmp = containers.comparator(Foo, "i", containers.DESCENDING)
 
 local FooList = containers.List(Foo, list_hook)
 
-terra test_container(i: int, ctx: &opaque)
+terra test_list(i: int, ctx: &opaque)
 	var list = FooList.talloc(ctx)
 	check.assert(list:empty() == true)
 	var foo1 = Foo.talloc(list)
@@ -59,6 +59,54 @@ terra test_container(i: int, ctx: &opaque)
 	check.assert(list:count() == 1)
 end
 
+local FooPtrArray = containers.Array(&Foo)
+
+terra test_array(i: int, ctx: &opaque)
+	var foo_ptr_arr = FooPtrArray.talloc(ctx)
+	check.assert(foo_ptr_arr:size() == 0)
+	var foo1 = Foo.talloc(foo_ptr_arr)
+	foo1.i = 10
+	var foo2 = Foo.talloc(foo_ptr_arr)
+	foo2.i = 20
+	foo_ptr_arr:insert(foo1)
+	check.assert(foo_ptr_arr:size() == 1)
+	foo_ptr_arr:insert(foo2)
+	check.assert(foo_ptr_arr:size() == 2)
+	var sum = 0
+	for i, v in foo_ptr_arr do
+		sum = sum + v.i
+	end
+	check.assert(sum == 30)
+	var foo3 = Foo.talloc(foo_ptr_arr)
+	foo3.i = 30
+	foo_ptr_arr:set(0, foo3)
+	check.assert(foo_ptr_arr:get(0).i == foo3.i)
+end
+
+local FooArray = containers.Array(Foo)
+
+terra test_array_by_value(i: int, ctx: &opaque)
+	var foo_arr = FooArray.talloc(ctx)
+	check.assert(foo_arr:size() == 0)
+	var foo1 : Foo
+	foo1.i = 10
+	var foo2 : Foo
+	foo2.i = 20
+	foo_arr:insert(foo1)
+	check.assert(foo_arr:size() == 1)
+	foo_arr:insert(foo2)
+	check.assert(foo_arr:size() == 2)
+	var sum = 0
+	for i, v in foo_arr do
+		sum = sum + v.i
+	end
+	check.assert(sum == 30)
+	var foo3 : Foo
+	foo3.i = 30
+	foo_arr:set(0, foo3)
+	check.assert(foo_arr:get(0).i == foo3.i)
+end
+
 local twrap = macro(function(test_fn)
 	return terra(i: int)
 		var ctx = talloc.new(nil)
@@ -70,7 +118,9 @@ end)
 return {
 	tcase = terra()
 		var tc = check.TCase.alloc("containers")
-		tc:add_test(twrap(test_container))
+		tc:add_test(twrap(test_list))
+		tc:add_test(twrap(test_array))
+		tc:add_test(twrap(test_array_by_value))
 		return tc
 	end
 }

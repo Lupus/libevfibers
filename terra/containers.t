@@ -157,4 +157,105 @@ function M.List(T, hook)
 	return list_impl
 end
 
+local array_defalt_options = {
+	flavour = "exp",
+}
+
+function M.Array(T, options)
+	if not options then
+		options = array_defalt_options
+	end
+	local tommy_prefix
+	if options.flavour == "exp" then
+		if T:ispointer() then
+			tommy_prefix = "tommy_array"
+		else
+			tommy_prefix = "tommy_arrayof"
+		end
+	elseif options.flavour == "blk" then
+		if T:ispointer() then
+			tommy_prefix = "tommy_arrayblk"
+		else
+			tommy_prefix = "tommy_arrayblkof"
+		end
+	else
+		error("invalid array flavour: should be 'exp' or 'blk'")
+	end
+	local tommy_type = C[tommy_prefix]
+	local method = function(name)
+		return C[("%s_%s"):format(tommy_prefix, name)]
+	end
+	local type_name = type_string_simple(T)
+	local impl_name = ("ArrayImpl_%s_%s"):format(type_name, options.flavour)
+	local array_impl = terralib.types.newstruct(impl_name)
+	array_impl.entries:insert({
+		field = "tm_array",
+		type = tommy_type,
+	})
+	talloc.Object(array_impl)
+	array_impl.metamethods.__cast = function(from,to,exp)
+		if to:ispointer() and to.type == tommy_type then
+			return `&exp.tm_array
+		end
+		error(("invalid cast from %s to %s"):format(from, to))
+	end
+
+	if T:ispointer() then
+		terra array_impl:__init()
+			[method("init")](self)
+		end
+	else
+		terra array_impl:__init()
+			[method("init")](self, sizeof(T))
+		end
+	end
+	terra array_impl:__destruct()
+		[method("done")](self)
+	end
+	terra array_impl:grow(size: C.tommy_count_t)
+		[method("grow")](self, size)
+	end
+	terra array_impl:ref(pos: C.tommy_count_t)
+		return [&T]([method("ref")](self, pos))
+	end
+	terra array_impl:size()
+		return [method("size")](self)
+	end
+	if T:ispointer() then
+		terra array_impl:set(pos: C.tommy_count_t, value: T)
+			[method("set")](self, pos, value)
+		end
+		terra array_impl:get(pos: C.tommy_count_t)
+			return [T]([method("get")](self, pos))
+		end
+		terra array_impl:insert(value: T)
+			[method("insert")](self, value)
+		end
+	else
+		terra array_impl:set(pos: C.tommy_count_t, value: T)
+			@self:ref(pos) = value
+		end
+		terra array_impl:get(pos: C.tommy_count_t)
+			return @self:ref(pos)
+		end
+		terra array_impl:insert(value: T)
+			var pos = self:size()
+			self:grow(pos + 1)
+			self:set(pos, value)
+		end
+	end
+	terra array_impl:memory_usage()
+		return [method("memory_usage")](self)
+	end
+	array_impl.metamethods.__for = function(self, body)
+		return quote
+			for i = 0, self:size() do
+				var value = self:get(i)
+				[body(i, value)]
+			end
+		end
+	end
+	return array_impl
+end
+
 return M
