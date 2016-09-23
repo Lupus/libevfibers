@@ -244,8 +244,6 @@ terra run_tests()
 	srunner:delete()
 end
 
-run_tests()
-
 terralib.saveobj("run_tests", "executable", {
 	main = run_tests
 }, {
@@ -256,3 +254,5 @@ terralib.saveobj("run_tests", "executable", {
 	"-ltalloc",
 	"-pthread"
 })
+
+run_tests()
