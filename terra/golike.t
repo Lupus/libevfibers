@@ -42,7 +42,7 @@ local function castmethod(from,to,exp)
 		local cst = self:createcast(from.type,exp)
 		return cst
 	elseif to:isstruct() and from == niltype then
-		return `to { 0 }
+		return `to { nil, nil }
 	elseif from:isstruct() and to == &opaque then
 		return `exp.obj
 	end
@@ -99,15 +99,13 @@ function M.Interface(methods)
 			with = a
 		end
 		if with:gettype() == niltype then
-			return quote
-				var mask = (1ULL << 48) - 1
-				var obj = [&uint8](mask and iface.data)
-			in
-				obj ~= nil
-			end
+			return `iface.obj == nil
 		end
 		error(("invalid comparison between %s and %s"):format(
 				a:gettype(), b:gettype()))
+	end)
+	self.type.metamethods.__ne = macro(function(a, b)
+		return `not (a == b)
 	end)
 	return self.type
 end
