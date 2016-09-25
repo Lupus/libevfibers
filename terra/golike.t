@@ -26,6 +26,10 @@ local S = require("std")
 
 local M = {}
 
+local struct This {}
+
+M.This = This
+
 local interface = {}
 interface.__index = interface
 
@@ -63,6 +67,9 @@ function M.Interface(methods)
 	for k,v in pairs(methods) do
 		-- print(k," = ",v)
 		assert(v:ispointer() and v.type:isfunction())
+		if v.type.returntype == This then
+			v.type.returntype = self.type
+		end
 		local params,rets = terralib.newlist{&opaque}, v.type.returntype
 		local syms = terralib.newlist()
 		for i,p in ipairs(v.type.parameters) do
