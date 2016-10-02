@@ -253,6 +253,7 @@ terralib.saveobj("run_tests", "executable", {
 	"-Wl,-rpath", "-Wl,../build",
 	"-levfibers",
 	"-ltalloc",
+	"-lunwind",
 	"-pthread"
 })
 
