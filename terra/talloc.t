@@ -92,8 +92,16 @@ M.set_destructor = macro(function(ctx, destructor)
 	return `C._talloc_set_destructor(ctx, df)
 end)
 
-M.steal = macro(function(new_ctx, ptr)
+local function assert_ptr_get_type(ptr)
 	local typ = ptr:gettype()
+	if not typ:ispointer() then
+		error(("%s is not a pointer at %s"):format(ptr, location(ptr)))
+	end
+	return typ
+end
+
+M.steal = macro(function(new_ctx, ptr)
+	local typ = assert_ptr_get_type(ptr)
 	return `[&typ](C._talloc_steal_loc(new_ctx, ptr, [location(new_ctx)]))
 end)
 
@@ -109,7 +117,7 @@ M.set_name = macro(function(ptr, fmt, ...)
 end)
 
 M.move = macro(function(new_ctx, ptr)
-	local typ = ptr:gettype()
+	local typ = assert_ptr_get_type(ptr)
 	return `[&typ](C._talloc_move(new_ctx, &ptr))
 end)
 
@@ -151,7 +159,7 @@ end)
 M.get_name = C.talloc_get_name
 
 M.check_name = macro(function(ctx, name)
-	local typ = ptr:gettype()
+	local typ = assert_ptr_get_type(ctx)
 	return `[&typ](C.talloc_check_name(ctx, name))
 end)
 
@@ -161,7 +169,7 @@ M.total_size = C.talloc_total_size
 M.total_blocks = C.talloc_total_blocks
 
 M.memdup = macro(function(new_ctx, ptr, size)
-	local typ = ptr:gettype()
+	local typ = assert_ptr_get_type(ptr)
 	return `[&typ](C._talloc_memdup(new_ctx, ptr, size,
 			[location(new_ctx)]))
 end)
@@ -173,7 +181,7 @@ M.find_parent_bytype = macro(function(ctx, typ)
 end)
 
 M.reference = macro(function(ctx, ptr)
-	local typ = ptr:gettype()
+	local typ = assert_ptr_get_type(ptr)
 	return `[&typ](C._talloc_reference_loc(ctx, ptr, [location(ctx)]))
 end)
 
@@ -214,7 +222,7 @@ M.realloc_array = macro(function(ctx, ptr, typ, count)
 end)
 
 M.realloc_size = macro(function(ctx, ptr, size)
-	local typ = ptr:gettype()
+	local typ = assert_ptr_get_type(ptr)
 	return `[&typ](C._talloc_realloc(ctx, ptr, size, [location(ctx)]))
 end)
 
