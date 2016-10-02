@@ -242,6 +242,7 @@ terra run_tests()
 	var srunner = check.SRunner.alloc(suite)
 	srunner:run_all()
 	srunner:delete()
+	return 0
 end
 
 terralib.saveobj("run_tests", "executable", {
