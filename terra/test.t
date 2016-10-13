@@ -230,6 +230,7 @@ end
 terra evfibers_suite()
 	var suite = check.Suite.alloc("evfibers-terra")
 	suite:add_tcase([require("tests.talloc").tcase]())
+	suite:add_tcase([require("tests.fds").tcase]())
 	suite:add_tcase([require("tests.util").tcase]())
 	suite:add_tcase([require("tests.ev").tcase]())
 	suite:add_tcase([require("tests.containers").tcase]())
