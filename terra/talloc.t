@@ -188,7 +188,7 @@ end)
 
 M.reference = macro(function(ctx, ptr)
 	local typ = assert_ptr_get_type(ptr)
-	return `[&typ](C._talloc_reference_loc(ctx, ptr, [location(ctx)]))
+	return `[typ](C._talloc_reference_loc(ctx, ptr, [location(ctx)]))
 end)
 
 M.unlink = macro(function(ctx, ptr)
