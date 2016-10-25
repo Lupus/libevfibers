@@ -56,6 +56,12 @@ M.free = macro(function(ctx)
 	end
 end)
 
+M.defer_free = macro(function(ctx)
+	return quote
+		defer C._talloc_free(ctx, [location(ctx)])
+	end
+end)
+
 M.free_children = terra(ctx: &opaque)
 	C.talloc_free_children(ctx)
 end
