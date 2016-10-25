@@ -21,6 +21,7 @@
 local C = terralib.includecstring[[
 
 #include <stdlib.h>
+#include <string.h>
 
 ]]
 
@@ -39,6 +40,32 @@ ByteSlice.metamethods.__cast = function(from,to,exp)
 	end
 	error(("invalid cast from %s to %s"):format(from, to))
 end
+ByteSlice.metamethods.__eq = macro(function(a, b)
+	local bslice
+	local with
+	if a:gettype() == ByteSlice then
+		bslice = a
+		with = b
+	else
+		bslice = b
+		with = a
+	end
+	if with:gettype() == niltype then
+		return `bslice.ptr == nil
+	end
+	if with:gettype() == ByteSlice then
+		return quote
+			var diff = bslice.size - with.size
+			if diff == 0 then
+				diff = C.memcmp(bslice, with, with.size)
+			end
+		in
+			diff == 0
+		end
+	end
+	error(("invalid comparison between %s and %s"):format(
+			a:gettype(), b:gettype()))
+end)
 
 local struct CString {
 	ptr: &int8,
@@ -49,8 +76,12 @@ M.CString = CString
 CString.metamethods.__cast = function(from,to,exp)
 	if to:ispointer() and to.type == int8 then
 		return `exp.ptr
+	elseif to == &opaque then
+		return `[&opaque](exp.ptr)
 	elseif from:ispointer() and from.type == int8 then
 		return `CString { exp }
+	elseif from == &opaque then
+		return `CString { [&int8](exp) }
 	elseif from == niltype then
 		return `CString { nil }
 	elseif to == M.ByteSlice then 
@@ -71,6 +102,9 @@ CString.metamethods.__eq = macro(function(a, b)
 	end
 	if with:gettype() == niltype then
 		return `cstr.ptr == nil
+	end
+	if with:gettype() == &int8 or with:gettype() == CString then
+		return `C.strcmp(cstr, with) == 0
 	end
 	error(("invalid comparison between %s and %s"):format(
 			a:gettype(), b:gettype()))
