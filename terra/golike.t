@@ -116,7 +116,12 @@ function interface:createcast(from,exp)
 		local impl = terralib.newlist()
 		for _,m in ipairs(self.methods) do
 			local fn = from.methods[m.name]
-			assert(fn)
+			if not fn then
+				local msg
+				msg = "type %s lacks method %s = %s to satisfy the interface"
+				error(msg:format(tostring(from), m.name,
+						tostring(m.type)))
+			end
 			if not terralib.isfunction(fn) then
 				-- assume it's a macro
 				fn = terra([m.syms])
