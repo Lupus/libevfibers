@@ -24,6 +24,7 @@ local ev = require("ev")
 local util = require("util")
 local golike = require("golike")
 local talloc = require("talloc")
+local errors = require("errors")
 
 local CString = util.CString
 
@@ -45,6 +46,8 @@ int wrap_errno() {
 terralib.linklibrary("../build/libevfibers.so")
 
 local M = {}
+
+local EContext = errors.new("FiberContext")
 
 M.SUCCESS        = C.FBR_SUCCESS
 M.EINVAL         = C.FBR_EINVAL
@@ -124,41 +127,14 @@ terra Context:__destruct()
 	C.fbr_destroy(self)
 end
 
-local ErrorCode = int
-M.ErrorCode = ErrorCode
-
-local struct Error(talloc.Object) {
-	fctx: &Context
-	code: ErrorCode
-	errno: int
-}
-
-terra Error:__init(fctx: &Context, code: ErrorCode, errno: int)
-	self.fctx = fctx
-	talloc.reference(self, fctx)
-	self.code = code
-	self.errno = errno
-end
-
-terra Error:__destruct()
-	util.assert(talloc.unlink(self, self.fctx), "unable to \z
-				talloc.unlink Context from self")
-end
-
-terra Error:to_string()
-	if self.code == M.ESYSTEM then
-		return CString.sprintf("system error: %s",
-				C.strerror(self.errno))
-	else
-		return CString.sprintf("evfibers error: %s",
-				C.fbr_strerror(self.fctx, self.code))
-	end
-end
-
-
 terra Context:last_error()
-	-- FIXME: allocate this per fiber
-	return Error.talloc(self, self, self.fctx.f_errno, C.wrap_errno())
+	if self.fctx.f_errno == M.ESYSTEM then
+		return EContext.talloc(nil, "system error: %s",
+				C.strerror(C.wrap_errno()))
+	else
+		return EContext.talloc(nil, "evfibers error: %s",
+				C.fbr_strerror(&self.fctx, self.fctx.f_errno))
+	end
 end
 
 local LogLevel = int
