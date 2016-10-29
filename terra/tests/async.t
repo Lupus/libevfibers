@@ -20,6 +20,7 @@
 
 local S = require("std")
 local check = require("check")
+local twraps = require("twraps")
 local talloc = require("talloc")
 local ev = require("ev")
 local fbr = require("evfibers")
@@ -37,42 +38,10 @@ terra test_invoke(loop: &ev.Loop, fctx: &fbr.Context, i: int, ctx: &opaque)
 	check.assert(retval == 0)
 end
 
-local TestFunc = {&ev.Loop, &fbr.Context, int, &opaque} -> {}
-
-local struct TestRunnerFiber(fbr.Fiber) {
-	loop: &ev.Loop
-	i: int
-	fn: TestFunc
-}
-
-terra TestRunnerFiber:__init(loop: &ev.Loop, i: int, fn: TestFunc)
-	self.loop = loop
-	self.i = i
-	self.fn = fn
-end
-
-terra TestRunnerFiber:run(fctx: &fbr.Context)
-	fctx:sleep(0)
-	fctx:log_d("in fiber!")
-	self.fn(self.loop, fctx, self.i, self)
-end
-
-local tfwrap = macro(function(test_fn)
-	return terra(i: int)
-		var ctx = talloc.new(nil)
-		var loop = ev.Loop.talloc(ctx)
-		var fctx = fbr.Context.talloc(ctx, loop)
-		fctx:set_log_level(fbr.LOG_DEBUG)
-		TestRunnerFiber.create(fctx, ctx, loop, i, test_fn):transfer()
-		loop:run()
-		ctx:free()
-	end
-end)
-
 return {
 	tcase = terra()
 		var tc = check.TCase.alloc("async")
-		tc:add_test(tfwrap(test_invoke))
+		tc:add_test(twraps.fiber_wrap(test_invoke))
 		return tc
 	end
 }
