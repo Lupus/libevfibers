@@ -230,6 +230,7 @@ end
 terra evfibers_suite()
 	var suite = check.Suite.alloc("evfibers-terra")
 	suite:add_tcase([require("tests.talloc").tcase]())
+	suite:add_tcase([require("tests.async").tcase]())
 	suite:add_tcase([require("tests.fds").tcase]())
 	suite:add_tcase([require("tests.util").tcase]())
 	suite:add_tcase([require("tests.ev").tcase]())
@@ -239,6 +240,8 @@ terra evfibers_suite()
 end
 
 terra run_tests()
+	fbr.static_init()
+
 	var suite = evfibers_suite()
 	var srunner = check.SRunner.alloc(suite)
 	srunner:run_all()

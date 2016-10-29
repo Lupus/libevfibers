@@ -40,12 +40,18 @@ int wrap_errno() {
 }
 
 #include <evfibers/fiber.h>
+#include <evfibers/eio.h>
 
 ]]
 
 terralib.linklibrary("../build/libevfibers.so")
 
+
 local M = {}
+
+terra M.static_init()
+	C.fbr_eio_init()
+end
 
 local EContext = errors.new("FiberContext")
 
