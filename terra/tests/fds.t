@@ -81,6 +81,7 @@ terra fiber_server(fctx: &fbr.Context)
 
 	var conn : &fds.AsyncFDConn
 	conn, err = l:accept(ctx)
+	check.assert(err == nil)
 
 	fctx:log_d("hello from reader!")
 

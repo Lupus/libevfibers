@@ -395,7 +395,7 @@ terra AsyncFDListener:accept(ctx: &opaque) : {&AsyncFDConn, IError}
 	conn.remote_addr.len = conn.remote_addr:capacity()
 	var result = C.fbr_accept(self.fctx, self.fd, conn.remote_addr,
 			&conn.remote_addr.len)
-	if result ~= 0 then
+	if result < 0 then
 		err = self.fctx:last_error()
 		goto on_error
 	end
@@ -420,7 +420,7 @@ terra M.dial(ctx: &opaque, fctx: &fbr.Context, kind: CString, name: CString,
 
 	var result = C.fbr_connect(fctx, conn.fd, conn.remote_addr,
 			conn.remote_addr.len)
-	if result ~= 0 then
+	if result < 0 then
 		err = fctx:last_error()
 		goto on_error
 	end
