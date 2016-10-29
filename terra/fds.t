@@ -195,6 +195,7 @@ terra Address:resolve(kind: CString, name: CString, service: CString) : IError
 		end
 		C.memcpy(&self.ss, res.ai_addr, res.ai_addrlen)
 		self.len = res.ai_addrlen
+		C.freeaddrinfo(res)
 	end
 	return nil
 end
