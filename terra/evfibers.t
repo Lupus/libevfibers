@@ -219,6 +219,12 @@ terra fiber_trampoline(fiber_context: &C.fbr_context, arg_: &opaque)
 	-- and thus we can just cast from one to another
 	var fctx = [&Context](fiber_context)
 	var arg = [&TrampolineArg](arg_)
+	-- organizing fibers in trees does not make sense, as force reclaim is
+	-- not feasible (see below), and thus when parent fiber is being
+	-- reclaimed, it will only be able to wait for children to finish
+	C.fbr_disown(fctx, C.FBR_ID_NULL)
+	-- terra fibers always run in noreclaim block, as force reclaim of terra
+	-- fiber might leak resources due to the presence of `defer`.
 	C.fbr_set_noreclaim(fctx, fctx:self())
 	arg.fiber:run(fctx)
 	C.fbr_set_reclaim(fctx, fctx:self())
