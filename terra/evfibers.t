@@ -202,8 +202,8 @@ terra SimpleFiber:run(fctx: &Context)
 	self.func(fctx)
 end
 
-terra M.simple_fiber(ctx: &opaque, fn: {&Context} -> {}) : IFiber
-	return SimpleFiber.talloc(ctx, fn)
+terra M.simple_fiber(fn: {&Context} -> {}) : IFiber
+	return SimpleFiber.talloc(talloc.autofree_context(), fn)
 end
 
 local struct TrampolineArg(talloc.Object) {

@@ -21,6 +21,7 @@
 local S = require("std")
 local primitive = require("primitive")
 local check = require("check")
+local twraps = require("twraps")
 local talloc = require("talloc")
 local fds = require("fds")
 local errors = require("errors")
@@ -30,7 +31,7 @@ local fbr = require("evfibers")
 local CString = primitive.CString
 local IError = errors.IError
 
-terra test_address(i: int, ctx: &opaque)
+terra test_address(loop: &ev.Loop, fctx: &fbr.Context, i: int, ctx: &opaque)
 	var addr = fds.Address.talloc(ctx)
 	var err : IError
 	err = addr:resolve("tcp", "1.2.3.4", "http")
@@ -84,8 +85,6 @@ terra fiber_server(fctx: &fbr.Context)
 	check.assert(err == nil)
 
 	fctx:log_d("hello from reader!")
-
-
 	return
 end
 
@@ -102,18 +101,15 @@ terra fiber_client(fctx: &fbr.Context)
 	return
 end
 
-terra test_client_server(i: int, ctx: &opaque)
-	var loop = ev.Loop.talloc(ctx)
-	var fctx = fbr.Context.talloc(ctx, loop)
-	fctx:set_log_level(fbr.LOG_DEBUG)
-	var id1 = fctx:create("server", fbr.simple_fiber(ctx, fiber_server))
+terra test_client_server(loop: &ev.Loop, fctx: &fbr.Context, i: int,
+		ctx: &opaque)
+	var id1 = fctx:create("server", fbr.simple_fiber(fiber_server))
 	fctx:transfer(id1)
-	var id2 = fctx:create("client", fbr.simple_fiber(ctx, fiber_client))
+	var id2 = fctx:create("client", fbr.simple_fiber(fiber_client))
 	fctx:transfer(id2)
-	loop:run()
 end
 
-terra test_basic(i: int, ctx: &opaque)
+terra test_basic(loop: &ev.Loop, fctx: &fbr.Context, i: int, ctx: &opaque)
 	var fd = fds.AsyncFD.talloc(ctx, 666)
 	var err : IError = fd:close()
 	check.assert(err ~= nil)
@@ -133,20 +129,12 @@ terra test_basic(i: int, ctx: &opaque)
 	check.assert(err == nil)
 end
 
-local twrap = macro(function(test_fn)
-	return terra(i: int)
-		var ctx = talloc.new(nil)
-		test_fn(i, ctx)
-		ctx:free()
-	end
-end)
-
 return {
 	tcase = terra()
 		var tc = check.TCase.alloc("fds")
-		tc:add_test(twrap(test_address))
-		tc:add_test(twrap(test_basic))
-		tc:add_test(twrap(test_client_server))
+		tc:add_test(twraps.fiber_wrap(test_address))
+		tc:add_test(twraps.fiber_wrap(test_basic))
+		tc:add_test(twraps.fiber_wrap(test_client_server))
 		return tc
 	end
 }
