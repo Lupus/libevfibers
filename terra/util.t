@@ -331,4 +331,8 @@ M.inv_start = terralib.intrinsic("llvm.invariant.start",
 M.inv_end = terralib.intrinsic("llvm.invariant.end",
 		{&inv_struct,int64,&int8} -> {})
 
+local in_jit = global(bool, false)
+(terra() in_jit = true end)()
+M.is_in_jit = macro(function() return `in_jit == true end)
+
 return M
