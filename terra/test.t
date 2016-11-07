@@ -24,6 +24,7 @@ local check = require("check")
 local talloc = require("talloc")
 local ev = require("ev")
 local fbr = require("evfibers")
+local util = require("util")
 
 local m = global(&fbr.Mutex)
 local c1 = global(&fbr.CondVar)
@@ -246,6 +247,19 @@ terra test_fiber_mt(i: int, ctx: &opaque)
 
 	check.assert(sf.i == 13)
 end
+
+local function test_lua_fibers()
+	local ctx = (terra() return talloc.new(nil) end)()
+	local loop = (terra() return ev.Loop.talloc(ctx) end)()
+	local fctx = (terra() return fbr.Context.talloc(ctx, loop) end)()
+	(terra() S.printf("fctx: %p\n", fctx) end)()
+	local lf = fbr.create_lua_fiber(fctx, "foo", function() print("XXX") end)
+	print(lf)
+	print("doing transfer to lua fiber")
+	lf:transfer()
+end
+
+test_lua_fibers()
 
 local twrap = macro(function(test_fn)
 	return terra(i: int)

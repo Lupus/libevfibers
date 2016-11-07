@@ -33,10 +33,18 @@ terralib.includepath = terralib.includepath .. ";../include;../build/include"
 local C = terralib.includecstring[[
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 
 int wrap_errno() {
 	return errno;
+}
+
+#include <lua5.1/lua.h>
+#include <lua5.1/lauxlib.h>
+
+int wrap_lua_registry_index() {
+	return LUA_REGISTRYINDEX;
 }
 
 #include <evfibers/fiber.h>
@@ -435,5 +443,120 @@ function M.Fiber(T)
 		self.fctx:yield()
 	end
 end
+
+local struct LuaTrampolineArg(talloc.Object) {
+	source_L: &C.lua_State
+}
+
+terra LuaTrampolineArg:__init(source_L: &C.lua_State)
+	self.source_L = source_L
+end
+
+terra lua_dump_stack(L: &C.lua_State)
+	var i: int
+	var top = C.lua_gettop(L)
+	S.printf("*** Lua stack ***\n")
+	for i = 1,top+1 do
+		var t = C.lua_type(L, i)
+		if t == C.LUA_TSTRING then
+			C.printf("%d: `%s'", i, C.lua_tolstring(L, i, nil))
+		elseif t == C.LUA_TBOOLEAN then
+			if C.lua_toboolean(L, i) ~= 0 then
+				C.printf("%d: true")
+			else
+				C.printf("%d: false")
+			end
+		elseif t == C.LUA_TNUMBER then
+			C.printf("%d: %g", i, C.lua_tonumber(L, i))
+		else
+			S.printf("%d: %s", i, C.lua_typename(L, t))
+		end
+		C.printf("\n")
+	end
+	C.printf("\n");
+end
+
+terra lua_fiber_trampoline(fiber_context: &C.fbr_context, arg_: &opaque)
+	-- we assume fiber_context is pointer to the first member of Context,
+	-- and thus we can just cast from one to another
+	var fctx = [&Context](fiber_context)
+	var arg = [&LuaTrampolineArg](arg_)
+	-- see rationale for disown and noreclaim in the above trampoline
+	C.fbr_disown(fctx, C.FBR_ID_NULL)
+	C.fbr_set_noreclaim(fctx, fctx:self())
+
+	var L = C.lua_newthread(arg.source_L)
+	var ref = C.luaL_ref(arg.source_L, C.wrap_lua_registry_index())
+	C.lua_xmove(arg.source_L, L, 1)
+	C.fbr_yield(fctx)
+	var status = C.lua_pcall(L, 0, 0, 0);
+	if status ~= 0 then
+		fctx:log_e("lua_fiber_trampoline: lua_pcall(): %s",
+				C.lua_tolstring(L, -1, nil))
+		C.abort()
+	end
+	-- FIXME: what if arg.source_L is already destroyed?
+	C.luaL_unref(arg.source_L, C.wrap_lua_registry_index(), ref)
+
+	C.fbr_set_reclaim(fctx, fctx:self())
+	arg:free()
+end
+
+local LUA_TCDATA = 10 -- magic!
+
+local lua_cdata_ptr = macro(function(L, i, type)
+	type = type:astype()
+	return quote
+		var ptr : &type
+		C.luaL_checktype(L, i, LUA_TCDATA)
+		ptr = [&type](C.lua_topointer(L, i))
+	in
+		@ptr
+	end
+end)
+
+local lua_cdata = macro(function(L, i, type)
+	type = type:astype()
+	return quote
+		var ptr : &type
+		C.luaL_checktype(L, i, LUA_TCDATA)
+		ptr = [&type](C.lua_topointer(L, i))
+	in
+		ptr
+	end
+end)
+
+terra create_lua_fiber(L : &C.lua_State) : int
+	var fctx = lua_cdata_ptr(L, 1, [&Context])
+	var fiber_name = C.luaL_checklstring(L, 2, nil)
+	C.luaL_checktype(L, 3, C.LUA_TFUNCTION)
+	var id_ptr = lua_cdata(L, 4, [C.fbr_id_t])
+	C.lua_pushvalue(L, 3)
+
+	var arg = LuaTrampolineArg.talloc(fctx, L)
+	var id = C.fbr_create(fctx, fiber_name, lua_fiber_trampoline,
+			[&int8](arg), 0)
+	fctx:transfer(id)
+
+	@id_ptr = id
+	return 0
+end
+
+local b_create_lua_fiber = terralib.bindtoluaapi(create_lua_fiber:getpointer())
+
+local struct LuaFiber(M.Fiber) {
+}
+
+function M.create_lua_fiber(fctx, name, fn)
+	local id = terralib.new(C.fbr_id_t)
+	b_create_lua_fiber(fctx, name, fn, id)
+	local f = LuaFiber.methods.lua_talloc(fctx)
+	f.fctx = fctx
+	local fid = terralib.new(M.FiberID)
+	fid.id = id
+	f.fid = fid
+	return f
+end
+
 
 return M

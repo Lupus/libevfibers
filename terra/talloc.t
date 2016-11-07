@@ -35,11 +35,16 @@ local function location(what)
 end
 
 local talloc = macro(function(ctx, typ)
-	typ = typ.tree.value -- get underlying type from luaobjecttype
+	typ = typ:astype()
 	return `[&typ](C.talloc_named_const(ctx, sizeof(typ), [tostring(typ)]))
 end)
 
 M.talloc = talloc
+
+M.lua_talloc = function(ctx, typ)
+	return terralib.cast(&typ, C.talloc_named_const(ctx,
+			terralib.sizeof(typ), tostring(typ)))
+end
 
 M.init = macro(function(fmt, ...)
 	assert(fmt:gettype() == &int8,
@@ -313,6 +318,18 @@ local function install_mt(T, options)
 			ptr
 		end
 	end)
+	T.methods.lua_talloc = function(ctx, ...)
+		local ptr = M.lua_talloc(ctx, T)
+		local ctor = T:getmethod("__init")
+		if ctor then
+			ctor(ptr, ...)
+		end
+		local dtor = T:getmethod("__destruct")
+		if dtor then
+			M.set_destructor(ptr, dtor)
+		end
+		return ptr
+	end
 	if options.enable_salloc then
 		T.methods.salloc = macro(function(...)
 			local ptr = symbol(&T)
