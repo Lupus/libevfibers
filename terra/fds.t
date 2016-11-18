@@ -257,6 +257,8 @@ Address.methods.name_info = macro(function(self, ...)
 	end
 end)
 
+talloc.complete_type(Address)
+
 local IFD = golike.Interface({
 	close = {} -> {}
 })
@@ -307,6 +309,8 @@ M.AsyncFD = AsyncFD
 
 fd_common(AsyncFD)
 
+talloc.complete_type(AsyncFD)
+
 local terra socket_wrap(ctx: &opaque, domain: int, type: int, protocol: int)
 	var fd : &AsyncFD = nil
 	var result, err = ecall2(nil, "socket", domain, type, protocol)
@@ -349,6 +353,8 @@ local struct AsyncFDListener(talloc.Object) {
 	addr: &Address
 }
 
+talloc.complete_type(AsyncFDListener)
+
 M.AsyncFDListener = AsyncFDListener
 
 terra M.listen(ctx: &opaque, fctx: &fbr.Context, kind: CString, name: CString, service: CString)
@@ -385,6 +391,8 @@ local struct AsyncFDConn(talloc.Object) {
 	local_addr: &Address
 	remote_addr: &Address
 }
+
+talloc.complete_type(AsyncFDConn)
 
 M.AsyncFDConn = AsyncFDConn
 

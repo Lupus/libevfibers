@@ -237,6 +237,8 @@ terra SampleFiber:run(fctx: &fbr.Context)
 	self:yield()
 end
 
+fbr.complete_fiber_type(SampleFiber)
+
 terra test_fiber_mt(i: int, ctx: &opaque)
 	var loop = ev.Loop.talloc(ctx)
 	var fctx = fbr.Context.talloc(ctx, loop)

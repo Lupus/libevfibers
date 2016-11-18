@@ -102,7 +102,6 @@ terra Backtrace:capture()
 	self.count = n - 1
 end
 
-
 terra Backtrace:string() : CString
 	var ptr = talloc.strdup(self, "")
 	for i = 0,self.count do
@@ -127,6 +126,9 @@ terra Backtrace:string() : CString
 	end
 	return ptr
 end
+
+talloc.complete_type(Backtrace)
+
 
 local IError = golike.Interface({
 	string = {} -> &CString,
@@ -197,6 +199,7 @@ function M.new(name)
 		end
 		return self.msg_verbose
 	end
+	talloc.complete_type(error_impl)
 	return error_impl
 end
 

@@ -31,6 +31,8 @@ local struct User {
 	groups: &&int8,
 }
 
+talloc.complete_type(User)
+
 terra User:destructor()
 	dtor_called = true
 end
@@ -53,7 +55,7 @@ terra test_user(i: int)
 	check.assert(dtor_called)
 end
 
-local struct User2(talloc.ObjectWithOptions({enable_salloc = true})) {
+local struct User2(talloc.Object) {
 	uid: int
 	username: &int8
 	num_groups: int,
@@ -67,6 +69,8 @@ end
 terra User2:__destruct()
 	dtor_called = true
 end
+
+talloc.complete_type(User2,{enable_salloc = true})
 
 terra user_salloc()
 	var user2 = User2.salloc(42)

@@ -53,6 +53,8 @@ terra TestRunnerFiber:run(fctx: &fbr.Context)
 	self.fn(self.loop, fctx, self.i, self.ctx)
 end
 
+fbr.complete_fiber_type(TestRunnerFiber)
+
 M.fiber_wrap = macro(function(test_fn)
 	return terra(i: int)
 		var ctx = talloc.new(nil)

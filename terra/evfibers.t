@@ -132,7 +132,6 @@ Context.metamethods.__cast = function(from,to,exp)
 	error(("invalid cast from %s to %s"):format(from, to))
 end
 
-
 terra Context:__init(loop: &ev.Loop)
 	C.fbr_init(self, loop)
 end
@@ -210,6 +209,8 @@ terra SimpleFiber:run(fctx: &Context)
 	self.func(fctx)
 end
 
+talloc.complete_type(SimpleFiber)
+
 terra M.simple_fiber(fn: {&Context} -> {}) : IFiber
 	return SimpleFiber.talloc(talloc.autofree_context(), fn)
 end
@@ -221,6 +222,8 @@ local struct TrampolineArg(talloc.Object) {
 terra TrampolineArg:__init(fiber: IFiber)
 	self.fiber = fiber
 end
+
+talloc.complete_type(TrampolineArg)
 
 terra fiber_trampoline(fiber_context: &C.fbr_context, arg_: &opaque)
 	-- we assume fiber_context is pointer to the first member of Context,
@@ -276,6 +279,8 @@ terra Mutex:unlock()
 	C.fbr_mutex_unlock(self.fctx, self)
 end
 
+talloc.complete_type(Mutex)
+
 
 local struct CondVar(talloc.Object) {
 	fctx: &Context
@@ -320,6 +325,8 @@ end
 terra CondVar:broadcast()
 	C.fbr_cond_broadcast(self.fctx, self)
 end
+
+talloc.complete_type(CondVar)
 
 Context.methods.ev_wait = macro(function(self, ...)
 	local args = {...}
@@ -413,6 +420,8 @@ Context.methods.ev_wait = macro(function(self, ...)
 	end
 end)
 
+talloc.complete_type(Context)
+
 function M.Fiber(T)
 	local fld = function(name) return ("_fiber_%s"):format(name) end
 	T.entries:insert({
@@ -444,6 +453,10 @@ function M.Fiber(T)
 	end
 end
 
+function M.complete_fiber_type(T)
+	talloc.complete_type(T)
+end
+
 local struct LuaTrampolineArg(talloc.Object) {
 	source_L: &C.lua_State
 }
@@ -451,6 +464,8 @@ local struct LuaTrampolineArg(talloc.Object) {
 terra LuaTrampolineArg:__init(source_L: &C.lua_State)
 	self.source_L = source_L
 end
+
+talloc.complete_type(LuaTrampolineArg)
 
 terra lua_dump_stack(L: &C.lua_State)
 	var i: int
@@ -547,10 +562,12 @@ local b_create_lua_fiber = terralib.bindtoluaapi(create_lua_fiber:getpointer())
 local struct LuaFiber(M.Fiber) {
 }
 
+M.complete_fiber_type(LuaFiber)
+
 function M.create_lua_fiber(fctx, name, fn)
 	local id = terralib.new(C.fbr_id_t)
 	b_create_lua_fiber(fctx, name, fn, id)
-	local f = LuaFiber.methods.lua_talloc(fctx)
+	local f = LuaFiber.methods.talloc(fctx)
 	f.fctx = fctx
 	local fid = terralib.new(M.FiberID)
 	fid.id = id

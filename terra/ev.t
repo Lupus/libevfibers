@@ -184,6 +184,8 @@ terra Loop:feed_signal_event(signum: int)
 	C.ev_feed_signal_event(self.loop, signum)
 end
 
+talloc.complete_type(Loop)
+
 local function gen_watcher(name)
 	local w_type = C["ev_"..name]
 	local watcher_impl = terralib.types.newstruct("WatcherImpl_"..name)
@@ -241,6 +243,7 @@ local function gen_watcher(name)
 	terra watcher_impl:feed(revents: int)
 		C.ev_feed_event(self.loop, self, revents)
 	end
+	talloc.complete_type(watcher_impl)
 	return watcher_impl
 end
 

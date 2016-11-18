@@ -299,36 +299,63 @@ local function install_mt(T, options)
 	terra T.methods.free(self: &T)
 		M.free(self)
 	end
-	T.methods.talloc = macro(function(ctx, ...)
-		local ptr = symbol(&T)
-		local stmts = terralib.newlist()
-		local ctor = T:getmethod("__init")
-		if ctor then
+end
+
+function M.Object(T)
+	install_mt(T)
+end
+
+function M.ObjectWithOptions(options)
+	return function(T)
+		install_mt(T, options)
+	end
+end
+
+function M.complete_type(T, options)
+	if not options then
+		options = defalt_options
+	end
+	local ctor = T:getmethod("__init")
+	local dtor = T:getmethod("__destruct")
+	if ctor and type(ctor.gettype) ~= "function" then
+		-- it's a macro
+		T.methods.talloc = macro(function(ctx, ...)
+			local stmts = terralib.newlist()
+			local ptr = symbol(&T)
 			local args = {ptr, ...}
 			stmts:insert(`ctor([args]))
+			if dtor then
+				stmts:insert(`M.set_destructor(ptr, dtor))
+			end
+			return quote
+				var [ptr] = M.talloc(ctx, [T])
+				[stmts]
+			in
+				ptr
+			end
+		end)
+	else
+		-- it's a terra function (or no ctor at all)
+		local ptr = symbol(&T)
+		local stmts = terralib.newlist()
+		local ctor_extra_args = terralib.newlist()
+		if ctor then
+			for i, v in ipairs(ctor:gettype().parameters) do
+				if i > 1 then -- ignore first `self` parameter
+					ctor_extra_args:insert(symbol(v))
+				end
+			end
+			stmts:insert(`ctor(ptr, [ctor_extra_args]))
 		end
 		if T:getmethod("__destruct") then
 			local dtor = T:getmethod("__destruct")
 			stmts:insert(`M.set_destructor(ptr, dtor))
 		end
-		return quote
+		T.methods.talloc = terra(ctx: &opaque, [ctor_extra_args])
 			var [ptr] = M.talloc(ctx, [T])
 			[stmts]
-		in
-			ptr
+			return ptr
 		end
-	end)
-	T.methods.lua_talloc = function(ctx, ...)
-		local ptr = M.lua_talloc(ctx, T)
-		local ctor = T:getmethod("__init")
-		if ctor then
-			ctor(ptr, ...)
-		end
-		local dtor = T:getmethod("__destruct")
-		if dtor then
-			M.set_destructor(ptr, dtor)
-		end
-		return ptr
 	end
 	if options.enable_salloc then
 		T.methods.salloc = macro(function(...)
@@ -352,16 +379,6 @@ local function install_mt(T, options)
 				ptr
 			end
 		end)
-	end
-end
-
-function M.Object(T)
-	install_mt(T)
-end
-
-function M.ObjectWithOptions(options)
-	return function(T)
-		install_mt(T, options)
 	end
 end
 

@@ -170,6 +170,7 @@ function M.list_hook(options)
 			type = C.tommy_node,
 		})
 		talloc.Object(T)
+		talloc.complete_type(T)
 	end
 	return hook
 end
@@ -232,6 +233,7 @@ function M.List(T, hook)
 			end
 		end
 	end
+	talloc.complete_type(list_impl)
 	return list_impl
 end
 
@@ -333,6 +335,7 @@ function M.Array(T, options)
 			end
 		end
 	end
+	talloc.complete_type(array_impl)
 	return array_impl
 end
 
@@ -380,6 +383,7 @@ function M.Stack(T, options)
 		self.top = self.top - 1
 		return ret, true
 	end
+	talloc.complete_type(stack_impl)
 	return stack_impl
 end
 
@@ -402,6 +406,7 @@ function M.map_hook(options)
 			type = C.tommy_node,
 		})
 		talloc.Object(T)
+		talloc.complete_type(T)
 	end
 	return hook
 end
@@ -522,6 +527,7 @@ function M.KVMap(K, V, cmp)
 			end
 		end
 	end
+	talloc.complete_type(map_impl)
 	return map_impl
 end
 
@@ -598,6 +604,7 @@ function M.Map(T, hook, cmp)
 			end
 		end
 	end
+	talloc.complete_type(map_impl)
 	return map_impl
 end
 
@@ -696,6 +703,7 @@ function M.KVUnorderedMap(K, V, hash, eq, options)
 	terra map_impl:memory_usage()
 		return [method("memory_usage")](self)
 	end
+	talloc.complete_type(map_impl)
 	return map_impl
 end
 
@@ -767,6 +775,7 @@ function M.UnorderedMap(T, hook, hash, eq, options)
 	if options.flavour == "hashdyn" then
 	elseif options.flavour == "hashlin" then
 	end
+	talloc.complete_type(map_impl)
 	return map_impl
 end
 
@@ -840,6 +849,7 @@ function M.KVTrieMap(V)
 	terra map_impl:memory_usage()
 		return [method("memory_usage")](self)
 	end
+	talloc.complete_type(map_impl)
 	return map_impl
 end
 
@@ -898,6 +908,7 @@ function M.TrieMap(T, hook, key_func)
 	terra map_impl:memory_usage()
 		return [method("memory_usage")](self)
 	end
+	talloc.complete_type(map_impl)
 	return map_impl
 end
 
