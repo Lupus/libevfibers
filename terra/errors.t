@@ -149,7 +149,7 @@ function M.new(name)
 	talloc.Object(error_impl)
 	error_impl.methods.__init = macro(function(self, ...)
 		local args = {...}
-		assert(#args > 1, "at least two arguments are required")
+		assert(#args >= 1, "at least two arguments are required")
 		local loc = ("%s:%d"):format(args[1].tree.filename,
 				args[1].tree.linenumber)
 		return quote
