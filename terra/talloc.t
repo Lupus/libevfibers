@@ -356,6 +356,7 @@ function M.complete_type(T, options)
 			[stmts]
 			return ptr
 		end
+		T.methods.talloc:setname(("%s_talloc_ctor"):format(T))
 	end
 	if options.enable_salloc then
 		T.methods.salloc = macro(function(...)

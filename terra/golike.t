@@ -86,6 +86,8 @@ function M.Interface(methods)
 			var fn = m.type(interface.vtable.[m.name])
 			return fn(interface.obj,[m.syms])
 		end
+		self.type.methods[m.name]:setname(("iface_call_method__%s"):format(
+				m.name))
 	end
 
 	self.type.metamethods.__eq = macro(function(a, b)
