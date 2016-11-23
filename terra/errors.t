@@ -131,10 +131,10 @@ talloc.complete_type(Backtrace)
 
 
 local IError = golike.Interface({
-	string = {} -> &CString,
-	verbose = {} -> &CString,
+	string = {} -> CString,
+	verbose = {} -> CString,
 	caused_by = {} -> golike.This,
-	link = {golike.This} -> golike.This,
+	link = {golike.This} -> {},
 })
 
 M.IError = IError
@@ -181,7 +181,6 @@ function M.new(name)
 	terra error_impl:link(other: IError)
 		talloc.steal(self, [&opaque](other))
 		self.cause = other
-		return self
 	end
 	terra error_impl:verbose()
 		if self.msg_verbose ~= nil then

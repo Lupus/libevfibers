@@ -128,6 +128,29 @@ function interface:createcast(from,exp)
 					return fn([m.sym])
 				end
 			end
+			local iface_ret_type = m.type.type.returntype
+			local fn_ret_type = fn:gettype().returntype
+			if iface_ret_type ~= fn_ret_type then
+				-- it is not possible to cast to interface type
+				-- here, as vtable is not yet defined
+				--
+				-- yeah, not true static duck typing :(
+				assert(iface_ret_type ~= self.type, "invalid \z
+						return value type (must be \z
+						strictly interface type) in \z
+						the following function:\n" ..
+						tostring(fn))
+				-- this wrapping is necessary to ensure an
+				-- explicit cast from actual function return
+				-- type to interface method return type, which
+				-- actually results in an error if types are not
+				-- compatible, otherwise it will just crash in
+				-- the runtime as return value would be some
+				-- trash
+				fn = terra(self: &opaque, [m.syms]) : iface_ret_type
+					return fn([&from](self), [m.syms])
+				end
+			end
 			impl:insert(fn)
 		end
 		instance.vtable = constant(`[self.vtabletype] { [impl] })
