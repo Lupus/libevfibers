@@ -134,7 +134,7 @@ local IError = golike.Interface({
 	string = {} -> CString,
 	verbose = {} -> CString,
 	caused_by = {} -> golike.This,
-	link = {golike.This} -> {},
+	link = {golike.This} -> golike.This,
 })
 
 M.IError = IError
@@ -178,11 +178,12 @@ function M.new(name)
 	terra error_impl:caused_by()
 		return self.cause
 	end
-	terra error_impl:link(other: IError)
+	terra error_impl:link(other: IError) : IError
 		talloc.steal(self, [&opaque](other))
 		self.cause = other
+		return self
 	end
-	terra error_impl:verbose()
+	terra error_impl:verbose() : CString
 		if self.msg_verbose ~= nil then
 			return self.msg_verbose
 		end
