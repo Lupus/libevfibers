@@ -39,8 +39,9 @@ START_TEST(test_key)
 	fbr_key_t key;
 	fbr_key_t key2;
 	void *val;
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 
 	fiber = fbr_create(&context, "key_fiber", NULL, NULL, 0);
 	fail_if(fbr_id_isnull(fiber), NULL);
@@ -88,8 +89,9 @@ START_TEST(test_multiple_keys)
 	int retval;
 	fbr_key_t key;
 	unsigned int i;
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 
 	for (i = 0; i < 64; i++) {
 		retval = fbr_key_create(&context, &key);

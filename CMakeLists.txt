@@ -79,48 +79,37 @@ if(HAVE_UCONTEXT_H)
 	add_definitions(-DHAVE_UCONTEXT_H)
 endif(HAVE_UCONTEXT_H)
 
-find_package(LibEv REQUIRED)
-if(WANT_EIO)
-	find_package(Threads REQUIRED)
-	if(WANT_EMBEDDED_EIO)
-		include(ExternalProject)
-		ExternalProject_Add(
-			libeio
-			PREFIX "${CMAKE_CURRENT_BINARY_DIR}/eio"
-			CVS_REPOSITORY :pserver:anonymous@cvs.schmorp.de/schmorpforge
-			CVS_MODULE libeio
-			CVS_TAG -r rel-4_32
-			UPDATE_COMMAND ""
-			CONFIGURE_COMMAND CFLAGS=-fpic ./configure --enable-static --disable-shared --prefix=${CMAKE_CURRENT_BINARY_DIR}/eio
-			BUILD_IN_SOURCE 1
-			)
-		ExternalProject_Add_Step(libeio autogen
-			COMMAND "./autogen.sh"
-				DEPENDEES update
-				DEPENDERS configure
-			WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/eio/src/libeio"
-		)
-		ExternalProject_Add_Step(libeio autoconf
-			COMMAND "autoconf"
-				DEPENDEES autogen
-				DEPENDERS configure
-			WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/eio/src/libeio"
-		)
-		ExternalProject_Add_Step(libeio mvembedheader
-                        COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/eio/include/eio.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/libeio_embedded.h
-			DEPENDEES install
-		)
-		set(LIBEIO_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/eio/include")
-		set(LIBEIO_LIBRARY
-			"-L${CMAKE_CURRENT_BINARY_DIR}/eio/lib"
-			"${EIO_LD_WHOLE_ARCHIVE}" "-leio" "${EIO_LD_NOWHOLE_ARCHIVE}"
-			"${CMAKE_THREAD_LIBS_INIT}")
-		set(LIBEIO_FOUND TRUE)
-                set(FBR_USE_EMBEDDED_EIO TRUE)
-	else(WANT_EMBEDDED_EIO)
-		find_package(LibEio)
-	endif(WANT_EMBEDDED_EIO)
-endif(WANT_EIO)
+include(ExternalProject)
+ExternalProject_Add(
+	libuv
+	PREFIX "${CMAKE_CURRENT_BINARY_DIR}/libuv"
+	GIT_REPOSITORY https://github.com/libuv/libuv.git
+	GIT_TAG v1.11.0
+	UPDATE_COMMAND ""
+	CONFIGURE_COMMAND CFLAGS=-fpic ./configure --enable-static --disable-shared --prefix=${CMAKE_CURRENT_BINARY_DIR}/libuv
+	BUILD_IN_SOURCE 1
+	)
+ExternalProject_Add_Step(libuv autogen
+	COMMAND "./autogen.sh"
+		DEPENDEES update
+		DEPENDERS configure
+	WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/libuv/src/libuv"
+)
+ExternalProject_Add_Step(libuv mvembedheader
+        COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
+	COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv-errno.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
+	COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv-linux.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
+	COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv-threadpool.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
+	COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv-unix.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
+	COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv-version.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
+	DEPENDEES install
+)
+set(LIBUV_LIBRARY
+	"-L${CMAKE_CURRENT_BINARY_DIR}/libuv/lib"
+	"${EIO_LD_WHOLE_ARCHIVE}" "-luv" "${EIO_LD_NOWHOLE_ARCHIVE}"
+	-lrt -lpthread -lnsl -ldl
+	"${CMAKE_THREAD_LIBS_INIT}")
+set(LIBUV_FOUND TRUE)
 
 if(WANT_ASAN)
 	# Force ucontext.h as libcoro backend so as to better interact with ASan
@@ -139,8 +128,6 @@ include_directories(
 	"${CMAKE_CURRENT_SOURCE_DIR}/include"
 	"${CMAKE_CURRENT_BINARY_DIR}/include"
 	"${CMAKE_CURRENT_SOURCE_DIR}/coro"
-	${LIBEV_INCLUDE_DIR}
-	${LIBEIO_INCLUDE_DIR}
 	)
 
 if(WANT_LTO)
@@ -156,12 +143,9 @@ set_target_properties(evfibers
 	VERSION ${VERSION_STRING}
 	)
 target_link_libraries(evfibers
-	${LIBEV_LIBRARY}
-	${LIBEIO_LIBRARY}
+	${LIBUV_LIBRARY}
 	${CMAKE_THREAD_LIBS_INIT})
-if(WANT_EIO AND WANT_EMBEDDED_EIO)
-	add_dependencies(evfibers libeio)
-endif(WANT_EIO AND WANT_EMBEDDED_EIO)
+add_dependencies(evfibers libuv)
 
 add_library(evfibers_static STATIC ${SOURCES})
 set_target_properties(evfibers_static  PROPERTIES
@@ -170,24 +154,15 @@ set_target_properties(evfibers_static  PROPERTIES
 
 if(EVFIBERS_EMBED)
 	set(EVFIBERS_EMBED_LIBS evfibers_static
-		${LIBEV_LIBRARY}
-		${LIBEIO_LIBRARY}
+		${LIBUV_LIBRARY}
 		${CMAKE_THREAD_LIBS_INIT}
 		PARENT_SCOPE)
 endif(EVFIBERS_EMBED)
 
-add_executable(fiber_bench_buffer "${CMAKE_CURRENT_SOURCE_DIR}/bench/buffer.c")
-target_link_libraries(fiber_bench_buffer evfibers ${CMAKE_THREAD_LIBS_INIT})
 add_executable(fiber_bench_condvar "${CMAKE_CURRENT_SOURCE_DIR}/bench/condvar.c")
 target_link_libraries(fiber_bench_condvar evfibers ${CMAKE_THREAD_LIBS_INIT})
 
 # Variables for config.h
-if(WANT_EIO AND THREADS_FOUND AND LIBEIO_FOUND)
-	set(FBR_EIO_ENABLED TRUE)
-	message(STATUS "libeio support has been ENABLED")
-else(WANT_EIO AND THREADS_FOUND AND LIBEIO_FOUND)
-	message(STATUS "libeio support has been DISABLED")
-endif(WANT_EIO AND THREADS_FOUND AND LIBEIO_FOUND)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/include/evfibers/config.h.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/config.h")
 
@@ -220,8 +195,6 @@ if(NOT EVFIBERS_EMBED)
 	file(GLOB DEV_HEADERS2 "${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/*.h")
 	install(FILES ${DEV_HEADERS} ${DEV_HEADERS2}
 		DESTINATION "include/evfibers")
-	if(WANT_EMBEDDED_EIO)
-            install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/libeio_embedded.h 
-                    DESTINATION "include/evfibers")
-	endif(WANT_EMBEDDED_EIO)
+        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/uv.h
+                DESTINATION "include/evfibers")
 endif(NOT EVFIBERS_EMBED)

@@ -25,43 +25,27 @@
 #include "mutex.h"
 #include "cond.h"
 #include "reclaim.h"
-#include "io.h"
 #include "logger.h"
-#include "buffer.h"
 #include "key.h"
-#include "eio.h"
-#include "async-wait.h"
-#include "popen3.h"
 
 Suite *evfibers_suite(void)
 {
 	Suite *s;
-	TCase *tc_init, *tc_mutex, *tc_cond, *tc_reclaim, *tc_io, *tc_logger,
-	      *tc_buffer, *tc_key, *tc_eio, *tc_async_wait, *tc_popen3;
+	TCase *tc_init, *tc_mutex, *tc_cond, *tc_reclaim, *tc_logger, *tc_key;
 
 	s = suite_create ("evfibers");
 	tc_init = init_tcase();
 	tc_mutex = mutex_tcase();
 	tc_cond = cond_tcase();
 	tc_reclaim = reclaim_tcase();
-	tc_io = io_tcase();
 	tc_logger = logger_tcase();
-	tc_buffer = buffer_tcase();
 	tc_key = key_tcase();
-	tc_eio = eio_tcase();
-	tc_async_wait = async_wait_tcase();
-	tc_popen3 = popen3_tcase();
 	suite_add_tcase(s, tc_init);
 	suite_add_tcase(s, tc_mutex);
 	suite_add_tcase(s, tc_cond);
 	suite_add_tcase(s, tc_reclaim);
-	suite_add_tcase(s, tc_io);
 	suite_add_tcase(s, tc_logger);
-	suite_add_tcase(s, tc_buffer);
 	suite_add_tcase(s, tc_key);
-	suite_add_tcase(s, tc_eio);
-	suite_add_tcase(s, tc_async_wait);
-	suite_add_tcase(s, tc_popen3);
 
 	return s;
 }
@@ -79,7 +63,7 @@ int main(void)
 
 	s = evfibers_suite();
 	sr = srunner_create(s);
-	srunner_run_all(sr, CK_NORMAL);
+	srunner_run_all(sr, CK_ENV);
 	number_failed = srunner_ntests_failed(sr);
 	srunner_free(sr);
 	return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;

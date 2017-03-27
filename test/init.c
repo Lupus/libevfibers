@@ -25,8 +25,9 @@
 START_TEST(test_init)
 {
 	struct fbr_context context;
+	uv_loop_t *loop = uv_default_loop();
 	context.__p = NULL;
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 	fail_if(NULL == context.__p, NULL);
 	fbr_destroy(&context);
 }
@@ -35,8 +36,9 @@ END_TEST
 START_TEST(test_init_evloop)
 {
 	struct fbr_context context;
-	fbr_init(&context, EV_DEFAULT);
-	ev_run(EV_DEFAULT, 0);
+	uv_loop_t *loop = uv_default_loop();
+	fbr_init(&context, loop);
+	uv_run(loop, UV_RUN_DEFAULT);
 	//Should return if we do not set up any unnecessary watchers
 	fbr_destroy(&context);
 }

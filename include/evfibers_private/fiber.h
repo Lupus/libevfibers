@@ -181,14 +181,14 @@ struct fbr_context_private {
 	struct fbr_stack_item *sp;
 	struct fbr_fiber root;
 	struct fiber_list reclaimed;
-	struct ev_async pending_async;
+	uv_async_t pending_async;
 	struct fbr_id_tailq pending_fibers;
 	int backtraces_enabled;
 	uint64_t last_id;
 	uint64_t key_free_mask;
 	const char *buffer_file_pattern;
 
-	struct ev_loop *loop;
+	uv_loop_t *loop;
 };
 
 struct fbr_mq {

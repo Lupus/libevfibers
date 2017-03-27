@@ -21,7 +21,6 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <ev.h>
 #include <errno.h>
 #include <evfibers_private/fiber.h>
 
@@ -80,7 +79,7 @@ static void stats_fiber(FBR_P_ void *_arg)
 		diff = arg->count - last;
 		printf("%zd\n", diff);
 		if (count++ > max_samples) {
-			ev_break(fctx->__p->loop, EVBREAK_ALL);
+			uv_stop(fctx->__p->loop);
 		}
 	}
 }
@@ -94,8 +93,9 @@ int main()
 	struct fiber_arg arg = {
 		.count = 0
 	};
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 
 	fbr_mutex_init(&context, &arg.mutex1);
 	fbr_mutex_init(&context, &arg.mutex2);
@@ -118,7 +118,7 @@ int main()
 	retval = fbr_transfer(&context, fiber_stats);
 	assert(0 == retval);
 
-	ev_run(EV_DEFAULT, 0);
+	uv_run(loop, UV_RUN_DEFAULT);
 
 	fbr_cond_destroy(&context, &arg.cond1);
 	fbr_cond_destroy(&context, &arg.cond2);

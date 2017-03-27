@@ -58,8 +58,9 @@ START_TEST(test_logger)
 	struct fbr_context context;
 	fbr_id_t test = FBR_ID_NULL;
 	int retval;
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 
 	fbr_enable_backtraces(&context, 0);
 	fbr_enable_backtraces(&context, 1);

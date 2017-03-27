@@ -34,9 +34,7 @@
 #define VALGRIND_STACK_REGISTER(a,b) (void)0
 #endif
 
-#ifdef FBR_EIO_ENABLED
-#include <evfibers/eio.h>
-#endif
+#undef FBR_EIO_ENABLED
 #include <evfibers_private/fiber.h>
 
 #ifndef LIST_FOREACH_SAFE
@@ -101,7 +99,7 @@ static int fbr_id_unpack(FBR_P_ struct fbr_fiber **ptr, fbr_id_t id)
 	return 0;
 }
 
-static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
+static void pending_async_cb(uv_async_t *w)
 {
 	struct fbr_context *fctx;
 	struct fbr_id_tailq_i *item;
@@ -111,7 +109,7 @@ static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 	ENSURE_ROOT_FIBER;
 
 	if (TAILQ_EMPTY(&fctx->__p->pending_fibers)) {
-		ev_async_stop(EV_A_ &fctx->__p->pending_async);
+		uv_unref((uv_handle_t *)&fctx->__p->pending_async);
 		return;
 	}
 
@@ -120,7 +118,7 @@ static void pending_async_cb(EV_P_ ev_async *w, _unused_ int revents)
 	/* item shall be removed from the queue by a destructor, which shall be
 	 * set by the procedure demanding delayed execution. Destructor
 	 * guarantees removal upon the reclaim of fiber. */
-	ev_async_send(EV_A_ &fctx->__p->pending_async);
+	uv_async_send(&fctx->__p->pending_async);
 
 	retval = fbr_transfer(FBR_A_ item->id);
 	if (-1 == retval && FBR_ENOFIBER != fctx->f_errno) {
@@ -152,7 +150,7 @@ static void stdio_logger(FBR_P_ struct fbr_logger *logger,
 	struct fbr_fiber *fiber;
 	FILE* stream;
 	char *str_level;
-	ev_tstamp tstamp;
+	double tstamp;
 
 	if (level > logger->level)
 		return;
@@ -185,13 +183,13 @@ static void stdio_logger(FBR_P_ struct fbr_logger *logger,
 			stream = stdout;
 			break;
 	}
-	tstamp = ev_now(fctx->__p->loop);
+	tstamp = uv_now(fctx->__p->loop)/1e3;
 	fprintf(stream, "%.6f  %-7s %-16s ", tstamp, str_level, fiber->name);
 	vfprintf(stream, format, ap);
 	fprintf(stream, "\n");
 }
 
-void fbr_init(FBR_P_ struct ev_loop *loop)
+void fbr_init(FBR_P_ uv_loop_t *loop)
 {
 	struct fbr_fiber *root;
 	struct fbr_logger *logger;
@@ -224,7 +222,8 @@ void fbr_init(FBR_P_ struct ev_loop *loop)
 	fctx->__p->backtraces_enabled = 0;
 	memset(&fctx->__p->key_free_mask, 0xFF,
 			sizeof(fctx->__p->key_free_mask));
-	ev_async_init(&fctx->__p->pending_async, pending_async_cb);
+	uv_async_init(UV_A_ &fctx->__p->pending_async, pending_async_cb);
+	uv_unref((uv_handle_t *)&fctx->__p->pending_async);
 
 	buffer_pattern = getenv("FBR_BUFFER_FILE_PATTERN");
 	if (buffer_pattern)
@@ -359,18 +358,17 @@ static void post_ev(_unused_ FBR_P_ struct fbr_fiber *fiber,
 	ev->arrived = 1;
 }
 
-/* This callback should't be called if watcher has been stopped properly */
-static void ev_abort_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
-{
-	(void)event;
+static struct fbr_ev_watcher ev_watcher_invalid;
 
+static void bad_watcher_abort_cb(uv_handle_t *w)
+{
 	fprintf(stderr, "libevfibers: libev callback called for pending "
 			"watcher (%p), which is no longer being awaited via "
 			"fbr_ev_wait()", w);
 	abort();
 }
 
-static void ev_watcher_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
+void fbr_uv_handler_cb(uv_handle_t *w)
 {
 	struct fbr_fiber *fiber;
 	struct fbr_ev_watcher *ev = w->data;
@@ -378,6 +376,9 @@ static void ev_watcher_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
 	int retval;
 
 	ENSURE_ROOT_FIBER;
+
+	if (ev == &ev_watcher_invalid)
+		bad_watcher_abort_cb(w);
 
 	retval = fbr_id_unpack(FBR_A_ &fiber, ev->ev_base.id);
 	if (-1 == retval) {
@@ -392,7 +393,6 @@ static void ev_watcher_cb(_unused_ EV_P_ ev_watcher *w, _unused_ int event)
 	retval = fbr_transfer(FBR_A_ fbr_id_pack(fiber));
 	assert(0 == retval);
 }
-
 
 static void fbr_free_in_fiber(_unused_ FBR_P_ _unused_ struct fbr_fiber *fiber,
 		void *ptr, int destructor)
@@ -583,13 +583,14 @@ static enum ev_action_hint prepare_ev(FBR_P_ struct fbr_ev_base *ev)
 	switch (ev->type) {
 	case FBR_EV_WATCHER:
 		e_watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
-		if (!ev_is_active(e_watcher->w)) {
+		if (!uv_is_active(e_watcher->w)) {
 			fbr_destructor_remove(FBR_A_ &ev->item.dtor,
 					0 /* call it */);
 			return EV_AH_EINVAL;
 		}
 		e_watcher->w->data = e_watcher;
-		ev_set_cb(e_watcher->w, ev_watcher_cb);
+		//ev_set_cb(e_watcher->w, ev_watcher_cb);
+		//Not needed any more, client is expected to set cb
 		break;
 	case FBR_EV_MUTEX:
 		e_mutex = fbr_ev_upcast(ev, fbr_ev_mutex);
@@ -643,7 +644,8 @@ static void finish_ev(FBR_P_ struct fbr_ev_base *ev)
 		break;
 	case FBR_EV_WATCHER:
 		e_watcher = fbr_ev_upcast(ev, fbr_ev_watcher);
-		ev_set_cb(e_watcher->w, ev_abort_cb);
+		//ev_set_cb(e_watcher->w, ev_abort_cb);
+		e_watcher->w->data = &ev_watcher_invalid;
 		break;
 	case FBR_EV_MUTEX:
 		/* NOP */
@@ -661,24 +663,24 @@ static void finish_ev(FBR_P_ struct fbr_ev_base *ev)
 
 static void watcher_timer_dtor(_unused_ FBR_P_ void *_arg)
 {
-	struct ev_timer *w = _arg;
-	ev_timer_stop(fctx->__p->loop, w);
+	uv_timer_t *w = _arg;
+	uv_timer_stop(w);
 }
 
-int fbr_ev_wait_to(FBR_P_ struct fbr_ev_base *events[], ev_tstamp timeout)
+int fbr_ev_wait_to(FBR_P_ struct fbr_ev_base *events[], double timeout)
 {
 	size_t size;
-	ev_timer timer;
+	uv_timer_t timer;
 	struct fbr_ev_watcher watcher;
 	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 	struct fbr_ev_base **new_events;
 	struct fbr_ev_base **ev_pptr;
 	int n_events;
 
-	ev_timer_init(&timer, NULL, timeout, 0.);
-	ev_timer_start(fctx->__p->loop, &timer);
+	uv_timer_init(fctx->__p->loop, &timer);
+	uv_timer_start(&timer, fbr_uv_timer_cb, timeout*1e3, 0);
 	fbr_ev_watcher_init(FBR_A_ &watcher,
-			(struct ev_watcher *)&timer);
+			(uv_handle_t *)&timer);
 	dtor.func = watcher_timer_dtor;
 	dtor.arg = &timer;
 	fbr_destructor_add(FBR_A_ &dtor);
@@ -762,19 +764,19 @@ finish:
 	return 0;
 }
 
-int fbr_ev_wait_one_wto(FBR_P_ struct fbr_ev_base *one, ev_tstamp timeout)
+int fbr_ev_wait_one_wto(FBR_P_ struct fbr_ev_base *one, double timeout)
 {
 	int n_events;
 	struct fbr_ev_base *events[] = {one, NULL, NULL};
-	ev_timer timer;
+	uv_timer_t timer;
 	struct fbr_ev_watcher twatcher;
 	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 
-	ev_timer_init(&timer, NULL, timeout, 0.);
-	ev_timer_start(fctx->__p->loop, &timer);
+	uv_timer_init(fctx->__p->loop, &timer);
+	uv_timer_start(&timer, fbr_uv_timer_cb, timeout*1e3, 0);
 
 	fbr_ev_watcher_init(FBR_A_ &twatcher,
-			(struct ev_watcher *)&timer);
+			(uv_handle_t *)&timer);
 	dtor.func = watcher_timer_dtor;
 	dtor.arg = &timer;
 	fbr_destructor_add(FBR_A_ &dtor);
@@ -843,625 +845,32 @@ static void ev_base_init(FBR_P_ struct fbr_ev_base *ev,
 	ev->fctx = fctx;
 }
 
-void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, ev_watcher *w)
+void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, uv_handle_t *w)
 {
 	ev_base_init(FBR_A_ &ev->ev_base, FBR_EV_WATCHER);
 	ev->w = w;
 }
 
-static void watcher_io_dtor(_unused_ FBR_P_ void *_arg)
+double fbr_sleep(FBR_P_ double seconds)
 {
-	struct ev_io *w = _arg;
-	ev_io_stop(fctx->__p->loop, w);
-}
-
-int fbr_connect(FBR_P_ int sockfd, const struct sockaddr *addr,
-                   socklen_t addrlen) {
-	ev_io io;
+	uv_timer_t timer;
 	struct fbr_ev_watcher watcher;
 	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-	int r;
-	socklen_t len;
-	r = connect(sockfd, addr, addrlen);
-	if ((-1 == r) && (EINPROGRESS != errno))
-	    return -1;
+	double expected = uv_now(fctx->__p->loop)/1e3 + seconds;
 
-	ev_io_init(&io, NULL, sockfd, EV_WRITE);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-
-	len = sizeof(r);
-	if (-1 == getsockopt(sockfd, SOL_SOCKET, SO_ERROR, (void *)&r, &len)) {
-		r = -1;
-	} else if ( 0 != r ) {
-		errno = r;
-		r = -1;
-	}
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-	return r;
-}
-
-int fbr_connect_wto(FBR_P_ int sockfd, const struct sockaddr *addr,
-                   socklen_t addrlen, ev_tstamp timeout) {
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-	int r, rc;
-	socklen_t len;
-	r = connect(sockfd, addr, addrlen);
-	if ((-1 == r) && (EINPROGRESS != errno))
-	    return -1;
-
-	ev_io_init(&io, NULL, sockfd, EV_WRITE);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	rc = fbr_ev_wait_one_wto(FBR_A_ &watcher.ev_base, timeout);
-	if (0 == rc) {
-		len = sizeof(r);
-		if (-1 == getsockopt(sockfd, SOL_SOCKET, SO_ERROR, (void *)&r, &len)) {
-			r = -1;
-		} else if ( 0 != r ) {
-			errno = r;
-			r = -1;
-		}
-	} else {
-		r = -1;
-		errno = ETIMEDOUT;
-	}
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-	return r;
-}
-
-
-ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count)
-{
-	ssize_t r;
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	ev_io_init(&io, NULL, fd, EV_READ);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	do {
-		r = read(fd, buf, count);
-	} while (-1 == r && EINTR == errno);
-
-	ev_io_stop(fctx->__p->loop, &io);
-
-	return r;
-}
-
-ssize_t fbr_read_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout)
-{
-	ssize_t r = 0;
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-	int rc = 0;
-
-	ev_io_init(&io, NULL, fd, EV_READ);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	rc = fbr_ev_wait_one_wto(FBR_A_ &watcher.ev_base, timeout);
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	if (0 == rc) {
-		do {
-			r = read(fd, buf, count);
-		} while (-1 == r && EINTR == errno);
-	}
-	ev_io_stop(fctx->__p->loop, &io);
-
-	return r;
-}
-
-
-ssize_t fbr_read_all(FBR_P_ int fd, void *buf, size_t count)
-{
-	ssize_t r;
-	size_t done = 0;
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	ev_io_init(&io, NULL, fd, EV_READ);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-
-	while (count != done) {
-next:
-		fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-		for (;;) {
-			r = read(fd, buf + done, count - done);
-			if (-1 == r) {
-				switch (errno) {
-					case EINTR:
-						continue;
-					case EAGAIN:
-						goto next;
-					default:
-						goto error;
-				}
-			}
-			break;
-		}
-		if (0 == r)
-			break;
-		done += r;
-	}
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-	return (ssize_t)done;
-
-error:
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-	return -1;
-}
-
-ssize_t fbr_read_all_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout)
-{
-	ssize_t r;
-	size_t done = 0;
-	ev_io io;
-	struct fbr_ev_watcher watcher, twatcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-	struct fbr_destructor dtor2 = FBR_DESTRUCTOR_INITIALIZER;
-	struct fbr_ev_base *events[] = {NULL, NULL, NULL};
-	ev_timer timer;
-
-	ev_io_init(&io, NULL, fd, EV_READ);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	events[0] = &watcher.ev_base;
-
-	ev_timer_init(&timer, NULL, timeout, 0.);
-	ev_timer_start(fctx->__p->loop, &timer);
-
-	fbr_ev_watcher_init(FBR_A_ &twatcher,
-			(struct ev_watcher *)&timer);
-	dtor2.func = watcher_timer_dtor;
-	dtor2.arg = &timer;
-	fbr_destructor_add(FBR_A_ &dtor2);
-	events[1] = &twatcher.ev_base;
-
-	while (count != done) {
-next:
-		fbr_ev_wait(FBR_A_ events);
-		if (events[1]->arrived)
-			goto error;
-
-		for (;;) {
-			r = read(fd, buf + done, count - done);
-			if (-1 == r) {
-				switch (errno) {
-					case EINTR:
-						continue;
-					case EAGAIN:
-						goto next;
-					default:
-						goto error;
-				}
-			}
-			break;
-		}
-		if (0 == r)
-			break;
-		done += r;
-	}
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	fbr_destructor_remove(FBR_A_ &dtor2, 0 /* Call it? */);
-	ev_timer_stop(fctx->__p->loop, &timer);
-	ev_io_stop(fctx->__p->loop, &io);
-	return (ssize_t)done;
-
-error:
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	fbr_destructor_remove(FBR_A_ &dtor2, 0 /* Call it? */);
-	ev_timer_stop(fctx->__p->loop, &timer);
-	ev_io_stop(fctx->__p->loop, &io);
-	return -1;
-}
-
-
-ssize_t fbr_readline(FBR_P_ int fd, void *buffer, size_t n)
-{
-	ssize_t num_read;
-	size_t total_read;
-	char *buf;
-	char ch;
-
-	if (n <= 0 || buffer == NULL) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	buf = buffer;
-
-	total_read = 0;
-	for (;;) {
-		num_read = fbr_read(FBR_A_ fd, &ch, 1);
-
-		if (num_read == -1) {
-			if (errno == EINTR)
-				continue;
-			else
-				return -1;
-
-		} else if (num_read == 0) {
-			if (total_read == 0)
-				return 0;
-			else
-				break;
-
-		} else {
-			if (total_read < n - 1) {
-				total_read++;
-				*buf++ = ch;
-			}
-
-			if (ch == '\n')
-				break;
-		}
-	}
-
-	*buf = '\0';
-	return total_read;
-}
-
-ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count)
-{
-	ssize_t r;
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	ev_io_init(&io, NULL, fd, EV_WRITE);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-
-	do {
-		r = write(fd, buf, count);
-	} while (-1 == r && EINTR == errno);
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-	return r;
-}
-
-ssize_t fbr_write_wto(FBR_P_ int fd, const void *buf, size_t count, ev_tstamp timeout)
-{
-	ssize_t r = 0;
-	int rc;
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	ev_io_init(&io, NULL, fd, EV_WRITE);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	rc = fbr_ev_wait_one_wto(FBR_A_ &watcher.ev_base, timeout);
-	if (0 == rc) {
-		do {
-			r = write(fd, buf, count);
-		} while (-1 == r && EINTR == errno);
-	}
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-	return r;
-}
-
-ssize_t fbr_write_all(FBR_P_ int fd, const void *buf, size_t count)
-{
-	ssize_t r;
-	size_t done = 0;
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	ev_io_init(&io, NULL, fd, EV_WRITE);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-
-	while (count != done) {
-next:
-		fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-		for (;;) {
-			r = write(fd, buf + done, count - done);
-			if (-1 == r) {
-				switch (errno) {
-					case EINTR:
-						continue;
-					case EAGAIN:
-						goto next;
-					default:
-						goto error;
-				}
-			}
-			break;
-		}
-		done += r;
-	}
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-	return (ssize_t)done;
-
-error:
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-	return -1;
-}
-
-ssize_t fbr_write_all_wto(FBR_P_ int fd, const void *buf, size_t count, ev_tstamp timeout)
-{
-	ssize_t r;
-	size_t done = 0;
-	ev_io io;
-	struct fbr_ev_watcher watcher, twatcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-	struct fbr_destructor dtor2 = FBR_DESTRUCTOR_INITIALIZER;
-	struct fbr_ev_base *events[] = {NULL, NULL, NULL};
-	ev_timer timer;
-
-	ev_io_init(&io, NULL, fd, EV_WRITE);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	events[0] = &watcher.ev_base;
-
-	ev_timer_init(&timer, NULL, timeout, 0.);
-	ev_timer_start(fctx->__p->loop, &timer);
-
-	fbr_ev_watcher_init(FBR_A_ &twatcher,
-			(struct ev_watcher *)&timer);
-	dtor2.func = watcher_timer_dtor;
-	dtor2.arg = &timer;
-	fbr_destructor_add(FBR_A_ &dtor2);
-	events[1] = &twatcher.ev_base;
-
-	while (count != done) {
-next:
-		fbr_ev_wait(FBR_A_ events);
-		if (events[1]->arrived) {
-			errno = ETIMEDOUT;
-			goto error;
-		}
-
-		for (;;) {
-			r = write(fd, buf + done, count - done);
-			if (-1 == r) {
-				switch (errno) {
-					case EINTR:
-						continue;
-					case EAGAIN:
-						goto next;
-					default:
-						goto error;
-				}
-			}
-			break;
-		}
-		done += r;
-	}
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	fbr_destructor_remove(FBR_A_ &dtor2, 0 /* Call it? */);
-	ev_timer_stop(fctx->__p->loop, &timer);
-	ev_io_stop(fctx->__p->loop, &io);
-	return (ssize_t)done;
-
-error:
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	fbr_destructor_remove(FBR_A_ &dtor2, 0 /* Call it? */);
-	ev_timer_stop(fctx->__p->loop, &timer);
-	ev_io_stop(fctx->__p->loop, &io);
-	return -1;
-}
-
-
-ssize_t fbr_recvfrom(FBR_P_ int sockfd, void *buf, size_t len, int flags,
-		struct sockaddr *src_addr, socklen_t *addrlen)
-{
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	ev_io_init(&io, NULL, sockfd, EV_READ);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-
-	return recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
-}
-
-ssize_t fbr_recv(FBR_P_ int sockfd, void *buf, size_t len, int flags)
-{
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	ev_io_init(&io, NULL, sockfd, EV_READ);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-
-	return recv(sockfd, buf, len, flags);
-}
-
-ssize_t fbr_sendto(FBR_P_ int sockfd, const void *buf, size_t len, int flags,
-		const struct sockaddr *dest_addr, socklen_t addrlen)
-{
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	ev_io_init(&io, NULL, sockfd, EV_WRITE);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-
-	return sendto(sockfd, buf, len, flags, dest_addr, addrlen);
-}
-
-ssize_t fbr_send(FBR_P_ int sockfd, const void *buf, size_t len, int flags)
-{
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	ev_io_init(&io, NULL, sockfd, EV_WRITE);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-
-	return send(sockfd, buf, len, flags);
-}
-
-int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-{
-	int r;
-	ev_io io;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	ev_io_init(&io, NULL, sockfd, EV_READ);
-	ev_io_start(fctx->__p->loop, &io);
-	dtor.func = watcher_io_dtor;
-	dtor.arg = &io;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&io);
-	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-
-	do {
-		r = accept(sockfd, addr, addrlen);
-	} while (-1 == r && EINTR == errno);
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_io_stop(fctx->__p->loop, &io);
-
-	return r;
-}
-
-ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds)
-{
-	ev_timer timer;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-	ev_tstamp expected = ev_now(fctx->__p->loop) + seconds;
-
-	ev_timer_init(&timer, NULL, seconds, 0.);
-	ev_timer_start(fctx->__p->loop, &timer);
+	uv_timer_init(fctx->__p->loop, &timer);
+	uv_timer_start(&timer, fbr_uv_timer_cb, seconds*1e3, 0);
 	dtor.func = watcher_timer_dtor;
 	dtor.arg = &timer;
 	fbr_destructor_add(FBR_A_ &dtor);
 
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&timer);
+	fbr_ev_watcher_init(FBR_A_ &watcher, (uv_handle_t *)&timer);
 	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
 
 	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_timer_stop(fctx->__p->loop, &timer);
+	uv_timer_stop(&timer);
 
-	return max(0., expected - ev_now(fctx->__p->loop));
-}
-
-static void watcher_async_dtor(FBR_P_ void *_arg)
-{
-	struct ev_async *w = _arg;
-	ev_async_stop(fctx->__p->loop, w);
-}
-
-void fbr_async_wait(FBR_P_ ev_async *w)
-{
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-
-	dtor.func = watcher_async_dtor;
-	dtor.arg = w;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)w);
-	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_async_stop(fctx->__p->loop, w);
-
-	return;
+	return max(0., expected - uv_now(fctx->__p->loop)/1e3);
 }
 
 static unsigned get_page_size()
@@ -1609,9 +1018,9 @@ static void transfer_later(FBR_P_ struct fbr_id_tailq_i *item)
 	TAILQ_INSERT_TAIL(&fctx->__p->pending_fibers, item, entries);
 	item->head = &fctx->__p->pending_fibers;
 	if (was_empty && !TAILQ_EMPTY(&fctx->__p->pending_fibers)) {
-		ev_async_start(fctx->__p->loop, &fctx->__p->pending_async);
+		uv_ref((uv_handle_t *)&fctx->__p->pending_async);
 	}
-	ev_async_send(fctx->__p->loop, &fctx->__p->pending_async);
+	uv_async_send(&fctx->__p->pending_async);
 }
 
 static void transfer_later_tailq(FBR_P_ struct fbr_id_tailq *tailq)
@@ -1624,9 +1033,9 @@ static void transfer_later_tailq(FBR_P_ struct fbr_id_tailq *tailq)
 	was_empty = TAILQ_EMPTY(&fctx->__p->pending_fibers);
 	TAILQ_CONCAT(&fctx->__p->pending_fibers, tailq, entries);
 	if (was_empty && !TAILQ_EMPTY(&fctx->__p->pending_fibers)) {
-		ev_async_start(fctx->__p->loop, &fctx->__p->pending_async);
+		uv_ref((uv_handle_t *)&fctx->__p->pending_async);
 	}
-	ev_async_send(fctx->__p->loop, &fctx->__p->pending_async);
+	uv_async_send(&fctx->__p->pending_async);
 }
 
 void fbr_ev_mutex_init(FBR_P_ struct fbr_ev_mutex *ev,
@@ -2183,701 +1592,3 @@ int fbr_set_name(FBR_P_ fbr_id_t id, const char *name)
 	strncpy(fiber->name, name, FBR_MAX_FIBER_NAME - 1);
 	return_success(0);
 }
-
-static int make_pipe(FBR_P_ int *r, int*w)
-{
-	int fds[2];
-	int retval;
-	retval = pipe(fds);
-	if (-1 == retval)
-		return_error(-1, FBR_ESYSTEM);
-	*r = fds[0];
-	*w = fds[1];
-	return_success(0);
-}
-
-pid_t fbr_popen3(FBR_P_ const char *filename, char *const argv[],
-		char *const envp[], const char *working_dir,
-		int *stdin_w_ptr, int *stdout_r_ptr, int *stderr_r_ptr)
-{
-	pid_t pid;
-	int stdin_r = -1, stdin_w = -1;
-	int stdout_r = -1, stdout_w = -1;
-	int stderr_r = -1, stderr_w = -1;
-	int devnull = -1;
-	int retval;
-
-	retval = (stdin_w_ptr ? make_pipe(FBR_A_ &stdin_r, &stdin_w) : 0);
-	if (retval)
-		goto error;
-	retval = (stdout_r_ptr ? make_pipe(FBR_A_ &stdout_r, &stdout_w) : 0);
-	if (retval)
-		goto error;
-	retval = (stderr_r_ptr ? make_pipe(FBR_A_ &stderr_r, &stderr_w) : 0);
-	if (retval)
-		goto error;
-
-	pid = fork();
-	if (-1 == pid)
-		goto error;
-	if (0 == pid) {
-		/* Child */
-		ev_break(EV_DEFAULT, EVBREAK_ALL);
-		if (stdin_w_ptr) {
-			retval = close(stdin_w);
-			if (-1 == retval)
-				goto error;
-			retval = dup2(stdin_r, STDIN_FILENO);
-			if (-1 == retval)
-				goto error;
-		} else {
-			devnull = open("/dev/null", O_RDONLY);
-			if (-1 == retval)
-				goto error;
-			retval = dup2(devnull, STDIN_FILENO);
-			if (-1 == retval)
-				goto error;
-			retval = close(devnull);
-			if (-1 == retval)
-				goto error;
-		}
-		if (stdout_r_ptr) {
-			retval = close(stdout_r);
-			if (-1 == retval)
-				goto error;
-			retval = dup2(stdout_w, STDOUT_FILENO);
-			if (-1 == retval)
-				goto error;
-		} else {
-			devnull = open("/dev/null", O_WRONLY);
-			if (-1 == retval)
-				goto error;
-			retval = dup2(devnull, STDOUT_FILENO);
-			if (-1 == retval)
-				goto error;
-			retval = close(devnull);
-			if (-1 == retval)
-				goto error;
-		}
-		if (stderr_r_ptr) {
-			retval = close(stderr_r);
-			if (-1 == retval)
-				goto error;
-			retval = dup2(stderr_w, STDERR_FILENO);
-			if (-1 == retval)
-				goto error;
-		} else {
-			devnull = open("/dev/null", O_WRONLY);
-			if (-1 == retval)
-				goto error;
-			retval = dup2(devnull, STDERR_FILENO);
-			if (-1 == retval)
-				goto error;
-			retval = close(devnull);
-			if (-1 == retval)
-				goto error;
-		}
-
-		if (working_dir) {
-			retval = chdir(working_dir);
-			if (-1 == retval)
-				goto error;
-		}
-
-		retval = execve(filename, argv, envp);
-		if (-1 == retval)
-			goto error;
-
-		errx(EXIT_FAILURE, "execve failed without error code");
-	}
-	/* Parent */
-	if (stdin_w_ptr) {
-		retval = close(stdin_r);
-		if (-1 == retval)
-			goto error;
-		retval = fbr_fd_nonblock(FBR_A_ stdin_w);
-		if (retval)
-			goto error;
-	}
-	if (stdout_r_ptr) {
-		retval = close(stdout_w);
-		if (-1 == retval)
-			goto error;
-		retval = fbr_fd_nonblock(FBR_A_ stdout_r);
-		if (retval)
-			goto error;
-	}
-	if (stderr_r_ptr) {
-		retval = close(stderr_w);
-		if (-1 == retval)
-			goto error;
-		retval = fbr_fd_nonblock(FBR_A_ stderr_r);
-		if (retval)
-			goto error;
-	}
-
-	fbr_log_d(FBR_A_ "child pid %d has been launched", pid);
-	if (stdin_w_ptr)
-		*stdin_w_ptr = stdin_w;
-	if (stdout_r_ptr)
-		*stdout_r_ptr = stdout_r;
-	if (stderr_r_ptr)
-		*stderr_r_ptr = stderr_r;
-	return pid;
-error:
-	if (0 <= devnull)
-		close(devnull);
-	if (0 <= stdin_r)
-	       close(stdin_r);
-	if (0 <= stdin_w)
-	       close(stdin_w);
-	if (0 <= stdout_r)
-	       close(stdout_r);
-	if (0 <= stdout_w)
-	       close(stdout_w);
-	if (0 <= stderr_r)
-	       close(stderr_r);
-	if (0 <= stderr_w)
-	       close(stderr_w);
-	return_error(-1, FBR_ESYSTEM);
-}
-
-static void watcher_child_dtor(_unused_ FBR_P_ void *_arg)
-{
-	struct ev_child *w = _arg;
-	ev_child_stop(fctx->__p->loop, w);
-}
-
-int fbr_waitpid(FBR_P_ pid_t pid)
-{
-	struct ev_child child;
-	struct fbr_ev_watcher watcher;
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
-	ev_child_init(&child, NULL, pid, 0.);
-	ev_child_start(fctx->__p->loop, &child);
-	dtor.func = watcher_child_dtor;
-	dtor.arg = &child;
-	fbr_destructor_add(FBR_A_ &dtor);
-
-	fbr_ev_watcher_init(FBR_A_ &watcher, (ev_watcher *)&child);
-	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
-
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	ev_child_stop(fctx->__p->loop, &child);
-	return_success(child.rstatus);
-}
-
-int fbr_system(FBR_P_ const char *filename, char *const argv[],
-		char *const envp[], const char *working_dir)
-{
-	pid_t pid;
-	int retval;
-
-	pid = fork();
-	if (-1 == pid)
-		return_error(-1, FBR_ESYSTEM);
-	if (0 == pid) {
-		/* Child */
-		ev_break(EV_DEFAULT, EVBREAK_ALL);
-
-		if (working_dir) {
-			retval = chdir(working_dir);
-			if (-1 == retval)
-				err(EXIT_FAILURE, "chdir");
-		}
-
-		retval = execve(filename, argv, envp);
-		if (-1 == retval)
-			err(EXIT_FAILURE, "execve");
-
-		errx(EXIT_FAILURE, "execve failed without error code");
-	}
-	/* Parent */
-
-	fbr_log_d(FBR_A_ "child pid %d has been launched", pid);
-	return fbr_waitpid(FBR_A_ pid);
-}
-
-#ifdef FBR_EIO_ENABLED
-
-static struct ev_loop *eio_loop;
-static ev_idle repeat_watcher;
-static ev_async ready_watcher;
-
-/* idle watcher callback, only used when eio_poll */
-/* didn't handle all results in one call */
-static void repeat(EV_P_ ev_idle *w, _unused_ int revents)
-{
-	if (eio_poll () != -1)
-		ev_idle_stop(EV_A_ w);
-}
-
-/* eio has some results, process them */
-static void ready(EV_P_ _unused_ ev_async *w, _unused_ int revents)
-{
-	if (eio_poll() == -1)
-		ev_idle_start(EV_A_ &repeat_watcher);
-}
-
-/* wake up the event loop */
-static void want_poll()
-{
-	ev_async_send(eio_loop, &ready_watcher);
-}
-
-void fbr_eio_init()
-{
-	if (NULL != eio_loop) {
-		fprintf(stderr, "libevfibers: fbr_eio_init called twice");
-		abort();
-	}
-	eio_loop = EV_DEFAULT;
-	ev_idle_init(&repeat_watcher, repeat);
-	ev_async_init(&ready_watcher, ready);
-	ev_async_start(eio_loop, &ready_watcher);
-	ev_unref(eio_loop);
-	eio_init(want_poll, 0);
-}
-
-void fbr_ev_eio_init(FBR_P_ struct fbr_ev_eio *ev, eio_req *req)
-{
-	ev_base_init(FBR_A_ &ev->ev_base, FBR_EV_EIO);
-	ev->req = req;
-}
-
-static void eio_req_dtor(_unused_ FBR_P_ void *_arg)
-{
-	eio_req *req = _arg;
-	eio_cancel(req);
-}
-
-static int fiber_eio_cb(eio_req *req)
-{
-	struct fbr_fiber *fiber;
-	struct fbr_ev_eio *ev = req->data;
-	struct fbr_context *fctx = ev->ev_base.fctx;
-	int retval;
-
-	ENSURE_ROOT_FIBER;
-
-	ev_unref(eio_loop);
-	if (EIO_CANCELLED(req))
-		return 0;
-
-	retval = fbr_id_unpack(FBR_A_ &fiber, ev->ev_base.id);
-	if (-1 == retval) {
-		fbr_log_e(FBR_A_ "libevfibers: fiber is about to be called by"
-			" the eio callback, but it's id is not valid: %s",
-			fbr_strerror(FBR_A_ fctx->f_errno));
-		abort();
-	}
-
-	post_ev(FBR_A_ fiber, &ev->ev_base);
-
-	retval = fbr_transfer(FBR_A_ fbr_id_pack(fiber));
-	assert(0 == retval);
-	return 0;
-}
-
-#define FBR_EIO_PREP \
-	eio_req *req; \
-	struct fbr_ev_eio e_eio; \
-	int retval; \
-	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER; \
-	ev_ref(eio_loop);
-
-#define FBR_EIO_WAIT \
-	if (NULL == req) { \
-		ev_unref(eio_loop); \
-		return_error(-1, FBR_EEIO); \
-	} \
-	dtor.func = eio_req_dtor; \
-	dtor.arg = req; \
-	fbr_destructor_add(FBR_A_ &dtor); \
-	fbr_ev_eio_init(FBR_A_ &e_eio, req); \
-	retval = fbr_ev_wait_one(FBR_A_ &e_eio.ev_base); \
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */); \
-	if (retval) \
-		return retval;
-
-#define FBR_EIO_RESULT_CHECK \
-	if (0 > req->result) { \
-		errno = req->errorno; \
-		return_error(-1, FBR_ESYSTEM); \
-	}
-
-#define FBR_EIO_RESULT_RET \
-	FBR_EIO_RESULT_CHECK \
-	return req->result;
-
-int fbr_eio_open(FBR_P_ const char *path, int flags, mode_t mode, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_open(path, flags, mode, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_truncate(FBR_P_ const char *path, off_t offset, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_truncate(path, offset, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_chown(FBR_P_ const char *path, uid_t uid, gid_t gid, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_chown(path, uid, gid, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_chmod(FBR_P_ const char *path, mode_t mode, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_chmod(path, mode, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_mkdir(FBR_P_ const char *path, mode_t mode, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_mkdir(path, mode, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_rmdir(FBR_P_ const char *path, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_rmdir(path, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_unlink(FBR_P_ const char *path, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_unlink(path, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_utime(FBR_P_ const char *path, eio_tstamp atime, eio_tstamp mtime,
-		int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_utime(path, atime, mtime, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_mknod(FBR_P_ const char *path, mode_t mode, dev_t dev, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_mknod(path, mode, dev, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_link(FBR_P_ const char *path, const char *new_path, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_link(path, new_path, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_symlink(FBR_P_ const char *path, const char *new_path, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_symlink(path, new_path, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_rename(FBR_P_ const char *path, const char *new_path, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_rename(path, new_path, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_mlock(FBR_P_ void *addr, size_t length, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_mlock(addr, length, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_close(FBR_P_ int fd, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_close(fd, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_sync(FBR_P_ int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_sync(pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_fsync(FBR_P_ int fd, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_fsync(fd, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_fdatasync(FBR_P_ int fd, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_fdatasync(fd, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_futime(FBR_P_ int fd, eio_tstamp atime, eio_tstamp mtime, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_futime(fd, atime, mtime, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_ftruncate(FBR_P_ int fd, off_t offset, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_ftruncate(fd, offset, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_fchmod(FBR_P_ int fd, mode_t mode, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_fchmod(fd, mode, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_fchown(FBR_P_ int fd, uid_t uid, gid_t gid, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_fchown(fd, uid, gid, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_dup2(FBR_P_ int fd, int fd2, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_dup2(fd, fd2, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-ssize_t fbr_eio_seek(FBR_P_ int fd, off_t offset, int whence, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_seek(fd, offset, whence, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_CHECK;
-	return req->offs;
-}
-
-ssize_t fbr_eio_read(FBR_P_ int fd, void *buf, size_t length, off_t offset,
-		int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_read(fd, buf, length, offset, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-ssize_t fbr_eio_write(FBR_P_ int fd, void *buf, size_t length, off_t offset,
-		int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_write(fd, buf, length, offset, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_mlockall(FBR_P_ int flags, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_mlockall(flags, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_msync(FBR_P_ void *addr, size_t length, int flags, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_msync(addr, length, flags, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_readlink(FBR_P_ const char *path, char *buf, size_t size, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_readlink(path, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_CHECK;
-	strncpy(buf, req->ptr2, min(size, (size_t)req->result));
-	return req->result;
-}
-
-int fbr_eio_realpath(FBR_P_ const char *path, char *buf, size_t size, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_realpath(path, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_CHECK;
-	strncpy(buf, req->ptr2, min(size, (size_t)req->result));
-	return req->result;
-}
-
-int fbr_eio_stat(FBR_P_ const char *path, EIO_STRUCT_STAT *statdata, int pri)
-{
-	EIO_STRUCT_STAT *st;
-	FBR_EIO_PREP;
-	req = eio_stat(path, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_CHECK;
-	st = (EIO_STRUCT_STAT *)req->ptr2;
-	memcpy(statdata, st, sizeof(*st));
-	return req->result;
-}
-
-int fbr_eio_lstat(FBR_P_ const char *path, EIO_STRUCT_STAT *statdata, int pri)
-{
-	EIO_STRUCT_STAT *st;
-	FBR_EIO_PREP;
-	req = eio_lstat(path, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_CHECK;
-	st = (EIO_STRUCT_STAT *)req->ptr2;
-	memcpy(statdata, st, sizeof(*st));
-	return req->result;
-}
-
-int fbr_eio_fstat(FBR_P_ int fd, EIO_STRUCT_STAT *statdata, int pri)
-{
-	EIO_STRUCT_STAT *st;
-	FBR_EIO_PREP;
-	req = eio_fstat(fd, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_CHECK;
-	st = (EIO_STRUCT_STAT *)req->ptr2;
-	memcpy(statdata, st, sizeof(*st));
-	return req->result;
-}
-
-int fbr_eio_statvfs(FBR_P_ const char *path, EIO_STRUCT_STATVFS *statdata,
-		int pri)
-{
-	EIO_STRUCT_STATVFS *st;
-	FBR_EIO_PREP;
-	req = eio_statvfs(path, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_CHECK;
-	st = (EIO_STRUCT_STATVFS *)req->ptr2;
-	memcpy(statdata, st, sizeof(*st));
-	return req->result;
-}
-
-int fbr_eio_fstatvfs(FBR_P_ int fd, EIO_STRUCT_STATVFS *statdata, int pri)
-{
-	EIO_STRUCT_STATVFS *st;
-	FBR_EIO_PREP;
-	req = eio_fstatvfs(fd, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_CHECK;
-	st = (EIO_STRUCT_STATVFS *)req->ptr2;
-	memcpy(statdata, st, sizeof(*st));
-	return req->result;
-}
-
-int fbr_eio_sendfile(FBR_P_ int out_fd, int in_fd, off_t in_offset,
-		size_t length, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_sendfile(out_fd, in_fd, in_offset, length, pri, fiber_eio_cb,
-			&e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_readahead(FBR_P_ int fd, off_t offset, size_t length, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_readahead(fd, offset, length, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_syncfs(FBR_P_ int fd, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_syncfs(fd, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_sync_file_range(FBR_P_ int fd, off_t offset, size_t nbytes,
-			unsigned int flags, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_sync_file_range(fd, offset, nbytes, flags, pri, fiber_eio_cb,
-			&e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-int fbr_eio_fallocate(FBR_P_ int fd, int mode, off_t offset, off_t len, int pri)
-{
-	FBR_EIO_PREP;
-	req = eio_fallocate(fd, mode, offset, len, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-static void custom_execute_cb(eio_req *req)
-{
-	struct fbr_ev_eio *ev = req->data;
-	req->result = ev->custom_func(ev->custom_arg);
-}
-
-eio_ssize_t fbr_eio_custom(FBR_P_ fbr_eio_custom_func_t func, void *data,
-		int pri)
-{
-	FBR_EIO_PREP;
-	e_eio.custom_func = func;
-	e_eio.custom_arg = data;
-	req = eio_custom(custom_execute_cb, pri, fiber_eio_cb, &e_eio);
-	FBR_EIO_WAIT;
-	FBR_EIO_RESULT_RET;
-}
-
-#else
-
-void fbr_eio_init(FBR_PU)
-{
-	fbr_log_e(FBR_A_ "libevfibers: libeio support is not compiled");
-	abort();
-}
-
-#endif

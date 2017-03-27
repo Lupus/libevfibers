@@ -81,8 +81,9 @@ START_TEST(test_mutex)
 	struct fiber_arg arg = {
 		.flag_ptr = &flag
 	};
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 
 	fbr_mutex_init(&context, &mutex);
 	arg.mutex = &mutex;
@@ -129,14 +130,14 @@ START_TEST(test_mutex)
 	fail_unless(fbr_id_eq(mutex.locked_by, fibers[2]), NULL);
 
 	/* Run the event loop once */
-	ev_run(EV_DEFAULT, EVRUN_ONCE);
+	uv_run(loop, UV_RUN_ONCE);
 
 	/* ensure that it's still locked by ``mutex3'' */
 	fail_unless(fbr_id_eq(mutex.locked_by, fibers[2]), NULL);
 	fail_if(0 == flag, NULL);
 
 	/* Run event loot to make sure async watcher stops itself */
-	ev_run(EV_DEFAULT, 0);
+	uv_run(loop, UV_RUN_DEFAULT);
 
 	fbr_mutex_destroy(&context, &mutex);
 	fbr_destroy(&context);
@@ -203,6 +204,7 @@ START_TEST(test_mutex_evloop)
 		.fibers = fibers,
 		.count = fiber_count
 	};
+	uv_loop_t *loop = uv_default_loop();
 
 	for (i = 0; i < fiber_count; i++)
 		fibers[i] = FBR_ID_NULL;
@@ -210,7 +212,7 @@ START_TEST(test_mutex_evloop)
 	fbr_mutex_init(&context, &mutex);
 	arg.mutex = &mutex;
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 	for(i = 0; i < fiber_count; i++) {
 		fibers[i] = fbr_create(&context, "fiber_i", mutex_fiber5, &arg, 0);
 		fail_if(fbr_id_isnull(fibers[i]), NULL);
@@ -223,7 +225,7 @@ START_TEST(test_mutex_evloop)
 	retval = fbr_transfer(&context, extra);
 	fail_unless(0 == retval, NULL);
 
-	ev_run(EV_DEFAULT, 0);
+	uv_run(loop, UV_RUN_DEFAULT);
 
 	fbr_mutex_destroy(&context, &mutex);
 	fbr_destroy(&context);

@@ -53,8 +53,9 @@ START_TEST(test_cond_broadcast)
 	struct fiber_arg arg = {
 		.flag_ptr = &flag
 	};
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 
 	fbr_mutex_init(&context, &mutex);
 	arg.mutex = &mutex;
@@ -71,10 +72,12 @@ START_TEST(test_cond_broadcast)
 
 	fail_unless(flag == 0, NULL);
 
+	uv_run(loop, UV_RUN_NOWAIT);
+
 	fbr_cond_broadcast(&context, &cond);
 	fbr_cond_broadcast(&context, &cond);
 
-	ev_run(EV_DEFAULT, 0);
+	uv_run(loop, UV_RUN_DEFAULT);
 
 	fail_unless(flag == num_fibers, NULL);
 
@@ -92,13 +95,14 @@ START_TEST(test_cond_signal)
 	struct fbr_cond_var cond;
 	int flag = 0;
 	int i;
-	const int num_fibers = 100;
+	const int num_fibers = 1;
 	int retval;
 	struct fiber_arg arg = {
 		.flag_ptr = &flag
 	};
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 
 	fbr_mutex_init(&context, &mutex);
 	arg.mutex = &mutex;
@@ -118,7 +122,7 @@ START_TEST(test_cond_signal)
 	for(i = 0; i <= num_fibers; i++)
 		fbr_cond_signal(&context, &cond);
 
-	ev_run(EV_DEFAULT, 0);
+	uv_run(loop, UV_RUN_DEFAULT);
 
 	fail_unless(flag == num_fibers, NULL);
 
@@ -134,8 +138,9 @@ START_TEST(test_cond_bad_mutex)
 	struct fbr_mutex mutex;
 	struct fbr_cond_var cond;
 	int retval;
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 	fbr_mutex_init(&context, &mutex);
 	fbr_cond_init(&context, &cond);
 
@@ -198,8 +203,9 @@ START_TEST(test_two_conds)
 	fbr_id_t fiber_waiter = FBR_ID_NULL, fiber_signaller = FBR_ID_NULL;
 	int retval;
 	struct fiber_arg2 arg;
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 	fbr_cond_init(&context, &arg.cond1);
 	fbr_mutex_init(&context, &arg.mutex1);
 	fbr_cond_init(&context, &arg.cond2);
@@ -215,7 +221,7 @@ START_TEST(test_two_conds)
 	retval = fbr_transfer(&context, fiber_signaller);
 	fail_unless(0 == retval, NULL);
 
-	ev_run(EV_DEFAULT, 0);
+	uv_run(loop, UV_RUN_DEFAULT);
 
 	fbr_cond_destroy(&context, &arg.cond1);
 	fbr_mutex_destroy(&context, &arg.mutex1);
@@ -272,8 +278,9 @@ START_TEST(test_premature_cond)
 	fbr_id_t fibers[num_fibers + 1];
 	fbr_id_t fiber;
 	int i;
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 
 	fbr_mutex_init(&context, &arg.mutex);
 	fbr_cond_init(&context, &arg.cond);
@@ -297,7 +304,7 @@ START_TEST(test_premature_cond)
 	fail_unless(0 == retval, NULL);
 	fibers[i] = fiber;
 
-	ev_run(EV_DEFAULT, 0);
+	uv_run(loop, UV_RUN_DEFAULT);
 
 	fbr_cond_destroy(&context, &arg.cond);
 	fbr_mutex_destroy(&context, &arg.mutex);
@@ -315,5 +322,3 @@ TCase * cond_tcase(void)
 	tcase_add_test(tc_cond, test_premature_cond);
 	return tc_cond;
 }
-
-

@@ -146,9 +146,20 @@
 #include <sys/socket.h>
 #include <sys/queue.h>
 #include <assert.h>
-#include <ev.h>
+
+#include <evfibers/uv.h>
 
 #include <evfibers/config.h>
+
+#define UV_P uv_loop_t *loop
+#define UV_P_ UV_P,
+#define UV_A loop
+#define UV_A_ UV_A,
+
+/**
+ * Same as FBR_P_ but unused attribute.
+ */
+#define FBR_PU_ __attribute__((unused)) FBR_P_
 
 /**
  * Maximum allowed level of fbr_transfer nesting within fibers.
@@ -482,9 +493,13 @@ struct fbr_ev_base {
  * @see fbr_ev_wait
  */
 struct fbr_ev_watcher {
-	ev_watcher *w; /*!< libev watcher */
+	uv_handle_t *w; /*!< libev watcher */
 	struct fbr_ev_base ev_base;
 };
+
+void fbr_uv_handler_cb(uv_handle_t *w);
+
+#define fbr_uv_timer_cb ((uv_timer_cb)fbr_uv_handler_cb)
 
 /**
  * fbr_mutex event.
@@ -640,7 +655,7 @@ static inline void fbr_destructor_init(struct fbr_destructor *dtor)
  * @see fbr_ev_watcher
  * @see fbr_ev_wait
  */
-void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, ev_watcher *w);
+void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, uv_handle_t *w);
 
 /**
  * Initializer for mutex event.
@@ -699,7 +714,7 @@ int fbr_ev_wait(FBR_P_ struct fbr_ev_base *events[]);
  * Timer event is not counted in the number of returned events.
  * @see fbr_ev_wait
  */
-int fbr_ev_wait_to(FBR_P_ struct fbr_ev_base *events[], ev_tstamp timeout);
+int fbr_ev_wait_to(FBR_P_ struct fbr_ev_base *events[], double timeout);
 
 /**
  * Transfer of fiber context to another fiber.
@@ -722,7 +737,7 @@ int fbr_transfer(FBR_P_ fbr_id_t to);
  * @see fbr_context
  * @see fbr_destroy
  */
-void fbr_init(struct fbr_context *fctx, struct ev_loop *loop);
+void fbr_init(struct fbr_context *fctx, uv_loop_t *loop);
 
 /**
  * Destroys the library context.
@@ -1153,7 +1168,7 @@ int fbr_connect(FBR_P_ int sockfd, const struct sockaddr *addr,
  * EINPROGRESS is handled internally; ETIMEDOUT is returned in case of timeout.
  */
 int fbr_connect_wto(FBR_P_ int sockfd, const struct sockaddr *addr,
-                   socklen_t addrlen, ev_tstamp timeout);
+                   socklen_t addrlen, double timeout);
 
 /**
  * Fiber friendly libc read wrapper.
@@ -1191,7 +1206,7 @@ ssize_t fbr_read(FBR_P_ int fd, void *buf, size_t count);
  * @see fbr_read_all
  * @see fbr_readline
  */
-ssize_t fbr_read_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout);
+ssize_t fbr_read_wto(FBR_P_ int fd, void *buf, size_t count, double timeout);
 
 /**
  * Even more fiber friendly libc read wrapper.
@@ -1232,7 +1247,7 @@ ssize_t fbr_read_all(FBR_P_ int fd, void *buf, size_t count);
  * @see fbr_readline
  */
 
-ssize_t fbr_read_all_wto(FBR_P_ int fd, void *buf, size_t count, ev_tstamp timeout);
+ssize_t fbr_read_all_wto(FBR_P_ int fd, void *buf, size_t count, double timeout);
 
 /**
  * Utility function to read a line.
@@ -1285,7 +1300,7 @@ ssize_t fbr_write(FBR_P_ int fd, const void *buf, size_t count);
  *
  * @see fbr_write_all_wto
  */
-ssize_t fbr_write_wto(FBR_P_ int fd, const void *buf, size_t count, ev_tstamp timeout);
+ssize_t fbr_write_wto(FBR_P_ int fd, const void *buf, size_t count, double timeout);
 
 /**
  * Even more fiber friendly libc write wrapper.
@@ -1320,7 +1335,7 @@ ssize_t fbr_write_all(FBR_P_ int fd, const void *buf, size_t count);
  *
  * @see fbr_write_wto
  */
-ssize_t fbr_write_all_wto(FBR_P_ int fd, const void *buf, size_t count, ev_tstamp timeout);
+ssize_t fbr_write_all_wto(FBR_P_ int fd, const void *buf, size_t count, double timeout);
 
 /**
  * Fiber friendly libc recvfrom wrapper.
@@ -1407,16 +1422,16 @@ int fbr_accept(FBR_P_ int sockfd, struct sockaddr *addr, socklen_t *addrlen);
  * This function is used to put current fiber into sleep. It will wake up after
  * the desired time has passed or earlier if some other fiber has called it.
  */
-ev_tstamp fbr_sleep(FBR_P_ ev_tstamp seconds);
+double fbr_sleep(FBR_P_ double seconds);
 
 /**
  * Waits for an async libev event.
- * @param [in] w ev_async watcher (initialized by caller)
+ * @param [in] w uv_async_t watcher (initialized by caller)
  *
  * This function will cause the calling fiber to wait until an
- * ev_async_send() has been triggered on the specified ev_async watcher.
+ * uv_async_t_send() has been triggered on the specified uv_async_t watcher.
  */
-void fbr_async_wait(FBR_P_ ev_async *w);
+void fbr_async_wait(FBR_P_ uv_async_t *w);
 
 /**
  * Prints fiber call stack to stderr.
@@ -2191,8 +2206,8 @@ static inline pid_t fbr_popen0(FBR_P_ const char *filename, char *const argv[],
  * @returns the process exit/trace status caused by rpid (see your systems
  * waitpid and sys/wait.h documentation for details)
  *
- * This function is basically a fiber wrapper for ev_child watcher. It's worth
- * reading the libev documentation for ev_child to fully understand the
+ * This function is basically a fiber wrapper for uv_child watcher. It's worth
+ * reading the libev documentation for uv_child to fully understand the
  * limitations.
  */
 int fbr_waitpid(FBR_P_ pid_t pid);

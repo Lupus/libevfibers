@@ -54,8 +54,9 @@ START_TEST(test_disown)
 	struct fbr_context context;
 	fbr_id_t fiber = FBR_ID_NULL;
 	int retval;
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 
 	fiber = fbr_create(&context, "reclaim_fiber", reclaim_fiber3, NULL, 0);
 	fail_if(fbr_id_isnull(fiber), NULL);
@@ -94,8 +95,9 @@ START_TEST(test_reclaim)
 	fbr_id_t fiber = FBR_ID_NULL;
 	fbr_id_t new_fiber = FBR_ID_NULL;
 	int retval;
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 	fiber = fbr_create(&context, "reclaim_fiber", reclaim_fiber1, NULL, 0);
 	fail_if(fbr_id_isnull(fiber), NULL);
 
@@ -135,6 +137,7 @@ static void no_reclaim_fiber1(FBR_P_ _unused_ void *_arg)
 	fbr_id_t fiber = FBR_ID_NULL;
 	int retval;
 	ev_tstamp ts1, ts2;
+	uv_loop_t *loop = uv_default_loop();
 
 	fbr_sleep(FBR_A_ 0.1);
 
@@ -145,12 +148,12 @@ static void no_reclaim_fiber1(FBR_P_ _unused_ void *_arg)
 	retval = fbr_transfer(FBR_A_ fiber);
 	fail_unless(0 == retval);
 
-	ts1 = ev_now(EV_DEFAULT);
+	ts1 = uv_now(loop)/1e3;
 	retval = fbr_reclaim(FBR_A_ fiber);
 	fail_unless(0 == retval);
-	ts2 = ev_now(EV_DEFAULT);
+	ts2 = uv_now(loop)/1e3;
 	fbr_log_e(FBR_A_ "ts2 - ts1 = %f", ts2 - ts1);
-	fail_unless(ts2 - ts1 > 1.5);
+	fail_unless(ts2 - ts1 >= 1.5);
 }
 
 START_TEST(test_no_reclaim)
@@ -158,8 +161,9 @@ START_TEST(test_no_reclaim)
 	struct fbr_context context;
 	fbr_id_t fiber = FBR_ID_NULL;
 	int retval;
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 	fiber = fbr_create(&context, "no_reclaim_fiber", no_reclaim_fiber1,
 			NULL, 0);
 	fail_if(fbr_id_isnull(fiber));
@@ -167,7 +171,7 @@ START_TEST(test_no_reclaim)
 	retval = fbr_transfer(&context, fiber);
 	fail_unless(0 == retval, NULL);
 
-	ev_run(EV_DEFAULT, 0);
+	uv_run(loop, UV_RUN_DEFAULT);
 
 	fbr_destroy(&context);
 }
@@ -179,8 +183,9 @@ START_TEST(test_user_data)
 	fbr_id_t fiber = FBR_ID_NULL;
 	int retval;
 	void *ptr = (void *)0xdeadbeaf;
+	uv_loop_t *loop = uv_default_loop();
 
-	fbr_init(&context, EV_DEFAULT);
+	fbr_init(&context, loop);
 
 	fiber = fbr_create(&context, "null_fiber", NULL, NULL, 0);
 	fail_if(fbr_id_isnull(fiber));
