@@ -18,6 +18,8 @@
 
 #include <evfibers/config.h>
 
+#define HAVE_VALGRIND_H 1
+
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <libgen.h>
