@@ -316,6 +316,13 @@ static void reclaim_children(FBR_P_ struct fbr_fiber *fiber)
 static void fbr_free_in_fiber(_unused_ FBR_P_ _unused_ struct fbr_fiber *fiber,
 		void *ptr, int destructor);
 
+void pending_async_close_cb(uv_handle_t* handle)
+{
+	struct fbr_context_private *p = fbr_container_of((uv_async_t *)handle,
+			struct fbr_context_private, pending_async);
+	free(p);
+}
+
 void fbr_destroy(FBR_P)
 {
 	struct fbr_fiber *fiber, *x;
@@ -332,7 +339,8 @@ void fbr_destroy(FBR_P)
 		free(fiber);
 	}
 
-	free(fctx->__p);
+	uv_close((uv_handle_t *)&fctx->__p->pending_async,
+			pending_async_close_cb);
 }
 
 void fbr_enable_backtraces(FBR_P_ int enabled)
@@ -665,24 +673,26 @@ static void watcher_timer_dtor(_unused_ FBR_P_ void *_arg)
 {
 	uv_timer_t *w = _arg;
 	uv_timer_stop(w);
+	uv_close((uv_handle_t *)w, (uv_close_cb)free);
 }
 
 int fbr_ev_wait_to(FBR_P_ struct fbr_ev_base *events[], double timeout)
 {
 	size_t size;
-	uv_timer_t timer;
+	uv_timer_t *timer;
 	struct fbr_ev_watcher watcher;
 	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 	struct fbr_ev_base **new_events;
 	struct fbr_ev_base **ev_pptr;
 	int n_events;
 
-	uv_timer_init(fctx->__p->loop, &timer);
-	uv_timer_start(&timer, fbr_uv_timer_cb, timeout*1e3, 0);
+	timer = malloc(sizeof(*timer));
+	uv_timer_init(fctx->__p->loop, timer);
+	uv_timer_start(timer, fbr_uv_timer_cb, timeout*1e3, 0);
 	fbr_ev_watcher_init(FBR_A_ &watcher,
-			(uv_handle_t *)&timer);
+			(uv_handle_t *)timer);
 	dtor.func = watcher_timer_dtor;
-	dtor.arg = &timer;
+	dtor.arg = timer;
 	fbr_destructor_add(FBR_A_ &dtor);
 	size = 0;
 	for (ev_pptr = events; NULL != *ev_pptr; ev_pptr++)
@@ -768,17 +778,18 @@ int fbr_ev_wait_one_wto(FBR_P_ struct fbr_ev_base *one, double timeout)
 {
 	int n_events;
 	struct fbr_ev_base *events[] = {one, NULL, NULL};
-	uv_timer_t timer;
+	uv_timer_t *timer;
 	struct fbr_ev_watcher twatcher;
 	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 
-	uv_timer_init(fctx->__p->loop, &timer);
-	uv_timer_start(&timer, fbr_uv_timer_cb, timeout*1e3, 0);
+	timer = malloc(sizeof(*timer));
+	uv_timer_init(fctx->__p->loop, timer);
+	uv_timer_start(timer, fbr_uv_timer_cb, timeout*1e3, 0);
 
 	fbr_ev_watcher_init(FBR_A_ &twatcher,
-			(uv_handle_t *)&timer);
+			(uv_handle_t *)timer);
 	dtor.func = watcher_timer_dtor;
-	dtor.arg = &timer;
+	dtor.arg = timer;
 	fbr_destructor_add(FBR_A_ &dtor);
 	events[1] = &twatcher.ev_base;
 
@@ -853,22 +864,22 @@ void fbr_ev_watcher_init(FBR_P_ struct fbr_ev_watcher *ev, uv_handle_t *w)
 
 double fbr_sleep(FBR_P_ double seconds)
 {
-	uv_timer_t timer;
+	uv_timer_t *timer;
 	struct fbr_ev_watcher watcher;
 	struct fbr_destructor dtor = FBR_DESTRUCTOR_INITIALIZER;
 	double expected = uv_now(fctx->__p->loop)/1e3 + seconds;
 
-	uv_timer_init(fctx->__p->loop, &timer);
-	uv_timer_start(&timer, fbr_uv_timer_cb, seconds*1e3, 0);
+	timer = malloc(sizeof(*timer));
+	uv_timer_init(fctx->__p->loop, timer);
+	uv_timer_start(timer, fbr_uv_timer_cb, seconds*1e3, 0);
 	dtor.func = watcher_timer_dtor;
-	dtor.arg = &timer;
+	dtor.arg = timer;
 	fbr_destructor_add(FBR_A_ &dtor);
 
-	fbr_ev_watcher_init(FBR_A_ &watcher, (uv_handle_t *)&timer);
+	fbr_ev_watcher_init(FBR_A_ &watcher, (uv_handle_t *)timer);
 	fbr_ev_wait_one(FBR_A_ &watcher.ev_base);
 
-	fbr_destructor_remove(FBR_A_ &dtor, 0 /* Call it? */);
-	uv_timer_stop(&timer);
+	fbr_destructor_remove(FBR_A_ &dtor, 1 /* Call it? */);
 
 	return max(0., expected - uv_now(fctx->__p->loop)/1e3);
 }

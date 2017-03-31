@@ -141,6 +141,7 @@ START_TEST(test_mutex)
 
 	fbr_mutex_destroy(&context, &mutex);
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 }
 END_TEST
 
@@ -229,6 +230,7 @@ START_TEST(test_mutex_evloop)
 
 	fbr_mutex_destroy(&context, &mutex);
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 #undef fiber_count
 }
 END_TEST

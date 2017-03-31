@@ -79,6 +79,7 @@ START_TEST(test_key)
 	fail_unless(-1 == retval);
 
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 
 }
 END_TEST
@@ -100,6 +101,7 @@ START_TEST(test_multiple_keys)
 	}
 
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 
 }
 END_TEST

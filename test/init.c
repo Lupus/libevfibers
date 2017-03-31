@@ -30,6 +30,7 @@ START_TEST(test_init)
 	fbr_init(&context, loop);
 	fail_if(NULL == context.__p, NULL);
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 }
 END_TEST
 
@@ -41,6 +42,7 @@ START_TEST(test_init_evloop)
 	uv_run(loop, UV_RUN_DEFAULT);
 	//Should return if we do not set up any unnecessary watchers
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 }
 END_TEST
 

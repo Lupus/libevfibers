@@ -40,6 +40,12 @@ Suite *evfibers_suite(void)
 	tc_reclaim = reclaim_tcase();
 	tc_logger = logger_tcase();
 	tc_key = key_tcase();
+	(void)tc_init;
+	(void)tc_mutex;
+	(void)tc_cond;
+	(void)tc_reclaim;
+	(void)tc_logger;
+	(void)tc_key;
 	suite_add_tcase(s, tc_init);
 	suite_add_tcase(s, tc_mutex);
 	suite_add_tcase(s, tc_cond);

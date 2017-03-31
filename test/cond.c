@@ -84,6 +84,7 @@ START_TEST(test_cond_broadcast)
 	fbr_cond_destroy(&context, &cond);
 	fbr_mutex_destroy(&context, &mutex);
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 }
 END_TEST
 
@@ -129,6 +130,7 @@ START_TEST(test_cond_signal)
 	fbr_cond_destroy(&context, &cond);
 	fbr_mutex_destroy(&context, &mutex);
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 }
 END_TEST
 
@@ -151,6 +153,7 @@ START_TEST(test_cond_bad_mutex)
 	fbr_cond_destroy(&context, &cond);
 	fbr_mutex_destroy(&context, &mutex);
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 }
 END_TEST
 
@@ -228,6 +231,7 @@ START_TEST(test_two_conds)
 	fbr_cond_destroy(&context, &arg.cond2);
 	fbr_mutex_destroy(&context, &arg.mutex2);
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 }
 END_TEST
 
@@ -309,6 +313,7 @@ START_TEST(test_premature_cond)
 	fbr_cond_destroy(&context, &arg.cond);
 	fbr_mutex_destroy(&context, &arg.mutex);
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 }
 END_TEST
 

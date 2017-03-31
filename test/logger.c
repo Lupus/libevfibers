@@ -72,6 +72,7 @@ START_TEST(test_logger)
 	fail_unless(0 == retval, NULL);
 
 	fbr_destroy(&context);
+	uv_run(loop, UV_RUN_DEFAULT);
 }
 END_TEST
 
