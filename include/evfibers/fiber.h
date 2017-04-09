@@ -147,7 +147,7 @@
 #include <sys/queue.h>
 #include <assert.h>
 
-#include <evfibers/uv.h>
+#include <uv.h>
 
 #include <evfibers/config.h>
 

@@ -79,37 +79,7 @@ if(HAVE_UCONTEXT_H)
 	add_definitions(-DHAVE_UCONTEXT_H)
 endif(HAVE_UCONTEXT_H)
 
-include(ExternalProject)
-ExternalProject_Add(
-	libuv
-	PREFIX "${CMAKE_CURRENT_BINARY_DIR}/libuv"
-	GIT_REPOSITORY https://github.com/libuv/libuv.git
-	GIT_TAG v1.11.0
-	UPDATE_COMMAND ""
-	CONFIGURE_COMMAND CFLAGS=-fpic ./configure --enable-static --disable-shared --prefix=${CMAKE_CURRENT_BINARY_DIR}/libuv
-	BUILD_IN_SOURCE 1
-	)
-ExternalProject_Add_Step(libuv autogen
-	COMMAND "./autogen.sh"
-		DEPENDEES update
-		DEPENDERS configure
-	WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/libuv/src/libuv"
-)
-ExternalProject_Add_Step(libuv mvembedheader
-        COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
-	COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv-errno.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
-	COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv-linux.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
-	COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv-threadpool.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
-	COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv-unix.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
-	COMMAND mv ${CMAKE_CURRENT_BINARY_DIR}/libuv/include/uv-version.h ${CMAKE_CURRENT_BINARY_DIR}/include/evfibers/
-	DEPENDEES install
-)
-set(LIBUV_LIBRARY
-	"-L${CMAKE_CURRENT_BINARY_DIR}/libuv/lib"
-	"${EIO_LD_WHOLE_ARCHIVE}" "-luv" "${EIO_LD_NOWHOLE_ARCHIVE}"
-	-lrt -lpthread -lnsl -ldl
-	"${CMAKE_THREAD_LIBS_INIT}")
-set(LIBUV_FOUND TRUE)
+find_package(LibUV REQUIRED)
 
 if(WANT_ASAN)
 	# Force ucontext.h as libcoro backend so as to better interact with ASan
