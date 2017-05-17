@@ -811,7 +811,7 @@ void fbr_yield(FBR_P)
 {
 	struct fbr_fiber *callee;
 	struct fbr_fiber *caller;
-	assert("Attemp to yield in a root fiber" &&
+	assert("Attempt to yield in a root fiber" &&
 			fctx->__p->sp->fiber != &fctx->__p->root);
 	callee = fctx->__p->sp->fiber;
 	caller = (--fctx->__p->sp)->fiber;
