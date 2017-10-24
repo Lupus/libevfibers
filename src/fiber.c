@@ -1997,7 +1997,7 @@ int fbr_mq_try_push(struct fbr_mq *mq, void *obj)
 	if (next >= mq->max)
 		next = 0;
 
-	/* Cicular buffer is full */
+	/* Circular buffer is full */
 	if (next == mq->tail)
 		return -1;
 
@@ -2035,7 +2035,7 @@ static void *mq_do_pop(struct fbr_mq *mq)
 void *fbr_mq_pop(struct fbr_mq *mq)
 {
 
-	/* if the head isn't ahead of the tail, we don't have any emelemnts */
+	/* if the head isn't ahead of the tail, we don't have any elements */
 	while (mq->head == mq->tail)
 		fbr_cond_wait(mq->fctx, &mq->bytes_available_cond, NULL);
 
@@ -2044,7 +2044,7 @@ void *fbr_mq_pop(struct fbr_mq *mq)
 
 int fbr_mq_try_pop(struct fbr_mq *mq, void **obj)
 {
-	/* if the head isn't ahead of the tail, we don't have any emelemnts */
+	/* if the head isn't ahead of the tail, we don't have any elements */
 	if (mq->head == mq->tail)
 		return -1;
 
@@ -2054,7 +2054,7 @@ int fbr_mq_try_pop(struct fbr_mq *mq, void **obj)
 
 void fbr_mq_wait_pop(struct fbr_mq *mq)
 {
-	/* if the head isn't ahead of the tail, we don't have any emelemnts */
+	/* if the head isn't ahead of the tail, we don't have any elements */
 	while (mq->head == mq->tail)
 		fbr_cond_wait(mq->fctx, &mq->bytes_available_cond, NULL);
 }
