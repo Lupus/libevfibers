@@ -1604,7 +1604,7 @@ void fbr_vrb_destroy(struct fbr_vrb *vrb);
  */
 static inline size_t fbr_vrb_data_len(struct fbr_vrb *vrb)
 {
-	return vrb->space_ptr - vrb->data_ptr;
+	return (char *) vrb->space_ptr - (char *) vrb->data_ptr;
 }
 
 /**
@@ -1616,7 +1616,7 @@ static inline size_t fbr_vrb_data_len(struct fbr_vrb *vrb)
  */
 static inline size_t fbr_vrb_space_len(struct fbr_vrb *vrb)
 {
-	return vrb->data_ptr + vrb->ptr_size - vrb->space_ptr;
+	return (char *) vrb->data_ptr + vrb->ptr_size - (char *) vrb->space_ptr;
 }
 
 /**
