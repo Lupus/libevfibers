@@ -29,6 +29,11 @@
  * and eio_cb and data pointer are passed internally, and so are not present in
  * the prototypes.
  */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <evfibers/config.h>
 #ifndef FBR_EIO_ENABLED
 # error "This build of libevfibers lacks support for libeio"
@@ -135,5 +140,9 @@ int fbr_eio_fallocate(FBR_P_ int fd, int mode, off_t offset, off_t len,
 		int pri);
 eio_ssize_t fbr_eio_custom(FBR_P_ fbr_eio_custom_func_t func, void *data,
 		int pri);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

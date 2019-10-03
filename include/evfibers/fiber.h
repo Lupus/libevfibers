@@ -137,6 +137,11 @@
  * @file evfibers/fiber.h
  * This file contains all client-visible API functions for working with fibers.
  */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <unistd.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -2199,5 +2204,9 @@ int fbr_waitpid(FBR_P_ pid_t pid);
 
 int fbr_system(FBR_P_ const char *filename, char *const argv[],
 		char *const envp[], const char *working_dir);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
