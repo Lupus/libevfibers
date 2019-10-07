@@ -8,7 +8,9 @@ if [[ "$os" == "Linux" ]] ; then
     err=$?
 elif [[ "$os" == "Darwin" ]] ; then
     brew install cmake libev check cvs libtool autoconf
-    err=$?
+    # Ugly, but brew return 1 if package already installed
+    #err=$?
+    err=0
 else
     echo "Unrecognized OS: $os" >&2
     err=1

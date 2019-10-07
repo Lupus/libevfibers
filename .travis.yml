@@ -1,19 +1,27 @@
+# MacOS: disable test with '-DWANT_EIO=TRUE -DWANT_EMBEDDED_EIO=TRUE' - embedded libeio not found.
+
 install: "./ci/install_deps.sh"
 language: c
 script: "./ci/run_tests.sh"
-os:
-        - linux
-        - osx
-compiler:
-        - clang
-        - gcc
-env:
-        - BUILD_TYPE=RelWithDebInfo EIO="-DWANT_EIO=TRUE -DWANT_EMBEDDED_EIO=TRUE"
-        - BUILD_TYPE=RelWithDebInfo EIO="-DWANT_EIO=FALSE"
+
 # gcc is symlinked to clang on OSX - could install with homebrew and fiddle
 # with paths to make sure the one we want is being used, but save that for
 # another day if interest arises
+
 matrix:
-    exclude:
-        - os: osx
+    include:
+        - os: linux
           compiler: gcc
+          env: BUILD_TYPE=RelWithDebInfo EIO="-DWANT_EIO=TRUE -DWANT_EMBEDDED_EIO=TRUE"
+        - os: linux
+          compiler: clang
+          env: BUILD_TYPE=RelWithDebInfo EIO="-DWANT_EIO=TRUE -DWANT_EMBEDDED_EIO=TRUE"
+        - os: linux
+          compiler: gcc
+          env: BUILD_TYPE=RelWithDebInfo EIO="-DWANT_EIO=FALSE"
+        - os: linux
+          compiler: clang
+          env: BUILD_TYPE=RelWithDebInfo EIO="-DWANT_EIO=FALSE"
+        - os: osx
+          compiler: clang
+          env: BUILD_TYPE=RelWithDebInfo EIO="-DWANT_EIO=FALSE"
